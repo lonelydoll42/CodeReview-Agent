@@ -10,6 +10,9 @@
 
 招聘/面试视角速览见：[docs/recruiter_brief.md](docs/recruiter_brief.md)。
 
+开发、测试与 Git 工作流见 [CONTRIBUTING.md](CONTRIBUTING.md)，本次分支整合与验证范围见
+[Git 优化实施记录](docs/git-optimization.md)。
+
 ---
 
 ## 目录
@@ -204,13 +207,13 @@ SecurityAgent 1.0 > LogicAgent 0.8 > PerformanceAgent 0.6 > StyleAgent 0.4
 ### 4. Orchestrator 执行流程
 
 ```
-步骤 0  去重缓存检查（commit SHA 命中则直接返回）
-步骤 1  GitHub 拉取 PR diff + metadata
+步骤 0  GitHub 固定 base/head SHA，拉取 diff、完整源码与 metadata
+步骤 1  去重缓存检查（版本与分析代码指纹命中则复制历史报告）
 步骤 2  过滤支持语言文件（15种语言）
 步骤 3  Agent × File 全矩阵并行（asyncio.gather，每 Agent 独立超时）
 步骤 4  Aggregator 聚合
-步骤 5  写入去重缓存
-步骤 6  持久化至 PostgreSQL
+步骤 5  持久化至 PostgreSQL
+步骤 6  所有 Agent 调用返回后写入去重缓存
 步骤 7  条件化回写 PR 顶层评论
 步骤 8  条件化发布 Inline Comment
 步骤 9  发送 Slack / 企业微信通知
@@ -236,7 +239,7 @@ SecurityAgent 1.0 > LogicAgent 0.8 > PerformanceAgent 0.6 > StyleAgent 0.4
 |-----|------|-----|
 | `codereview:task:{id}:status` | 任务状态 | 24h |
 | `codereview:task:{id}:agent:{name}` | Agent 结果 JSON | 24h |
-| `codereview:dedup:{url_hash}:{sha}` | 已完成 task_id | 可配置 |
+| `codereview:dedup:{url_hash}:{fingerprint}` | 已完成 task_id（比较版本与分析代码指纹） | 可配置 |
 
 ---
 
@@ -260,11 +263,14 @@ ENABLE_INLINE_COMMENT=true
 
 ### Feature 3 — 重复提交去重缓存
 
-以 `PR URL + HEAD commit SHA` 为 key。同一 PR 同一 commit 重复提交时，直接返回历史结果，跳过全部 Agent，响应从数十秒变为毫秒级。
+以 PR URL、base/head SHA、共同祖先和分析代码指纹为 key。相同输入重复提交时，
+为新任务复制历史报告并跳过 Agent 调用。仍需获取 GitHub 快照，耗时取决于网络和文件数量。
+外部分析规则变化时递增 `REVIEW_RULESET_VERSION` 并重启服务。
 
 ```ini
 ENABLE_DEDUP_CACHE=true
 DEDUP_CACHE_TTL=86400
+REVIEW_RULESET_VERSION=1
 ```
 
 ### Feature 4 — GitHub Webhook 自动触发
@@ -468,7 +474,8 @@ pytest tests/ -v
 - `test_orchestrator.py` — 成功/超时/GitHub失败三种场景
 - `test_metrics.py` — Precision/Recall/F1 计算
 
-所有测试均 mock 外部依赖（DB、Redis、GitHub、Claude），无需真实基础设施。
+普通测试 mock 外部服务，无需真实基础设施。配置专用测试数据库 `TEST_DATABASE_URL`
+后，还会运行 PostgreSQL 建表、报告复制和统计查询集成测试；详见贡献指南。
 
 ---
 

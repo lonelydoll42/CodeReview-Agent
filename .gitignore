@@ -7,3 +7,11 @@ dist/
 build/
 .pytest_cache/
 .mypy_cache/
+.venv/
+venv/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.env.*
+!.env.example
