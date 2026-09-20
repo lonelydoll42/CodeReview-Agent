@@ -71,7 +71,7 @@ class ReviewTask(Base):
         Enum(TaskStatus, name="task_status"),
         nullable=False,
         default=TaskStatus.PENDING,
-        server_default=TaskStatus.PENDING.value,
+        server_default=TaskStatus.PENDING.name,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
