@@ -4,13 +4,14 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import AnyHttpUrl, BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,6 +27,12 @@ from storage.models import (
     get_db,
 )
 from storage.cache import get_task_status, set_task_status
+
+
+FINDINGS_COUNT_EXPR = func.coalesce(func.json_array_length(ReviewResult.findings["findings"]), 0)
+DASHBOARD_CACHE_TTL_SECONDS = 30
+_dashboard_cache: dict[int, tuple[float, "DashboardStatsResponse"]] = {}
+_dashboard_cache_lock = asyncio.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +57,16 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def add_timing_headers(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.2f}"
+    response.headers["Server-Timing"] = f'app;dur={elapsed_ms:.2f}'
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +110,16 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class RecentReviewItem(BaseModel):
+    task_id: int
+    pr_url: str
+    status: str
+    created_at: str
+    updated_at: str
+    findings_count: int
+    has_report: bool
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -105,6 +132,7 @@ async def _enqueue_review(pr_url: str, db: AsyncSession) -> ReviewTask:
     await db.refresh(task)
     await set_task_status(task.id, TaskStatus.PENDING.value)
     await db.commit()
+    _dashboard_cache.clear()
 
     orchestrator = Orchestrator()
     asyncio.create_task(orchestrator.run(task_id=task.id, pr_url=pr_url))
@@ -146,6 +174,7 @@ async def create_review(
 )
 async def get_review(
     task_id: int,
+    include_results: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ) -> ReviewStatusResponse:
     """
@@ -154,13 +183,14 @@ async def get_review(
     Once the task reaches **completed** status the response also includes
     per-agent findings and the aggregated final report.
     """
+    options = [selectinload(ReviewTask.report)]
+    if include_results:
+        options.append(selectinload(ReviewTask.results))
+
     stmt = (
         select(ReviewTask)
         .where(ReviewTask.id == task_id)
-        .options(
-            selectinload(ReviewTask.results),
-            selectinload(ReviewTask.report),
-        )
+        .options(*options)
     )
     result = await db.execute(stmt)
     task: ReviewTask | None = result.scalar_one_or_none()
@@ -175,14 +205,16 @@ async def get_review(
     cached_status = await get_task_status(task_id)
     current_status = cached_status if cached_status is not None else task.status.value
 
-    results = [
-        AgentResultSchema(
-            agent_name=r.agent_name,
-            findings=r.findings,
-            confidence=r.confidence,
-        )
-        for r in task.results
-    ]
+    results = []
+    if include_results:
+        results = [
+            AgentResultSchema(
+                agent_name=r.agent_name,
+                findings=r.findings,
+                confidence=r.confidence,
+            )
+            for r in task.results
+        ]
 
     report_schema: ReportSchema | None = None
     if task.report is not None:
@@ -201,6 +233,19 @@ async def get_review(
         results=results,
         report=report_schema,
     )
+
+
+@app.get(
+    "/reviews/recent",
+    response_model=list[RecentReviewItem],
+    summary="List recent review tasks",
+)
+async def list_recent_reviews(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> list[RecentReviewItem]:
+    """Return recent review tasks with lightweight summary fields."""
+    return await _build_recent_review_items(limit=limit, db=db)
 
 
 @app.get(
@@ -299,6 +344,163 @@ class CategoryCount(BaseModel):
     count: int
 
 
+class DashboardStatsResponse(BaseModel):
+    summary: StatsSummaryResponse
+    top_categories: list[CategoryCount]
+    trends: TrendResponse
+
+
+async def _build_recent_review_items(limit: int, db: AsyncSession) -> list[RecentReviewItem]:
+    findings_subquery = (
+        select(
+            ReviewResult.task_id.label("task_id"),
+            func.coalesce(func.sum(FINDINGS_COUNT_EXPR), 0).label("findings_count"),
+        )
+        .group_by(ReviewResult.task_id)
+        .subquery()
+    )
+    report_subquery = (
+        select(
+            ReviewReport.task_id.label("task_id"),
+            func.count(ReviewReport.id).label("report_count"),
+        )
+        .group_by(ReviewReport.task_id)
+        .subquery()
+    )
+    stmt = (
+        select(
+            ReviewTask.id,
+            ReviewTask.pr_url,
+            ReviewTask.status,
+            ReviewTask.created_at,
+            ReviewTask.updated_at,
+            func.coalesce(findings_subquery.c.findings_count, 0).label("findings_count"),
+            (func.coalesce(report_subquery.c.report_count, 0) > 0).label("has_report"),
+        )
+        .outerjoin(findings_subquery, findings_subquery.c.task_id == ReviewTask.id)
+        .outerjoin(report_subquery, report_subquery.c.task_id == ReviewTask.id)
+        .order_by(ReviewTask.created_at.desc())
+        .limit(max(1, min(limit, 100)))
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        RecentReviewItem(
+            task_id=row.id,
+            pr_url=row.pr_url,
+            status=row.status.value,
+            created_at=row.created_at.isoformat(),
+            updated_at=row.updated_at.isoformat(),
+            findings_count=int(row.findings_count or 0),
+            has_report=bool(row.has_report),
+        )
+        for row in rows
+    ]
+
+
+async def _build_stats_summary(db: AsyncSession) -> StatsSummaryResponse:
+    counts_stmt = select(
+        func.count(ReviewTask.id).label("total_tasks"),
+        func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.COMPLETED).label("completed"),
+        func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.FAILED).label("failed"),
+    )
+    counts = (await db.execute(counts_stmt)).one()
+    total_findings = await db.scalar(select(func.coalesce(func.sum(FINDINGS_COUNT_EXPR), 0)).select_from(ReviewResult))
+
+    finding_elements = func.json_array_elements(ReviewResult.findings["findings"]).table_valued("value").lateral()
+    severity = finding_elements.c.value.op("->>")("severity")
+    severity_stmt = (
+        select(severity.label("severity"), func.count().label("count"))
+        .select_from(ReviewResult)
+        .join(finding_elements, true())
+        .group_by(severity)
+    )
+    severity_rows = (await db.execute(severity_stmt)).all()
+    by_severity = [
+        SeverityCount(severity=row.severity or "UNKNOWN", count=row.count)
+        for row in severity_rows
+    ]
+
+    return StatsSummaryResponse(
+        total_tasks=counts.total_tasks or 0,
+        completed=counts.completed or 0,
+        failed=counts.failed or 0,
+        total_findings=total_findings or 0,
+        by_severity=by_severity,
+    )
+
+
+async def _build_top_categories(limit: int, db: AsyncSession) -> list[CategoryCount]:
+    finding_elements = func.json_array_elements(ReviewResult.findings["findings"]).table_valued("value").lateral()
+    category = finding_elements.c.value.op("->>")("category")
+    stmt = (
+        select(category.label("category"), func.count().label("count"))
+        .select_from(ReviewResult)
+        .join(finding_elements, true())
+        .group_by(category)
+        .order_by(func.count().desc(), category.asc())
+        .limit(max(1, min(limit, 25)))
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        CategoryCount(category=row.category or "unknown", count=row.count)
+        for row in rows
+    ]
+
+
+async def _build_trends(days: int, db: AsyncSession) -> TrendResponse:
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    task_stmt = (
+        select(
+            func.date(ReviewTask.created_at).label("day"),
+            func.count(ReviewTask.id).label("cnt"),
+        )
+        .where(ReviewTask.created_at >= cutoff)
+        .group_by(func.date(ReviewTask.created_at))
+        .order_by(func.date(ReviewTask.created_at))
+    )
+    task_rows = (await db.execute(task_stmt)).all()
+
+    findings_stmt = (
+        select(
+            func.date(ReviewTask.created_at).label("day"),
+            func.coalesce(func.sum(FINDINGS_COUNT_EXPR), 0).label("cnt"),
+        )
+        .select_from(ReviewResult)
+        .join(ReviewTask, ReviewTask.id == ReviewResult.task_id)
+        .where(ReviewTask.created_at >= cutoff)
+        .group_by(func.date(ReviewTask.created_at))
+        .order_by(func.date(ReviewTask.created_at))
+    )
+    finding_rows = (await db.execute(findings_stmt)).all()
+
+    return TrendResponse(
+        tasks=[TrendPoint(date=str(row.day), count=row.cnt) for row in task_rows],
+        findings=[TrendPoint(date=str(row.day), count=row.cnt) for row in finding_rows],
+    )
+
+
+async def _get_dashboard_snapshot(days: int, db: AsyncSession) -> DashboardStatsResponse:
+    now = time.monotonic()
+    cached = _dashboard_cache.get(days)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    async with _dashboard_cache_lock:
+        cached = _dashboard_cache.get(days)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+
+        payload = DashboardStatsResponse(
+            summary=await _build_stats_summary(db),
+            top_categories=await _build_top_categories(limit=10, db=db),
+            trends=await _build_trends(days=days, db=db),
+        )
+        _dashboard_cache[days] = (time.monotonic() + DASHBOARD_CACHE_TTL_SECONDS, payload)
+        return payload
+
+
 @app.get(
     "/stats/summary",
     response_model=StatsSummaryResponse,
@@ -306,37 +508,7 @@ class CategoryCount(BaseModel):
 )
 async def stats_summary(db: AsyncSession = Depends(get_db)) -> StatsSummaryResponse:
     """Return aggregate counts across all review tasks."""
-    total = await db.scalar(select(func.count()).select_from(ReviewTask))
-    completed = await db.scalar(
-        select(func.count()).select_from(ReviewTask).where(ReviewTask.status == TaskStatus.COMPLETED)
-    )
-    failed = await db.scalar(
-        select(func.count()).select_from(ReviewTask).where(ReviewTask.status == TaskStatus.FAILED)
-    )
-
-    # Pull all findings from ReviewResult JSON column
-    rows = (await db.execute(select(ReviewResult.findings))).scalars().all()
-    sev_counts: dict[str, int] = {}
-    total_findings = 0
-    for row in rows:
-        findings_list = row.get("findings", []) if isinstance(row, dict) else []
-        for f in findings_list:
-            sev = f.get("severity", "UNKNOWN")
-            sev_counts[sev] = sev_counts.get(sev, 0) + 1
-            total_findings += 1
-
-    by_severity = [
-        SeverityCount(severity=sev, count=cnt)
-        for sev, cnt in sorted(sev_counts.items())
-    ]
-
-    return StatsSummaryResponse(
-        total_tasks=total or 0,
-        completed=completed or 0,
-        failed=failed or 0,
-        total_findings=total_findings,
-        by_severity=by_severity,
-    )
+    return await _build_stats_summary(db)
 
 
 @app.get(
@@ -349,16 +521,7 @@ async def stats_top_categories(
     db: AsyncSession = Depends(get_db),
 ) -> list[CategoryCount]:
     """Return the most frequently occurring finding categories."""
-    rows = (await db.execute(select(ReviewResult.findings))).scalars().all()
-    cat_counts: dict[str, int] = {}
-    for row in rows:
-        findings_list = row.get("findings", []) if isinstance(row, dict) else []
-        for f in findings_list:
-            cat = f.get("category", "unknown")
-            cat_counts[cat] = cat_counts.get(cat, 0) + 1
-
-    top = sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-    return [CategoryCount(category=cat, count=cnt) for cat, cnt in top]
+    return await _build_top_categories(limit=limit, db=db)
 
 
 @app.get(
@@ -371,53 +534,17 @@ async def stats_trends(
     db: AsyncSession = Depends(get_db),
 ) -> TrendResponse:
     """Return per-day counts of submitted tasks and total findings."""
-    from datetime import datetime, timedelta, timezone
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    return await _build_trends(days=days, db=db)
 
-    task_rows = (
-        await db.execute(
-            select(
-                func.date(ReviewTask.created_at).label("day"),
-                func.count().label("cnt"),
-            )
-            .where(ReviewTask.created_at >= cutoff)
-            .group_by(func.date(ReviewTask.created_at))
-            .order_by(func.date(ReviewTask.created_at))
-        )
-    ).all()
 
-    result_rows = (
-        await db.execute(
-            select(ReviewResult.findings)
-            .join(ReviewTask, ReviewTask.id == ReviewResult.task_id)
-            .where(ReviewTask.created_at >= cutoff)
-        )
-    ).scalars().all()
-
-    # Aggregate findings per day requires loading tasks with dates;
-    # simplified: return task trend + total findings trend using task dates.
-    task_points = [TrendPoint(date=str(r.day), count=r.cnt) for r in task_rows]
-
-    # For findings trend, count per day from ReviewResult join
-    day_finding_counts: dict[str, int] = {}
-    finding_with_date_rows = (
-        await db.execute(
-            select(
-                func.date(ReviewTask.created_at).label("day"),
-                ReviewResult.findings,
-            )
-            .join(ReviewTask, ReviewTask.id == ReviewResult.task_id)
-            .where(ReviewTask.created_at >= cutoff)
-        )
-    ).all()
-    for row in finding_with_date_rows:
-        day = str(row.day)
-        findings_list = row.findings.get("findings", []) if isinstance(row.findings, dict) else []
-        day_finding_counts[day] = day_finding_counts.get(day, 0) + len(findings_list)
-
-    finding_points = [
-        TrendPoint(date=day, count=cnt)
-        for day, cnt in sorted(day_finding_counts.items())
-    ]
-
-    return TrendResponse(tasks=task_points, findings=finding_points)
+@app.get(
+    "/stats/dashboard",
+    response_model=DashboardStatsResponse,
+    summary="Combined dashboard payload",
+)
+async def stats_dashboard(
+    days: int = Query(default=30, ge=7, le=90),
+    db: AsyncSession = Depends(get_db),
+) -> DashboardStatsResponse:
+    """Return the dashboard payload in a single request with short-lived caching."""
+    return await _get_dashboard_snapshot(days=days, db=db)
