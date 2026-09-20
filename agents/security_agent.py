@@ -141,11 +141,12 @@ class SecurityAgent(BaseReviewAgent):
 
     # ------------------------------------------------------------------
     def _run_semgrep(self, file_diff: FileDiff) -> List[SecurityIssue]:
-        """Run Semgrep on the raw diff content."""
-        code = "\n".join(line for _, line in file_diff.added_lines)
+        """Scan complete source and retain only issues on added lines."""
+        code = file_diff.analysis_source()
+        changed_lines = {number for number, _ in file_diff.added_lines}
         lang = file_diff.language
         try:
-            return self._semgrep.scan(code, lang)
+            return [issue for issue in self._semgrep.scan(code, lang) if issue.line in changed_lines]
         except Exception:
             return []
 

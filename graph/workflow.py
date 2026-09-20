@@ -87,7 +87,7 @@ def fetch_diff(state: ReviewState) -> ReviewState:
         client = GitHubClient()
         pr_url = state["pr_url"]
         pr_diff = client.get_pr_diff(pr_url)
-        pr_metadata = client.get_pr_metadata(pr_url)
+        pr_metadata = pr_diff.metadata
         file_diffs = [
             FileDiff(
                 filename=f.filename,
@@ -95,6 +95,9 @@ def fetch_diff(state: ReviewState) -> ReviewState:
                 added_lines=f.added_lines,
                 removed_lines=f.removed_lines,
                 raw_diff=getattr(f, "patch", ""),
+                full_source=f.full_source,
+                status=f.status,
+                previous_filename=f.previous_filename,
             ).model_dump()
             for f in pr_diff.files
             if f.language in SUPPORTED_LANGUAGES

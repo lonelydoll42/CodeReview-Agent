@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Feature: dedup cache (skip re-running agents if same commit SHA)
     ENABLE_DEDUP_CACHE: bool = True
     DEDUP_CACHE_TTL: int = 86_400            # seconds, default 24 h
+    REVIEW_RULESET_VERSION: str = "1"       # Bump for external analysis configuration changes.
 
     # Feature: GitHub Webhook
     GITHUB_WEBHOOK_SECRET: str = ""

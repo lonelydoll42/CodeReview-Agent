@@ -168,7 +168,7 @@ class LogicAgent(BaseReviewAgent):
 
         if file_diff.added_lines:
             # AST pre-processing (best-effort; non-fatal on failure)
-            added_code = "\n".join(text for _, text in file_diff.added_lines)
+            added_code = file_diff.analysis_source()
             structure = self._parser.parse_python(added_code)
             complexity = self._parser.get_complexity(added_code, file_diff.language)
 

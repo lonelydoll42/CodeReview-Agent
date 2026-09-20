@@ -163,7 +163,7 @@ class PerformanceAgent(BaseReviewAgent):
         start = time.monotonic()
 
         # Pre-compute complexity from all added line text
-        added_code = "\n".join(text for _, text in file_diff.added_lines)
+        added_code = file_diff.analysis_source()
         complexity = self._parser.get_complexity(added_code, file_diff.language)
 
         all_findings: List[Finding] = []

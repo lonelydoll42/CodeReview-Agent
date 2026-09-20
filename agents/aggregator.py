@@ -308,6 +308,14 @@ class Aggregator:
                 lines.append(f"**Author:** {author}")
             if branch:
                 lines.append(f"**Branch:** {branch}")
+            if meta.get("head_sha"):
+                lines.append(f"**Reviewed commit:** `{meta['head_sha']}`")
+            if meta.get("base_sha"):
+                lines.append(f"**Base commit:** `{meta['base_sha']}`")
+            if meta.get("skipped_files"):
+                lines.append("\n**Coverage:** The following files were not analyzed:")
+                for filename, reason in meta["skipped_files"].items():
+                    lines.append(f"- `{filename}`: {reason}")
             lines.append("")
 
         lines.append("## Executive Summary")

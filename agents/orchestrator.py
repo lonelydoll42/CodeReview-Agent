@@ -5,6 +5,9 @@ import asyncio
 import logging
 from typing import List
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from agents.aggregator import Aggregator, AggregatedReport
 from agents.base import AgentResult, FileDiff
 from agents.logic_agent import LogicAgent
@@ -27,6 +30,7 @@ from storage.models import (
     TaskStatus,
 )
 from tools.github_client import GitHubClient
+from tools.review_version import review_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -83,33 +87,25 @@ class Orchestrator:
         """Main execution flow, started via asyncio.create_task()."""
         await set_task_status(task_id, TaskStatus.RUNNING.value)
 
-        # --- 0. Dedup cache check ----------------------------------------
-        commit_sha: str | None = self.github.get_head_commit_sha(pr_url)
-        if settings.ENABLE_DEDUP_CACHE and commit_sha:
-            cached_id = await get_dedup_task_id(pr_url, commit_sha)
-            if cached_id is not None and cached_id != task_id:
-                logger.info(
-                    "[task=%s] Dedup hit – reusing results from task %s",
-                    task_id, cached_id,
-                )
-                await set_task_status(task_id, TaskStatus.COMPLETED.value)
-                async with AsyncSessionLocal() as session:
-                    task = await session.get(ReviewTask, task_id)
-                    if task:
-                        task.status = TaskStatus.COMPLETED
-                        await session.commit()
-                return
-
         # --- 1. Fetch diff + metadata ------------------------------------
         try:
-            pr_diff = self.github.get_pr_diff(pr_url)
+            pr_diff = await asyncio.to_thread(self.github.get_pr_diff, pr_url)
         except Exception as exc:
             logger.error("[task=%s] Failed to fetch PR diff: %s", task_id, exc)
             await self._fail(task_id, str(exc))
             await notify_review_failed(pr_url, task_id, str(exc))
             return
 
-        pr_metadata = self.github.get_pr_metadata(pr_url)
+        pr_metadata = pr_diff.metadata
+        commit_sha = pr_diff.head_sha
+        cache_key = review_cache_key(
+            pr_diff.base_sha, commit_sha, pr_diff.merge_base_sha, settings.REVIEW_RULESET_VERSION,
+        )
+        if settings.ENABLE_DEDUP_CACHE:
+            cached_id = await get_dedup_task_id(pr_url, cache_key)
+            if cached_id is not None and cached_id != task_id:
+                if await self._reuse_report(cached_id, task_id, pr_url):
+                    return
 
         # --- 2. Filter to supported languages ----------------------------
         file_diffs: List[FileDiff] = [
@@ -119,6 +115,9 @@ class Orchestrator:
                 added_lines=f.added_lines,
                 removed_lines=f.removed_lines,
                 raw_diff=getattr(f, "patch", ""),
+                full_source=f.full_source,
+                status=f.status,
+                previous_filename=f.previous_filename,
             )
             for f in pr_diff.files
             if f.language in SUPPORTED_LANGUAGES
@@ -126,7 +125,8 @@ class Orchestrator:
 
         if not file_diffs:
             logger.info("[task=%s] No supported-language files in diff", task_id)
-            await self._complete_empty(task_id, pr_url)
+            empty = self.aggregator.aggregate([], pr_url=pr_url, task_id=task_id, pr_metadata=pr_metadata)
+            await self._persist(task_id, [], empty)
             return
 
         # --- 3. Dispatch all agent × file tasks --------------------------
@@ -150,26 +150,30 @@ class Orchestrator:
             pr_metadata=pr_metadata,
         )
 
-        # --- 5. Store dedup cache entry --------------------------------
-        if settings.ENABLE_DEDUP_CACHE and commit_sha:
-            await set_dedup_task_id(pr_url, commit_sha, task_id)
-
         # --- 6. Persist --------------------------------------------------
         await self._persist(task_id, agent_results, report)
 
+        # Only publish cache entries after a durable, complete result exists.
+        if settings.ENABLE_DEDUP_CACHE and len(agent_results) == len(tasks):
+            await set_dedup_task_id(pr_url, cache_key, task_id)
+
         # --- 7. Post review comment to PR (top-level) ------------------
         if settings.ENABLE_PR_COMMENT:
-            ok = self.github.post_review_comment(pr_url, report.markdown_report)
+            body = f"Reviewed commit `{commit_sha}`.\n\n{report.markdown_report}"
+            ok = await asyncio.to_thread(self.github.post_review_comment, pr_url, body)
             if not ok:
                 logger.warning("[task=%s] Failed to post top-level PR comment", task_id)
 
         # --- 8. Post inline review comments ------------------------------
         if settings.ENABLE_INLINE_COMMENT and report.findings:
             findings_dicts = [f.model_dump() for f in report.findings]
-            ok = self.github.post_inline_review(
+            ok = await asyncio.to_thread(
+                self.github.post_inline_review,
                 pr_url,
                 findings_dicts,
                 summary_body=report.executive_summary[:500],
+                commit_sha=commit_sha,
+                file_diffs=file_diffs,
             )
             if not ok:
                 logger.warning("[task=%s] Failed to post inline review", task_id)
@@ -186,6 +190,26 @@ class Orchestrator:
     # Private helpers
     # ------------------------------------------------------------------
 
+    async def _reuse_report(self, cached_id: int, task_id: int, pr_url: str) -> bool:
+        """Copy a durable cached report so the new task is actually queryable."""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(ReviewTask).where(ReviewTask.id == cached_id).options(
+                    selectinload(ReviewTask.report), selectinload(ReviewTask.results),
+                )
+            )
+            cached = result.scalar_one_or_none()
+            if cached is None or cached.status != TaskStatus.COMPLETED or cached.report is None or cached.pr_url != pr_url:
+                return False
+            try:
+                report = AggregatedReport.model_validate_json(cached.report.final_report)
+                results = [AgentResult.model_validate(row.findings) for row in cached.results]
+            except ValueError:
+                return False
+            report.task_id = task_id
+        await self._persist(task_id, results, report)
+        return True
+
     async def _fail(self, task_id: int, error: str) -> None:
         await set_task_status(task_id, TaskStatus.FAILED.value)
         async with AsyncSessionLocal() as session:
@@ -193,11 +217,6 @@ class Orchestrator:
             if task:
                 task.status = TaskStatus.FAILED
                 await session.commit()
-
-    async def _complete_empty(self, task_id: int, pr_url: str) -> None:
-        """Mark complete with an empty report when no files need review."""
-        empty = self.aggregator.aggregate([], pr_url=pr_url, task_id=task_id)
-        await self._persist(task_id, [], empty)
 
     async def _persist(
         self,

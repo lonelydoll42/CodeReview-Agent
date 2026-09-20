@@ -59,8 +59,15 @@ def _mock_pr_diff(language: str = "python") -> MagicMock:
     fd.added_lines = [(1, "x = 1")]
     fd.removed_lines = []
     fd.patch = ""
+    fd.full_source = "x = 1\n"
+    fd.status = "modified"
+    fd.previous_filename = None
     pr = MagicMock()
     pr.files = [fd]
+    pr.base_sha = "base"
+    pr.head_sha = "head"
+    pr.merge_base_sha = "ancestor"
+    pr.metadata = {"base_sha": "base", "head_sha": "head"}
     return pr
 
 
@@ -167,6 +174,7 @@ async def test_run_agent_timeout():
         patch("agents.orchestrator.settings") as mock_settings,
     ):
         mock_settings.AGENT_TIMEOUT_SECONDS = 1  # force fast timeout
+        mock_settings.REVIEW_RULESET_VERSION = "1"
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=MagicMock())
         mock_session.commit = AsyncMock()
