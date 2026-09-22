@@ -176,7 +176,7 @@ class Aggregator:
             return weight * finding.confidence
 
         primary_item = max(cluster, key=weighted_conf)
-        primary, primary_agent = primary_item
+        primary, _ = primary_item
 
         # Collect all agents in this cluster
         source_agents: List[str] = list({
@@ -199,9 +199,7 @@ class Aggregator:
         )
 
         # Determine severity
-        severity = self._arbitrate_severity(
-            cluster, weighted_confidence, primary_agent
-        )
+        severity = self._arbitrate_severity(cluster)
 
         return DeduplicatedFinding(
             file=primary.file,
@@ -218,23 +216,27 @@ class Aggregator:
     @staticmethod
     def _arbitrate_severity(
         cluster: List[tuple[Finding, str]],
-        weighted_confidence: float,
-        primary_agent: str,
     ) -> str:
-        """Decide final severity; SecurityAgent CRITICAL is never downgraded."""
+        """Vote on reported severity; preserve SecurityAgent CRITICAL findings."""
         # Guard: SecurityAgent CRITICAL is immutable
         for finding, agent in cluster:
             if agent == "SecurityAgent" and finding.severity == "CRITICAL":
                 return "CRITICAL"
 
-        # Derive from weighted confidence
-        if weighted_confidence >= 0.85:
-            return "CRITICAL"
-        if weighted_confidence >= 0.65:
-            return "HIGH"
-        if weighted_confidence >= 0.40:
-            return "MEDIUM"
-        return "LOW"
+        votes: Dict[str, float] = {}
+        for finding, agent in cluster:
+            votes[finding.severity] = (
+                votes.get(finding.severity, 0.0)
+                + AGENT_WEIGHTS.get(agent, 0.5) * finding.confidence
+            )
+
+        # Confidence measures certainty, not impact. Only select a reported
+        # severity, breaking equal votes in favour of the higher known risk.
+        return min(votes, key=lambda severity: (
+            -votes[severity],
+            _SEVERITY_ORDER.index(severity) if severity in _SEVERITY_ORDER else 99,
+            severity,
+        ))
 
     # ------------------------------------------------------------------
     # Executive summary (Claude)
@@ -369,9 +371,9 @@ class Aggregator:
         agent_results: List[AgentResult],
     ) -> Dict[str, Any]:
         counts = _count_by_severity(findings)
-        by_agent = {
-            r.agent_name: len(r.findings) for r in agent_results
-        }
+        by_agent: Dict[str, int] = {}
+        for result in agent_results:
+            by_agent[result.agent_name] = by_agent.get(result.agent_name, 0) + len(result.findings)
         return {
             "total": len(findings),
             "by_severity": counts,

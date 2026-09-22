@@ -268,3 +268,46 @@ def test_executive_summary_from_claude():
 
     assert report.executive_summary == expected
     assert expected in report.markdown_report
+
+
+@pytest.mark.parametrize("severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+@pytest.mark.parametrize("confidence", [0.0, 0.2, 0.99])
+def test_single_finding_preserves_severity(severity, confidence):
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([
+        _agent_result("LogicAgent", [_finding(severity=severity, confidence=confidence)]),
+    ])
+    assert report.findings[0].severity == severity
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_severity_uses_combined_weighted_votes(reverse):
+    results = [
+        _agent_result("SecurityAgent", [_finding(severity="HIGH", confidence=0.7)]),
+        _agent_result("LogicAgent", [_finding(severity="LOW", confidence=0.8)]),
+        _agent_result("StyleAgent", [_finding(severity="LOW", confidence=0.9)]),
+    ]
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate(list(reversed(results)) if reverse else results)
+    assert report.findings[0].severity == "LOW"
+
+
+@pytest.mark.parametrize("confidence", [0.0, 0.5])
+def test_tied_severity_votes_choose_higher_risk(confidence):
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([
+        _agent_result("LogicAgent", [_finding(severity="LOW", confidence=confidence)]),
+        _agent_result("LogicAgent", [_finding(severity="HIGH", confidence=confidence)]),
+    ])
+    assert report.findings[0].severity == "HIGH"
+
+
+def test_agent_stats_sum_findings_across_files():
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([
+        _agent_result("LogicAgent", [_finding(file="a.py"), _finding(file="a.py", line_start=50)]),
+        _agent_result("LogicAgent", [_finding(file="b.py")]),
+        _agent_result("LogicAgent", []),
+        _agent_result("StyleAgent", []),
+    ])
+    assert report.stats["by_agent"] == {"LogicAgent": 3, "StyleAgent": 0}
