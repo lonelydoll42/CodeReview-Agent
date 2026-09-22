@@ -1,497 +1,216 @@
-# CodeReview-Agent
+<p align="center">
+  <img src="docs/assets/repository-cover.svg" alt="CodeReview-Agent：从 GitHub Pull Request 出发，经安全、逻辑、性能和风格四个专项 Agent，生成可追溯的审查报告" width="100%" />
+</p>
 
-> 面向 GitHub Pull Request 的多智能体 AI 代码审查系统。输入一个 PR URL 后，系统会自动拉取 diff、并行运行专项审查 Agent，并输出结构化报告与 GitHub 评论回写结果。
+<h1 align="center">CodeReview-Agent</h1>
 
-## Recruiter Snapshot
+<p align="center">
+  <strong>让每一次 Pull Request，都多四个审查视角。</strong><br />
+  基于静态分析与大语言模型的 GitHub PR 审查工作台。
+</p>
 
-- **项目定位：** 一个可展示 AI 应用落地能力的多智能体工程项目，而不只是单轮对话 Demo
-- **核心能力：** GitHub 集成、异步编排、专项 Agent 分工、结果聚合与严重级别仲裁
-- **技术亮点：** FastAPI、Streamlit、Pydantic、PostgreSQL、Redis、LLM Provider 抽象
+<p align="center">
+  <a href="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml"><img src="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml/badge.svg?branch=integration%2Freview-updates" alt="集成分支 CI 状态" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11-3776AB?logo=python&logoColor=white" alt="Python 3.10 与 3.11" />
+  <img src="https://img.shields.io/badge/FastAPI-REST%20API-009688?logo=fastapi&logoColor=white" alt="FastAPI REST API" />
+  <img src="https://img.shields.io/badge/Streamlit-Workbench-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit 审查工作台" />
+</p>
 
-招聘/面试视角速览见：[docs/recruiter_brief.md](docs/recruiter_brief.md)。
-
-开发、测试与 Git 工作流见 [CONTRIBUTING.md](CONTRIBUTING.md)，本次分支整合与验证范围见
-[Git 优化实施记录](docs/git-optimization.md)。
-
----
-
-## 目录
-
-1. [项目概述](#项目概述)
-2. [系统架构](#系统架构)
-3. [目录结构](#目录结构)
-4. [核心模块](#核心模块)
-5. [扩展功能](#扩展功能)
-6. [快速开始](#快速开始)
-7. [配置参考](#配置参考)
-8. [API 文档](#api-文档)
-9. [Streamlit UI 使用指南](#streamlit-ui-使用指南)
-10. [测试](#测试)
-11. [技术栈](#技术栈)
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="docs/example-report.md">报告示例</a> ·
+  <a href="docs/guide.md">使用指南</a> ·
+  <a href="docs/recruiter_brief.md">项目亮点</a> ·
+  <a href="CONTRIBUTING.md">参与开发</a>
+</p>
 
 ---
 
-## 项目概述
+## 从一条 PR 链接，到一份可执行的审查报告
 
-CodeReview-Agent 是一个生产级多智能体代码审查平台，具备以下核心能力：
+输入 GitHub Pull Request URL，系统获取代码变更与固定版本的源码，由 **Security、Logic、Performance、Style** 四个 Agent 分别审查，再将结果去重、仲裁并整理成 Markdown 报告。
 
-- **四个并行专项 Agent**：安全漏洞、逻辑缺陷、性能问题、代码风格，各自独立运行
-- **智能聚合**：跨 Agent 去重、严重级别仲裁、Claude 生成 Executive Summary
-- **全链路持久化**：PostgreSQL 存储历史、Redis 实时缓存状态
-- **多种接入方式**：REST API、Streamlit UI、GitHub Webhook 自动触发
-- **结果回写 GitHub**：顶层评论 + 行内 Inline Comment
-- **通知集成**：Slack、企业微信
-- **历史 Dashboard**：趋势图、类别分布、严重级别统计
+每条问题包含文件、行号、严重级别、修改建议、置信度与来源 Agent。可以在 Web 工作台查看历史、筛选问题和下载报告，也可以按需将结果发布到 GitHub PR。
 
----
+| 能力 | 具体做什么 |
+| --- | --- |
+| **四个专项视角** | 安全漏洞、逻辑缺陷、性能问题、代码风格分别审查 |
+| **工具辅助判断** | Semgrep 提供安全规则信号，Python AST 与 radon 提供结构和复杂度信息 |
+| **可追溯的代码快照** | 记录 base/head/merge-base SHA，使用固定版本源码；PR 在获取期间变化时拒绝继续 |
+| **统一报告** | 合并相近问题，按 Agent 权重与置信度投票决定严重级别，保留问题来源 |
+| **审查工作台** | Tasks、Review、Dashboard 三个页面，支持任务历史、报告浏览和趋势统计 |
+| **可选自动化** | GitHub Webhook 触发、PR 评论与行内评论、Slack / 企业微信通知 |
 
-## 系统架构
+> 当前是可运行的工程项目，适合本地体验、Agent 应用学习与二次开发。能力范围与部署注意事项见[当前边界](#当前边界)，封面是流程插画，不是产品运行截图。
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                       接入层                             │
-│   Streamlit UI    FastAPI REST    GitHub Webhook         │
-└────────────────────────┬────────────────────────────────┘
-                         │
-              ┌──────────▼──────────┐
-              │     Orchestrator     │  asyncio 并行调度
-              │   (去重缓存检查)     │
-              └──────────┬──────────┘
-                         │
-         ┌───────────────┼──────────────┬──────────────┐
-   ┌─────▼─────┐  ┌──────▼─────┐  ┌───▼──────┐  ┌────▼──────┐
-   │StyleAgent │  │SecurityAgent│  │LogicAgent│  │Performance│
-   │ 代码风格  │  │Semgrep+Claude│  │AST+Claude│  │  Agent    │
-   └─────┬─────┘  └──────┬─────┘  └───┬──────┘  └────┬──────┘
-         └───────────────┴─────────────┴───────────────┘
-                                  │
-                    ┌─────────────▼──────────────┐
-                    │         Aggregator           │
-                    │   去重 → 仲裁 → 摘要生成    │
-                    └─────────────┬──────────────┘
-                                  │
-         ┌────────────────────────┼─────────────────────┐
-  ┌──────▼──────┐        ┌───────▼──────┐      ┌───────▼──────┐
-  │  PostgreSQL  │        │    Redis      │      │  GitHub PR   │
-  │  (持久化)   │        │  (状态缓存)  │      │  (评论回写)  │
-  └─────────────┘        └──────────────┘      └──────────────┘
-                                  │
-                    ┌─────────────▼──────────────┐
-                    │    Slack / 企业微信 通知     │
-                    └────────────────────────────┘
+## 审查链路
+
+```mermaid
+flowchart LR
+    IN[PR URL / GitHub Webhook] --> SNAP[获取固定版本 diff 与源码]
+    SNAP --> CACHE{版本与规则缓存命中?}
+    CACHE -->|是| COPY[复制历史报告]
+    CACHE -->|否| REVIEW[专项审查]
+    REVIEW --> SEC[Security · Semgrep + LLM]
+    REVIEW --> LOG[Logic · Python AST + LLM]
+    REVIEW --> PERF[Performance · LLM + AST 辅助]
+    REVIEW --> STYLE[Style · LLM]
+    SEC --> AGG[去重 · 严重级别投票 · 摘要]
+    LOG --> AGG
+    PERF --> AGG
+    STYLE --> AGG
+    AGG --> DB[(PostgreSQL)]
+    COPY --> DB
+    DB --> UI[API / Streamlit / Markdown]
+    AGG -. 按配置开启 .-> OUT[GitHub 评论 / 通知]
 ```
 
----
+缓存同时考虑 PR URL、比较版本、共同祖先与分析代码指纹。结果持久化成功且全部 Agent 调用返回后才写入缓存；命中时为新任务复制可查询的报告。Redis 同时用于任务状态和 Agent 结果缓存。
 
-## 目录结构
+## 四个 Agent 如何分工
 
-```
-CodeReview-Agent/
-├── agents/
-│   ├── base.py              Finding / AgentResult / FileDiff / BaseReviewAgent
-│   ├── style_agent.py       代码风格检查（6类）
-│   ├── security_agent.py    安全漏洞检测（Semgrep + Claude，8类）
-│   ├── logic_agent.py       逻辑缺陷检测（AST + Claude，9类）
-│   ├── performance_agent.py 性能问题检测（7类）
-│   ├── aggregator.py        结果聚合：去重 + 仲裁 + 摘要
-│   └── orchestrator.py      任务调度 + 扩展功能集成
-├── tools/
-│   ├── github_client.py     GitHub API：diff拉取 / 评论回写 / Inline Review
-│   ├── ast_parser.py        Python AST 解析 + radon 圈复杂度
-│   └── semgrep_runner.py    Semgrep 静态分析
-├── graph/
-│   └── workflow.py          LangGraph 状态机（备用编排）
-├── api/
-│   └── main.py              FastAPI：/review / /webhook/github / /stats/*
-├── storage/
-│   ├── models.py            SQLAlchemy ORM：ReviewTask/Result/Report
-│   └── cache.py             Redis：状态缓存 + 去重缓存
-├── notifications/
-│   └── webhook.py           Slack / 企业微信 Webhook 通知
-├── ui/
-│   └── app.py               Streamlit UI：审查页 + Dashboard
-├── eval/
-│   └── metrics.py           Precision / Recall / F1 评测
-├── tests/                   pytest 单元测试
-├── config.py                pydantic-settings 配置管理
-├── requirements.txt
-└── .env.example
-```
+| Agent | 关注的问题 | 分析方式 |
+| --- | --- | --- |
+| **Security** | SQL 注入、XSS、硬编码凭据、路径穿越等 | Semgrep 规则 + Claude 语义分析 |
+| **Logic** | 边界条件、空值处理、异常处理、复杂逻辑等 | Python AST / radon + Claude |
+| **Performance** | 循环内重复工作、不必要复制、阻塞调用等 | Claude + Python 结构信息 |
+| **Style** | 命名、函数长度、文档字符串、魔法数字等 | 按新增行分块进行 Claude tool-use 审查 |
 
----
+可识别并送入审查的语言包括 Python、JavaScript、TypeScript、Go、Java、Ruby、Rust、C、C++、C#、PHP、Swift、Kotlin、Scala、Bash、SQL。**语言识别范围不代表静态规则覆盖相同**：AST 分析主要面向 Python，Semgrep 检查取决于内置规则。
 
-## 核心模块
-
-### 1. 数据模型（`agents/base.py`）
-
-```python
-class Finding(BaseModel):
-    file: str
-    line_start: int
-    line_end: int
-    severity: str        # CRITICAL | HIGH | MEDIUM | LOW
-    category: str
-    description: str
-    suggestion: str
-    confidence: float    # 0.0 – 1.0
-
-class AgentResult(BaseModel):
-    agent_name: str
-    findings: List[Finding]
-    summary: str
-    execution_time: float
-    token_used: int
-
-class FileDiff(BaseModel):
-    filename: str
-    language: str
-    added_lines: List[tuple[int, str]]
-    removed_lines: List[tuple[int, str]]
-    raw_diff: str
-```
-
----
-
-### 2. 四个专项 Agent
-
-#### StyleAgent
-
-使用 Claude tool-use，只分析新增行，6 类检查：
-
-| 类别 | 说明 |
-|------|------|
-| `naming` | camelCase vs snake_case、过短命名 |
-| `function_length` | 函数超过 50 行 |
-| `missing_docstring` | 公有函数/类缺少文档字符串 |
-| `magic_number` | 裸数字字面量 |
-| `duplicate_code` | 重复/相似代码块 |
-| `import_hygiene` | 通配符导入、未使用导入 |
-
-#### SecurityAgent
-
-双引擎：Semgrep 静态规则 + Claude 语义理解，8 类漏洞：
-
-`sql_injection` | `xss` | `hardcoded_secret` | `path_traversal` |
-`insecure_deserialization` | `weak_crypto` | `ssrf` | `open_redirect`
-
-#### LogicAgent
-
-AST 预处理（函数结构 + 圈复杂度）+ Claude tool-use，9 类问题：
-
-`null_dereference` | `boundary_condition` | `bare_except` | `missing_error_handling` |
-`high_complexity` | `infinite_loop_risk` | `unused_return` | `infinite_recursion` | `other`
-
-#### PerformanceAgent
-
-AST 辅助 + Claude tool-use，7 类问题：
-
-`n_plus_one` | `loop_invariant` | `unnecessary_copy` | `high_complexity` |
-`inefficient_data_structure` | `blocking_io_in_async` | `redundant_computation`
-
----
-
-### 3. Aggregator（核心亮点）
-
-**Step 1 — 去重**：同文件 ±3 行、同类别合并，`source_agents` 记录所有来源。
-
-**Step 2 — 严重级别仲裁**：按加权置信度投票决定最终级别：
-
-```
-SecurityAgent 1.0 > LogicAgent 0.8 > PerformanceAgent 0.6 > StyleAgent 0.4
-```
-
-**Step 3 — 摘要生成**：调用 `claude-opus-4-6` 生成 Executive Summary + Markdown 报告。
-
----
-
-### 4. Orchestrator 执行流程
-
-```
-步骤 0  GitHub 固定 base/head SHA，拉取 diff、完整源码与 metadata
-步骤 1  去重缓存检查（版本与分析代码指纹命中则复制历史报告）
-步骤 2  过滤支持语言文件（15种语言）
-步骤 3  Agent × File 全矩阵并行（asyncio.gather，每 Agent 独立超时）
-步骤 4  Aggregator 聚合
-步骤 5  持久化至 PostgreSQL
-步骤 6  所有 Agent 调用返回后写入去重缓存
-步骤 7  条件化回写 PR 顶层评论
-步骤 8  条件化发布 Inline Comment
-步骤 9  发送 Slack / 企业微信通知
-```
-
-**支持语言**：Python、JavaScript、TypeScript、Go、Java、Ruby、Rust、C、C++、C#、PHP、Swift、Kotlin、Scala、Bash、SQL
-
----
-
-### 5. 持久化层
-
-**PostgreSQL 表结构**
-
-| 表 | 主要字段 | 说明 |
-|----|----------|------|
-| `review_tasks` | id, pr_url, status, created_at | 任务主表 |
-| `review_results` | task_id, agent_name, findings(JSON), confidence | 每 Agent 一行 |
-| `review_reports` | task_id, final_report(JSON), markdown_report | 聚合报告 |
-
-**Redis Key 模式**
-
-| Key | 内容 | TTL |
-|-----|------|-----|
-| `codereview:task:{id}:status` | 任务状态 | 24h |
-| `codereview:task:{id}:agent:{name}` | Agent 结果 JSON | 24h |
-| `codereview:dedup:{url_hash}:{fingerprint}` | 已完成 task_id（比较版本与分析代码指纹） | 可配置 |
-
----
-
-## 扩展功能
-
-### Feature 1 — PR 顶层评论回写
-
-审查完成后，将完整 Markdown 报告作为 PR 顶层 Issue Comment 发出。
-
-```ini
-ENABLE_PR_COMMENT=true
-```
-
-### Feature 2 — Inline Comment 行内标注
-
-将每条 Finding 精确标注到 PR diff 对应的文件和行号，体验对标 GitHub Advanced Security。
-
-```ini
-ENABLE_INLINE_COMMENT=true
-```
-
-### Feature 3 — 重复提交去重缓存
-
-以 PR URL、base/head SHA、共同祖先和分析代码指纹为 key。相同输入重复提交时，
-为新任务复制历史报告并跳过 Agent 调用。仍需获取 GitHub 快照，耗时取决于网络和文件数量。
-外部分析规则变化时递增 `REVIEW_RULESET_VERSION` 并重启服务。
-
-```ini
-ENABLE_DEDUP_CACHE=true
-DEDUP_CACHE_TTL=86400
-REVIEW_RULESET_VERSION=1
-```
-
-### Feature 4 — GitHub Webhook 自动触发
-
-配置 GitHub 仓库 Webhook 后，PR 打开/更新时自动触发审查，无需手动提交。
-
-```ini
-GITHUB_WEBHOOK_SECRET=your_secret
-```
-
-Webhook URL 填写：`http://your-server:8000/webhook/github`
-监听事件：`pull_request`（opened / synchronize / reopened）
-
-### Feature 5 — 历史趋势 Dashboard
-
-Streamlit 左侧导航切换到 **Dashboard** 页，展示：
-- 总任务数 / 完成 / 失败 / 总 Finding 数（4 个 Metric 卡片）
-- 按严重级别的 Finding 分布柱状图
-- TOP 10 问题类别排行
-- 每日任务数 + Finding 数时间趋势（7~90 天可调）
-
-### Feature 6 — Slack / 企业微信通知
-
-审查完成且发现超过阈值严重级别的问题时，主动推送通知。
-
-```ini
-ENABLE_NOTIFY=true
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-WECHAT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...
-NOTIFY_ON_SEVERITIES=CRITICAL,HIGH
-```
-
-Slack 消息包含「View PR」按钮；企业微信使用 markdown 格式。
-
----
-
+<a id="快速开始"></a>
 ## 快速开始
 
-### 1. 安装依赖
+准备 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
+
+### 1. 获取项目并安装依赖
 
 ```bash
+git clone --branch integration/review-updates https://github.com/lonelydoll42/CodeReview-Agent.git
 cd CodeReview-Agent
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-### 2. 启动基础服务
+编辑 `.env`，填写 `ANTHROPIC_API_KEY` 和 `GITHUB_TOKEN`。默认模型常量位于各 Agent 与 Aggregator 模块中；当前主流程使用 Anthropic SDK。
+
+### 2. 启动本地数据库与缓存
 
 ```bash
-docker run -d -p 5432:5432 \
+docker run -d --name codereview-postgres \
+  -p 127.0.0.1:5432:5432 \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=codereview \
   postgres:15
 
-docker run -d -p 6379:6379 redis:7
+docker run -d --name codereview-redis \
+  -p 127.0.0.1:6379:6379 \
+  redis:7
 ```
 
-### 3. 配置环境变量
+这些命令与 `.env.example` 的本地连接配置对应。如果容器已存在，可用 `docker start codereview-postgres codereview-redis` 再次启动。
+
+### 3. 启动 API
 
 ```bash
-cp .env.example .env
-# 编辑 .env，填写 ANTHROPIC_API_KEY 和 GITHUB_TOKEN
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-### 4. 启动 API 服务
+另开一个终端，在项目根目录启动 UI：
 
 ```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8000
+source .venv/bin/activate
+export DASHBOARD_USER=reviewer
+read -rsp '设置工作台登录密码: ' DASHBOARD_PASSWORD; echo
+export DASHBOARD_PASSWORD
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+python -m streamlit run ui/app.py --server.address 127.0.0.1
 ```
 
-### 5. 启动 UI（可选）
+访问[工作台](http://localhost:8501)，使用刚设置的账号密码登录；API 交互文档位于 [Swagger UI](http://localhost:8000/docs)。UI 环境变量由进程环境读取，完整说明见[使用指南](docs/guide.md)。
 
-```bash
-streamlit run ui/app.py
-# 访问 http://localhost:8501
-```
+### 4. 发起第一次审查
 
----
-
-## 配置参考
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `ANTHROPIC_API_KEY` | — | **必填**，所有 Agent 使用 |
-| `GITHUB_TOKEN` | — | **必填**，拉取 PR diff；回写评论需 write 权限 |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres:postgres@localhost:5432/codereview` | PostgreSQL 连接 |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接 |
-| `MAX_PARALLEL_AGENTS` | `5` | 最大并行 Agent 数 |
-| `AGENT_TIMEOUT_SECONDS` | `30` | 单 Agent 超时（秒） |
-| `ENABLE_PR_COMMENT` | `false` | 审查完成后回写 PR 顶层评论 |
-| `ENABLE_INLINE_COMMENT` | `false` | 发布行内 Inline Comment |
-| `ENABLE_DEDUP_CACHE` | `true` | 同 commit SHA 去重跳过 |
-| `DEDUP_CACHE_TTL` | `86400` | 去重缓存有效期（秒） |
-| `GITHUB_WEBHOOK_SECRET` | — | Webhook HMAC 签名密钥 |
-| `ENABLE_NOTIFY` | `false` | 开启 Slack/企微通知 |
-| `SLACK_WEBHOOK_URL` | — | Slack Incoming Webhook URL |
-| `WECHAT_WEBHOOK_URL` | — | 企业微信机器人 Webhook URL |
-| `NOTIFY_ON_SEVERITIES` | `CRITICAL,HIGH` | 触发通知的最低严重级别 |
-
----
-
-## API 文档
-
-服务启动后访问 `http://localhost:8000/docs` 查看完整 Swagger UI。
-
-### 核心端点
-
-#### `POST /review` — 提交审查任务
+在工作台的 **Tasks** 页面粘贴真实 PR 链接并点击 **Queue Review**，或使用 API：
 
 ```bash
 curl -X POST http://localhost:8000/review \
-  -H "Content-Type: application/json" \
-  -d '{"pr_url": "https://github.com/owner/repo/pull/42"}'
-```
+  -H 'Content-Type: application/json' \
+  -d '{"pr_url":"https://github.com/OWNER/REPO/pull/NUMBER"}'
 
-响应：
-```json
-{"task_id": 1, "status": "pending", "message": "Review task created and queued."}
-```
-
-#### `GET /review/{task_id}` — 查询任务状态与结果
-
-```bash
+# 用创建任务时返回的 task_id 替换 1
 curl http://localhost:8000/review/1
 ```
 
-`status` 字段值：`pending` → `running` → `completed` / `failed`
+默认关闭 GitHub 评论与通知。开启方式见[集成配置](docs/guide.md#github-与通知集成)。
 
-完成后响应包含 `results`（每 Agent 输出）和 `report`（聚合报告 + Markdown）。
+## 报告长什么样
 
-#### `POST /webhook/github` — GitHub Webhook 接收
+以下是演示数据，**并非对本仓库的真实漏洞结论**。完整的摘要、统计和建议见[报告示例](docs/example-report.md)。
 
-在 GitHub 仓库 Settings → Webhooks 中配置：
-- Payload URL：`http://your-server:8000/webhook/github`
-- Content type：`application/json`
-- Secret：与 `GITHUB_WEBHOOK_SECRET` 一致
-- Events：勾选 `Pull requests`
+| 文件与行号 | 严重级别 | 问题类别 | 建议 | 来源 |
+| --- | --- | --- | --- | --- |
+| `src/users.py:24` | HIGH | `sql_injection` | 使用参数化查询绑定用户输入 | SecurityAgent |
+| `src/batch.py:48` | MEDIUM | `loop_invariant` | 将不变计算移到循环外 | PerformanceAgent |
+| `src/config.py:12` | LOW | `magic_number` | 将重试次数提取为命名常量 | StyleAgent |
 
-#### `GET /stats/summary` — 总体统计
+## 文档导航
 
-```json
-{
-  "total_tasks": 120,
-  "completed": 115,
-  "failed": 5,
-  "total_findings": 843,
-  "by_severity": [
-    {"severity": "CRITICAL", "count": 12},
-    {"severity": "HIGH", "count": 87}
-  ]
-}
+| 想了解什么 | 从这里开始 |
+| --- | --- |
+| 配置、API、Webhook、工作台使用与故障排查 | [使用指南](docs/guide.md) |
+| 一份审查结果包含哪些内容 | [报告示例](docs/example-report.md) |
+| 设计取舍与面试展示思路 | [项目亮点](docs/recruiter_brief.md) |
+| 本地测试、分支与贡献流程 | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| 固定快照、源码坐标、缓存与持久化改进 | [集成记录](docs/git-optimization.md) |
+| 封面源文件与复用方式 | [视觉素材](docs/assets/README.md) |
+
+<details>
+<summary><strong>查看项目结构</strong></summary>
+
+```text
+agents/          四个专项 Agent、共享模型、聚合器与调度器
+api/             FastAPI 任务、Webhook 和统计接口
+tools/           GitHub 快照、AST、Semgrep 与缓存版本工具
+storage/         PostgreSQL 模型与 Redis 缓存
+notifications/   Slack / 企业微信通知
+ui/              Streamlit 审查工作台
+eval/            Precision / Recall / F1 评测工具
+graph/           备用 LangGraph 工作流
+tests/           单元测试与 PostgreSQL 集成测试
+docs/            使用指南、示例与首页素材
 ```
 
-#### `GET /stats/top_categories?limit=10` — TOP 问题类别
+</details>
 
-#### `GET /stats/trends?days=30` — 每日趋势数据
-
-#### `GET /health` — 健康检查
-
----
-
-## Streamlit UI 使用指南
-
-### Review 页（默认）
-
-1. 在输入框粘贴 GitHub PR URL
-2. 点击 **Start Review**
-3. 等待进度条完成（通常 30~90 秒）
-4. 查看 5 个 Tab 的结果：
-
-| Tab | 内容 |
-|-----|------|
-| Summary | 统计表 + Executive Summary |
-| Security | SecurityAgent 的安全漏洞 |
-| Logic | LogicAgent 的逻辑缺陷 |
-| Performance | PerformanceAgent 的性能问题 |
-| Style | StyleAgent 的代码风格问题 |
-
-5. 点击底部 **Download Markdown Report** 下载报告
-
-### Dashboard 页
-
-左侧导航栏选择 **Dashboard**：
-- 顶部 4 个 Metric 卡片（总量统计）
-- 严重级别分布图
-- TOP 10 问题类别图
-- 时间趋势图（侧边栏滑块调整时间窗口，7~90 天）
-
----
-
-## 测试
+## 开发与验证
 
 ```bash
-pytest tests/ -v
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+ruff check .
+python -m pip check
 ```
 
-测试覆盖：
-- `test_style_agent.py` — StyleAgent tool-use 流程
-- `test_logic_agent.py` — LogicAgent AST + tool-use
-- `test_performance_agent.py` — PerformanceAgent
-- `test_aggregator.py` — 去重、仲裁逻辑
-- `test_orchestrator.py` — 成功/超时/GitHub失败三种场景
-- `test_metrics.py` — Precision/Recall/F1 计算
+普通测试 mock GitHub、模型和外部服务，无需 API Key。配置 `TEST_DATABASE_URL` 后会额外执行真实 PostgreSQL 集成测试；CI 覆盖 Python 3.10 / 3.11 和 PostgreSQL 15。测试策略与独立 schema 清理方式见[贡献指南](CONTRIBUTING.md)。
 
-普通测试 mock 外部服务，无需真实基础设施。配置专用测试数据库 `TEST_DATABASE_URL`
-后，还会运行 PostgreSQL 建表、报告复制和统计查询集成测试；详见贡献指南。
+<a id="当前边界"></a>
+## 当前边界
 
----
+- 支持不超过 1 MiB 的 UTF-8 文本；删除文件、二进制及不支持的语言会在报告中注明未分析。
+- 目前使用进程内后台任务，不包含可恢复的分布式队列。Agent 内仍有同步调用，并发控制与超时保证有待完善。
+- 部分失败路径仍可能表现为空结果；没有发现问题不等于证明代码安全，需要结合人工审查。
+- 工作台登录与 API 访问控制是两回事；API 暂无统一认证层，公开部署需要补充访问控制。
+- 当前没有 RiskProfile、Playbook 路由、自动 Merge Gate 或通用模型 Provider API；`graph/` 是备用编排，不是 API 默认执行入口。
 
-## 技术栈
+## 后续方向
 
-| 层次 | 技术 |
-|------|------|
-| LLM 调用 | Anthropic SDK，`claude-opus-4-6`，tool-use 模式 |
-| 工作流编排 | asyncio（主）+ LangGraph（备用） |
-| Web API | FastAPI + uvicorn |
-| 数据库 | PostgreSQL 15 + SQLAlchemy 2.0 async |
-| 缓存 | Redis 7 |
-| 静态分析 | Semgrep |
-| 代码分析 | Python AST + radon（圈复杂度） |
-| UI | Streamlit |
-| 配置管理 | pydantic-settings |
-| 测试 | pytest + pytest-asyncio |
-| GitHub 集成 | PyGithub |
-| 通知 | httpx（Slack / 企业微信 Webhook） |
+- [ ] 显式区分完整、部分失败与未覆盖的审查结果。
+- [ ] 完善异步模型调用、并发上限和可恢复任务队列。
+- [ ] 增加统一 API 认证和部署配置。
+- [ ] 扩展评测数据集，持续观察误报、漏报与成本。
+- [ ] 在已有 Agent 接口基础上探索更多模型与代码托管平台。
+
+欢迎通过 [Issues](https://github.com/lonelydoll42/CodeReview-Agent/issues) 提交问题，或参考[贡献指南](CONTRIBUTING.md) 发起改进。

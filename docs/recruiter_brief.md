@@ -1,47 +1,41 @@
-# CodeReview-Agent Recruiter Brief
+# 项目亮点与展示指南
+
+[返回首页](../README.md) · [审查报告示例](example-report.md) · [贡献指南](../CONTRIBUTING.md)
 
 ## 一句话定位
 
-面向 GitHub Pull Request 场景的多智能体代码审查系统，将 diff 解析、风险分类、专项 Agent 审查、结果聚合与 Merge Gate 建议串联为完整流程。
+CodeReview-Agent 将 GitHub PR 快照获取、专项 Agent 审查、静态工具辅助、结果聚合、持久化和工作台展示组织成一条可运行的代码审查链路。
 
-## 为什么适合 Agent 开发岗位
+## 可以从代码验证的工程能力
 
-- 不是单个“代码审查 prompt”，而是把审查任务拆成 Style、Security、Logic、Performance 等专项 Agent。
-- 通过 RiskProfile 和 review playbook 控制不同 PR 的审查策略，体现任务路由和工作流编排能力。
-- 使用 Semgrep、AST 分析和 LLM 推理组合判断问题，避免完全依赖模型自由生成。
-- 输出统一的 Finding / AgentResult / AggregatedReport，便于测试、持久化、前端展示和 GitHub 评论回写。
+| 设计点 | 为什么这样做 | 实现入口 |
+| --- | --- | --- |
+| 专项 Agent | 用安全、逻辑、性能、风格四个维度组织审查职责 | [agents/](../agents/) |
+| 结构化输出 | Finding、AgentResult、AggregatedReport 使展示与存储共享明确的数据契约 | [base.py](../agents/base.py)、[aggregator.py](../agents/aggregator.py) |
+| 固定版本输入 | 避免获取期间 PR 变化，或行内评论落到未审查的新版本 | [github_client.py](../tools/github_client.py) |
+| 完整源码辅助 | AST 与静态分析需要上下文，同时保留真实文件坐标 | [ast_parser.py](../tools/ast_parser.py)、[semgrep_runner.py](../tools/semgrep_runner.py) |
+| 严重级别仲裁 | 区分问题影响与置信度，合并来源并按加权投票裁决 | [aggregator.py](../agents/aggregator.py) |
+| 缓存版本化 | 将比较版本、分析实现和外部规则版本纳入缓存，减少错误复用 | [review_version.py](../tools/review_version.py) |
+| 数据库验证 | 使用隔离 schema 检验建表、报告复制、近期任务与统计 SQL | [数据库集成测试](../tests/test_database_integration.py) |
+| 演示入口 | REST API、任务列表、审查页、Dashboard 与 Markdown 下载 | [api/](../api/)、[ui/](../ui/) |
 
-## 核心链路
+## 建议的五分钟演示
 
-```text
-GitHub PR URL
-  -> Fetch & normalize diff
-  -> RiskProfile classification
-  -> Playbook selection
-  -> Specialized agents
-  -> Aggregator dedup / severity arbitration
-  -> Merge Gate report
-```
+1. **展示问题场景。** 打开一个准备好的 PR，指出需要关注的安全、逻辑或性能变化。
+2. **发起审查。** 在 Tasks 页提交 PR URL，说明后台任务、状态轮询与固定版本输入。
+3. **解读一条发现。** 解释文件、行号、类别、置信度、修改建议与来源 Agent。没有现场 API 凭据时使用[明确标注的示例](example-report.md)。
+4. **解释聚合。** 多个 Agent 的发现可以合并；置信度与严重级别分别处理。
+5. **展示验证与边界。** 打开测试、CI 和 README 的后续方向，说明可恢复任务、并发控制、认证与失败状态仍可继续完善。
 
-## 技术亮点
+## 值得讨论的取舍
 
-- **多 Agent 分工：** 按审查维度拆分 Agent，降低单一大 prompt 的不稳定性。
-- **异步编排：** 基于 FastAPI 后台任务执行审查流程，支持任务创建、状态轮询和事件追踪。
-- **工具增强：** 安全问题使用 Semgrep 预扫描，逻辑和复杂度问题引入 AST 结构分析。
-- **结果聚合：** 对多个 Agent findings 做去重、置信度加权和严重级别裁决，输出统一 Markdown 报告。
-- **工程化接口：** 提供 `/review`、`/agents`、`/playbooks`、`/llm/providers` 等 API，便于演示和扩展。
+- 将审查拆为多个 Agent，如何影响覆盖面、延迟与模型成本？
+- Semgrep、Python AST 与 LLM 提供的信号各有哪些局限？
+- 为什么仅用 PR URL 或 head SHA 不足以作为所有审查缓存的标识？
+- 同一问题有不同严重级别时，如何避免把高置信度误当成高风险？
+- 任务持久化、缓存更新、评论发送发生在不同系统中，失败后如何保持状态清晰？
+- 如何补充真实标注数据来衡量误报、漏报，而不是只展示几次成功案例？
 
-## 面试可讲问题
+## 当前没有实现的能力
 
-- 为什么不做单 Agent，而要拆成多个专项 Agent？
-- RiskProfile 如何影响 Agent 选择和 playbook？
-- Semgrep / AST / LLM 三类信号如何互补？
-- Aggregator 如何处理重复 findings 和 severity 冲突？
-- 如果要接入新的 SCM、模型或审查维度，应该改哪些接口？
-
-## 建议展示方式
-
-1. 提交一个 PR URL，说明系统如何解析 diff。
-2. 展示 RiskProfile 和 selected playbooks。
-3. 展示某个 SecurityAgent 或 LogicAgent 的结构化 finding。
-4. 展示 Aggregator 生成的 Merge Gate Markdown 报告。
+本分支没有 RiskProfile 分类、Playbook 选择、自动 Merge Gate 或 `/agents`、`/playbooks`、`/llm/providers` API。当前模型主链路直接使用 Anthropic；`graph/` 中的 LangGraph 是备用工作流。后续如果引入这些能力，应以对应实现和验证结果更新展示材料。
