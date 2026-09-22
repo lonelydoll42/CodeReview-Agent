@@ -5,6 +5,10 @@
 <h1 align="center">CodeReview-Agent</h1>
 
 <p align="center">
+  <strong>中文</strong> | <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <strong>让每一次 Pull Request，都多四个审查视角。</strong><br />
   基于静态分析与大语言模型的 GitHub PR 审查工作台。
 </p>
