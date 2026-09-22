@@ -40,6 +40,16 @@ class FileDiff(BaseModel):
     # (line_number, line_text) pairs for '-' lines in the diff
     removed_lines: List[tuple[int, str]] = Field(default_factory=list)
     raw_diff: str = ""
+    full_source: str | None = None  # Complete file at the reviewed head SHA.
+    status: str = "modified"
+    previous_filename: str | None = None
+
+    def analysis_source(self) -> str:
+        """Return complete source, or a line-preserving fallback for legacy callers."""
+        if self.full_source is not None:
+            return self.full_source
+        lines = dict(self.added_lines)
+        return "\n".join(lines.get(number, "") for number in range(1, max(lines, default=0) + 1))
 
 
 class BaseReviewAgent(ABC):

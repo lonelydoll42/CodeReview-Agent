@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title description">
+  <title id="title">CodeReview-Agent — Four perspectives. One review.</title>
+  <desc id="description">A pull request passes through Security, Logic, Performance and Style agents into a structured report. An ivory and forest green conceptual illustration, not a product screenshot.</desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1"><stop stop-color="#faf7ef"/><stop offset="1" stop-color="#eee9dc"/></linearGradient>
+    <linearGradient id="board" x2="1" y2="1"><stop stop-color="#183f35"/><stop offset="1" stop-color="#102b25"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#e3ded1"/></pattern>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#8eafa0" opacity=".2"/></pattern>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="m1 1 5 3-5 3" fill="none" stroke="#94bba4" stroke-width="1.4"/></marker>
+  </defs>
+  <rect width="1600" height="800" rx="24" fill="url(#paper)"/>
+  <rect x="720" width="880" height="800" fill="url(#grid)" opacity=".6"/>
+  <circle cx="1480" cy="70" r="168" fill="#d5e1cd" opacity=".65"/>
+  <circle cx="746" cy="738" r="140" fill="#e6cbb0" opacity=".4"/>
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <g transform="translate(72 64)">
+      <rect width="52" height="52" rx="15" fill="#193e33"/>
+      <g fill="none" stroke="#dcefbc" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="17" cy="15" r="3"/><circle cx="17" cy="37" r="3"/><circle cx="36" cy="37" r="3"/>
+        <path d="M17 18v16m4-19h5a10 10 0 0 1 10 10v9m-10-23 4 4-4 4"/>
+      </g>
+    </g>
+    <text x="140" y="86" font-size="16" font-weight="700" fill="#234438" letter-spacing="2">CODE REVIEW,</text>
+    <text x="140" y="110" font-size="16" fill="#637065" letter-spacing="2">FROM EVERY ANGLE.</text>
+    <rect x="72" y="181" width="219" height="32" rx="16" fill="#e1e9d6"/>
+    <circle cx="89" cy="197" r="4" fill="#396d48"/>
+    <text x="102" y="202" font-size="12" fill="#244b36" font-weight="700" letter-spacing="1.4">MULTI-AGENT REVIEW</text>
+    <text x="66" y="322" font-size="83" fill="#1b3028" font-weight="700" letter-spacing="-4">CodeReview</text>
+    <text x="66" y="421" font-size="96" fill="#1b3028" font-weight="700" letter-spacing="-4">Agent<tspan fill="#a96443">.</tspan></text>
+    <path d="M75 453H158" stroke="#a96443" stroke-width="4" stroke-linecap="round"/>
+    <text x="72" y="510" font-size="27" fill="#28493c">Four perspectives. One review.</text>
+    <text x="72" y="553" font-size="20" fill="#637065">Turn pull requests into structured findings,</text>
+    <text x="72" y="584" font-size="20" fill="#637065">clear suggestions, and traceable reports.</text>
+    <g font-family="DejaVu Sans Mono, monospace" font-size="13" fill="#355143">
+      <rect x="72" y="650" width="99" height="35" rx="7" fill="#fffdf7" stroke="#cecfc0"/><text x="91" y="673">FastAPI</text>
+      <rect x="181" y="650" width="120" height="35" rx="7" fill="#fffdf7" stroke="#cecfc0"/><text x="199" y="673">Streamlit</text>
+      <rect x="311" y="650" width="101" height="35" rx="7" fill="#fffdf7" stroke="#cecfc0"/><text x="330" y="673">Claude</text>
+    </g>
+    <text x="72" y="742" fill="#7c8376" font-size="12" letter-spacing="2">GITHUB PR → SPECIALIST AGENTS → REVIEW REPORT</text>
+    <rect x="732" y="64" width="800" height="664" rx="28" fill="#193f30" opacity=".10"/>
+    <rect x="724" y="54" width="800" height="664" rx="28" fill="url(#board)"/>
+    <rect x="740" y="70" width="768" height="632" rx="20" fill="url(#dots)"/>
+    <circle cx="758" cy="84" r="4" fill="#a7c28a"/><circle cx="774" cy="84" r="4" fill="#6b947c"/><circle cx="790" cy="84" r="4" fill="#3d6c55"/>
+    <text x="1479" y="89" text-anchor="end" font-size="11" fill="#94b29f" letter-spacing="2">THE REVIEW PIPELINE</text>
+    <rect x="884" y="120" width="480" height="89" rx="14" fill="#244b3e" stroke="#4b7258"/>
+    <g transform="translate(906 144)" stroke="#c7e5a1" stroke-width="2.2" fill="none" stroke-linecap="round">
+      <circle cx="8" cy="5" r="3"/><circle cx="8" cy="30" r="3"/><circle cx="29" cy="30" r="3"/><path d="M8 8v19m8-22h3a10 10 0 0 1 10 10v12"/>
+    </g>
+    <text x="956" y="150" fill="#afc39f" font-size="11" letter-spacing="2">PULL REQUEST</text>
+    <text x="956" y="179" fill="#f4f2e6" font-size="20" font-weight="700">Diff + source snapshot</text>
+    <g stroke="#94bba4" stroke-width="1.5" fill="none">
+      <path d="M1124 209v24H864v28" marker-end="url(#arrow)"/><path d="M1124 233h260v28" marker-end="url(#arrow)"/>
+      <path d="M1037 233v28" marker-end="url(#arrow)"/><path d="M1211 233v28" marker-end="url(#arrow)"/>
+    </g>
+    <g fill="#244b3e" stroke="#486c54">
+      <rect x="789" y="270" width="150" height="118" rx="13"/><rect x="962" y="270" width="150" height="118" rx="13"/>
+      <rect x="1136" y="270" width="150" height="118" rx="13"/><rect x="1309" y="270" width="150" height="118" rx="13"/>
+    </g>
+    <g fill="none" stroke="#d3e9ad" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+      <path d="m864 290 12 5v10q0 10-12 15-12-5-12-15v-10Zm-5 14 4 4 7-8"/>
+      <path d="m1028 295-9 9 9 9m18-18 9 9-9 9m-7-20-7 22"/>
+      <path d="M1197 316a17 17 0 1 1 28 0m-14-9 9-12m-9-9v4m-17 14h4m26 0h4"/>
+      <path d="m1370 313 4-12 15-15 8 8-15 15Zm4-12 8 8m-13 12h30"/>
+    </g>
+    <g text-anchor="middle" fill="#f4f2e6" font-weight="700" font-size="16">
+      <text x="864" y="345">Security</text><text x="1037" y="345">Logic</text>
+      <text x="1211" y="345" font-size="14">Performance</text><text x="1384" y="345">Style</text>
+    </g>
+    <g text-anchor="middle" fill="#a5b9a6" font-size="11">
+      <text x="864" y="368">Risk &amp; exposure</text><text x="1037" y="368">Behavior &amp; flow</text>
+      <text x="1211" y="368">Cost &amp; efficiency</text><text x="1384" y="368">Clarity &amp; consistency</text>
+    </g>
+    <g stroke="#94bba4" stroke-width="1.5" fill="none">
+      <path d="M864 388v25h520v-25m-347 0v25m174-25v25"/>
+      <path d="M1124 413v29" marker-end="url(#arrow)"/>
+    </g>
+    <rect x="982" y="451" width="284" height="35" rx="17" fill="#cce4a6"/>
+    <text x="1124" y="474" text-anchor="middle" font-size="12" font-weight="700" fill="#223f2f" letter-spacing=".8">DEDUPLICATE · WEIGH · SUMMARIZE</text>
+    <path d="M1124 486v25" fill="none" stroke="#94bba4" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="835" y="519" width="578" height="147" rx="15" fill="#f6f2e7"/>
+    <text x="859" y="553" fill="#234637" font-size="20" font-weight="700">Review report</text>
+    <rect x="1280" y="534" width="105" height="27" rx="13" fill="#e4eacb"/>
+    <text x="1332" y="552" text-anchor="middle" fill="#486043" font-size="10" font-weight="700" letter-spacing="1">TRACEABLE</text>
+    <path d="M859 568h530" stroke="#dbddce"/>
+    <rect x="859" y="584" width="57" height="25" rx="5" fill="#f2d8b6"/>
+    <text x="887" y="601" text-anchor="middle" fill="#85512d" font-size="11" font-weight="700">HIGH</text>
+    <text x="931" y="602" fill="#3e5345" font-family="DejaVu Sans Mono, monospace" font-size="13">file : line → finding → suggestion</text>
+    <text x="859" y="640" fill="#6e7b69" font-size="12">Source agents · Confidence · Reviewed commit</text>
+    <text x="1124" y="693" text-anchor="middle" fill="#9ab69e" font-size="10" letter-spacing="2">ILLUSTRATED WORKFLOW · NOT A LIVE RUN</text>
+  </g>
+</svg>
