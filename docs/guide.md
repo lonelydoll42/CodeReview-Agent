@@ -2,7 +2,7 @@
 
 [返回仓库首页](../README.md) · [报告示例](example-report.md) · [开发指南](../CONTRIBUTING.md)
 
-本指南对应 `integration/review-updates` 中的实现。首次运行请先完成 README 的[快速开始](../README.md#快速开始)。
+本指南对应与此文档一同发布的仓库实现。首次运行请先完成 README 的[快速开始](../README.md#快速开始)。
 
 ## 配置参考
 

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml"><img src="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml/badge.svg?branch=integration%2Freview-updates" alt="集成分支 CI 状态" /></a>
+  <a href="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml"><img src="https://github.com/lonelydoll42/CodeReview-Agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="主分支 CI 状态" /></a>
   <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11-3776AB?logo=python&logoColor=white" alt="Python 3.10 与 3.11" />
   <img src="https://img.shields.io/badge/FastAPI-REST%20API-009688?logo=fastapi&logoColor=white" alt="FastAPI REST API" />
   <img src="https://img.shields.io/badge/Streamlit-Workbench-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit 审查工作台" />
@@ -86,7 +86,7 @@ flowchart LR
 ### 1. 获取项目并安装依赖
 
 ```bash
-git clone --branch integration/review-updates https://github.com/lonelydoll42/CodeReview-Agent.git
+git clone https://github.com/lonelydoll42/CodeReview-Agent.git
 cd CodeReview-Agent
 python3 -m venv .venv
 source .venv/bin/activate
