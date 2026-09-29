@@ -11,14 +11,19 @@ Checks performed on *added* lines only:
 """
 from __future__ import annotations
 
-import os
 import textwrap
 import time
 from typing import Any, Dict, List
 
-import anthropic
-
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.errors import (
+    AgentRuntime,
+    max_source_line,
+    maybe_await,
+    parse_tool_findings,
+    run_blocking,
+    token_count,
+)
 from tools.ast_parser import ASTParser
 
 # ---------------------------------------------------------------------------
@@ -152,11 +157,27 @@ def _chunk_added_lines(
 class PerformanceAgent(BaseReviewAgent):
     """Reviews code diffs for performance issues using Claude tool-use."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        client: Any | None = None,
+        request_timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        self._runtime = AgentRuntime(
+            agent_name="PerformanceAgent",
+            api_key=api_key,
+            client=client,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
+        self._client = self._runtime.client
         self._parser = ASTParser()
+
+    async def aclose(self) -> None:
+        """Close the shared async provider client during worker shutdown."""
+        await self._runtime.close()
 
     async def review(self, file_diff: FileDiff) -> AgentResult:
         """Run performance review on file_diff and return an AgentResult."""
@@ -164,14 +185,22 @@ class PerformanceAgent(BaseReviewAgent):
 
         # Pre-compute complexity from all added line text
         added_code = file_diff.analysis_source()
-        complexity = self._parser.get_complexity(added_code, file_diff.language)
+        # ASTParser/radon is synchronous.  Keep it off the event loop; cancelling
+        # this awaiter cannot terminate the native worker thread.
+        complexity = await run_blocking(
+            self._parser.get_complexity,
+            added_code,
+            file_diff.language,
+        )
 
         all_findings: List[Finding] = []
         total_tokens = 0
 
         chunks = _chunk_added_lines(file_diff.added_lines, MAX_ADDED_LINES_PER_CHUNK)
         for chunk in chunks:
-            findings, tokens = self._call_claude(file_diff, chunk, complexity)
+            findings, tokens = await maybe_await(
+                self._call_claude(file_diff, chunk, complexity)
+            )
             all_findings.extend(findings)
             total_tokens += tokens
 
@@ -187,7 +216,7 @@ class PerformanceAgent(BaseReviewAgent):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _call_claude(
+    async def _call_claude(
         self,
         file_diff: FileDiff,
         chunk_added: List[tuple[int, str]],
@@ -195,48 +224,43 @@ class PerformanceAgent(BaseReviewAgent):
     ) -> tuple[List[Finding], int]:
         """Send one chunk to Claude and return (findings, tokens_used)."""
         prompt = _build_prompt(file_diff, chunk_added, complexity)
-        response = self._client.messages.create(
+        response = await self._runtime.create_message(
             model=MODEL,
             max_tokens=4096,
             tools=[REPORT_FINDINGS_TOOL],
             tool_choice={"type": "any"},
             messages=[{"role": "user", "content": prompt}],
         )
-        tokens = response.usage.input_tokens + response.usage.output_tokens
-        return self._parse_response(response, file_diff.filename), tokens
+        tokens = token_count(response)
+        return (
+            self._parse_response(response, file_diff.filename, max_source_line(file_diff)),
+            tokens,
+        )
 
     @staticmethod
     def _parse_response(
-        response: anthropic.types.Message,
+        response: Any,
         filename: str,
+        max_line: int = 10**9,
     ) -> List[Finding]:
         """Extract Finding objects from a Claude tool-use response."""
-        for block in response.content:
-            if (
-                block.type != "tool_use"
-                or block.name != "report_performance_findings"
-            ):
-                continue
-            raw: List[Dict[str, Any]] = block.input.get("findings", [])
-            results: List[Finding] = []
-            for item in raw:
-                try:
-                    results.append(
-                        Finding(
-                            file=filename,
-                            line_start=item["line_start"],
-                            line_end=item["line_end"],
-                            severity=item["severity"],
-                            category=item["category"],
-                            description=item["description"],
-                            suggestion=item["suggestion"],
-                            confidence=float(item["confidence"]),
-                        )
-                    )
-                except (KeyError, ValueError):
-                    continue
-            return results
-        return []
+        return parse_tool_findings(
+            response,
+            expected_tool_name="report_performance_findings",
+            filename=filename,
+            max_line=max_line,
+            agent_name="PerformanceAgent",
+            allowed_categories={
+                "n_plus_one",
+                "loop_invariant",
+                "unnecessary_copy",
+                "high_complexity",
+                "inefficient_structure",
+                "blocking_call",
+                "redundant_computation",
+                "other",
+            },
+        )
 
     @staticmethod
     def _build_summary(findings: List[Finding]) -> str:

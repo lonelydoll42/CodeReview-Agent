@@ -10,14 +10,18 @@ Checks performed on *added* lines only:
 """
 from __future__ import annotations
 
-import os
 import textwrap
 import time
 from typing import Any, Dict, List
 
-import anthropic
-
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.errors import (
+    AgentRuntime,
+    max_source_line,
+    maybe_await,
+    parse_tool_findings,
+    token_count,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -139,10 +143,26 @@ def _chunk_added_lines(
 class StyleAgent(BaseReviewAgent):
     """Uses Claude tool-use to detect style issues in a code diff."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        client: Any | None = None,
+        request_timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        self._runtime = AgentRuntime(
+            agent_name="StyleAgent",
+            api_key=api_key,
+            client=client,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
+        self._client = self._runtime.client
+
+    async def aclose(self) -> None:
+        """Close the shared async provider client during worker shutdown."""
+        await self._runtime.close()
 
     # ------------------------------------------------------------------
     # Public interface
@@ -156,7 +176,7 @@ class StyleAgent(BaseReviewAgent):
 
         chunks = _chunk_added_lines(file_diff.added_lines, MAX_ADDED_LINES_PER_CHUNK)
         for chunk in chunks:
-            findings, tokens = self._call_claude(file_diff, chunk)
+            findings, tokens = await maybe_await(self._call_claude(file_diff, chunk))
             all_findings.extend(findings)
             total_tokens += tokens
 
@@ -172,54 +192,48 @@ class StyleAgent(BaseReviewAgent):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _call_claude(
+    async def _call_claude(
         self,
         file_diff: FileDiff,
         chunk_added: List[tuple[int, str]],
     ) -> tuple[List[Finding], int]:
         """Send one chunk to Claude and return (findings, tokens_used)."""
         prompt = _build_prompt(file_diff, chunk_added)
-        response = self._client.messages.create(
+        response = await self._runtime.create_message(
             model=MODEL,
             max_tokens=4096,
             tools=[REPORT_FINDINGS_TOOL],
             tool_choice={"type": "any"},
             messages=[{"role": "user", "content": prompt}],
         )
-        tokens = response.usage.input_tokens + response.usage.output_tokens
-        return self._parse_response(response, file_diff.filename), tokens
+        tokens = token_count(response)
+        return (
+            self._parse_response(response, file_diff.filename, max_source_line(file_diff)),
+            tokens,
+        )
 
+    @staticmethod
     def _parse_response(
-        self,
-        response: anthropic.types.Message,
+        response: Any,
         filename: str,
+        max_line: int = 10**9,
     ) -> List[Finding]:
         """Extract Finding objects from the tool-use block in *response*."""
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            if block.name != "report_style_findings":
-                continue
-            raw: List[Dict[str, Any]] = block.input.get("findings", [])
-            results: List[Finding] = []
-            for item in raw:
-                try:
-                    results.append(
-                        Finding(
-                            file=filename,
-                            line_start=item["line_start"],
-                            line_end=item["line_end"],
-                            severity=item["severity"],
-                            category=item["category"],
-                            description=item["description"],
-                            suggestion=item["suggestion"],
-                            confidence=float(item["confidence"]),
-                        )
-                    )
-                except (KeyError, ValueError):
-                    continue
-            return results
-        return []
+        return parse_tool_findings(
+            response,
+            expected_tool_name="report_style_findings",
+            filename=filename,
+            max_line=max_line,
+            agent_name="StyleAgent",
+            allowed_categories={
+                "naming",
+                "function_length",
+                "missing_docstring",
+                "magic_number",
+                "code_duplication",
+                "import_hygiene",
+            },
+        )
 
     @staticmethod
     def _build_summary(findings: List[Finding]) -> str:
@@ -231,4 +245,3 @@ class StyleAgent(BaseReviewAgent):
             counts[f.severity] = counts.get(f.severity, 0) + 1
         parts = [f"{sev}: {n}" for sev, n in sorted(counts.items())]
         return f"Style review found {len(findings)} issue(s) – {', '.join(parts)}."
-

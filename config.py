@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # Agent configuration
     MAX_PARALLEL_AGENTS: int = 5
     AGENT_TIMEOUT_SECONDS: int = 30
+    ANTHROPIC_REQUEST_TIMEOUT_SECONDS: float = 30.0
+    ANTHROPIC_MAX_RETRIES: int = 2
 
     # Feature: PR comment write-back
     ENABLE_PR_COMMENT: bool = False          # top-level PR comment

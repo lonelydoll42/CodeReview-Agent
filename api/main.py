@@ -25,6 +25,7 @@ from storage.models import (
     TaskStatus,
     engine,
     get_db,
+    bootstrap_database,
 )
 from storage.cache import get_task_status, set_task_status
 
@@ -41,8 +42,7 @@ _dashboard_cache_lock = asyncio.Lock()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await bootstrap_database()
     yield
     await engine.dispose()
 
@@ -85,8 +85,21 @@ class ReviewCreateResponse(BaseModel):
 
 class AgentResultSchema(BaseModel):
     agent_name: str
+    filename: str | None = None
+    status: str = "completed"
+    error_code: str | None = None
     findings: dict[str, Any]
     confidence: float
+
+
+class CoverageSchema(BaseModel):
+    filename: str
+    language: str = ""
+    status: str
+    reason: str = ""
+    expected_agents: int = 0
+    completed_agents: int = 0
+    failed_agents: int = 0
 
 
 class ReportSchema(BaseModel):
@@ -102,6 +115,7 @@ class ReviewStatusResponse(BaseModel):
     created_at: str
     updated_at: str
     results: list[AgentResultSchema] = []
+    coverage: list[CoverageSchema] = []
     report: ReportSchema | None = None
 
 
@@ -186,6 +200,7 @@ async def get_review(
     options = [selectinload(ReviewTask.report)]
     if include_results:
         options.append(selectinload(ReviewTask.results))
+    options.append(selectinload(ReviewTask.coverage))
 
     stmt = (
         select(ReviewTask)
@@ -201,20 +216,37 @@ async def get_review(
             detail=f"Review task {task_id} not found.",
         )
 
-    # Prefer Redis for status (fast path); fall back to DB value
-    cached_status = await get_task_status(task_id)
-    current_status = cached_status if cached_status is not None else task.status.value
+    # The database is authoritative for terminal state.  Redis is a best
+    # effort progress cache and may still say ``running`` after a worker has
+    # committed a terminal result.
+    current_status = task.status.value
 
-    results = []
+    results: list[AgentResultSchema] = []
     if include_results:
         results = [
             AgentResultSchema(
                 agent_name=r.agent_name,
+                filename=r.filename if isinstance(r.filename, str) else None,
+                status=r.status if isinstance(r.status, str) else "completed",
+                error_code=r.error_code if isinstance(r.error_code, str) else None,
                 findings=r.findings,
                 confidence=r.confidence,
             )
-            for r in task.results
+            for r in getattr(task, "results", [])
         ]
+
+    coverage = [
+        CoverageSchema(
+            filename=row.filename,
+            language=row.language,
+            status=row.status,
+            reason=row.reason,
+            expected_agents=row.expected_agents,
+            completed_agents=row.completed_agents,
+            failed_agents=row.failed_agents,
+        )
+        for row in getattr(task, "coverage", [])
+    ]
 
     report_schema: ReportSchema | None = None
     if task.report is not None:
@@ -231,6 +263,7 @@ async def get_review(
         created_at=task.created_at.isoformat(),
         updated_at=task.updated_at.isoformat(),
         results=results,
+        coverage=coverage,
         report=report_schema,
     )
 
@@ -324,6 +357,8 @@ class SeverityCount(BaseModel):
 class StatsSummaryResponse(BaseModel):
     total_tasks: int
     completed: int
+    partial: int = 0
+    uncovered: int = 0
     failed: int
     total_findings: int
     by_severity: list[SeverityCount]
@@ -401,6 +436,8 @@ async def _build_stats_summary(db: AsyncSession) -> StatsSummaryResponse:
     counts_stmt = select(
         func.count(ReviewTask.id).label("total_tasks"),
         func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.COMPLETED).label("completed"),
+        func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.PARTIAL).label("partial"),
+        func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.UNCOVERED).label("uncovered"),
         func.count(ReviewTask.id).filter(ReviewTask.status == TaskStatus.FAILED).label("failed"),
     )
     counts = (await db.execute(counts_stmt)).one()
@@ -423,6 +460,8 @@ async def _build_stats_summary(db: AsyncSession) -> StatsSummaryResponse:
     return StatsSummaryResponse(
         total_tasks=counts.total_tasks or 0,
         completed=counts.completed or 0,
+        partial=counts.partial or 0,
+        uncovered=counts.uncovered or 0,
         failed=counts.failed or 0,
         total_findings=total_findings or 0,
         by_severity=by_severity,

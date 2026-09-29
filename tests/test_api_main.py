@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -136,3 +137,45 @@ async def test_get_review_can_skip_agent_results():
     assert response.status == "completed"
     assert response.results == []
     assert response.report is not None
+
+
+@pytest.mark.asyncio
+async def test_get_review_uses_database_terminal_status_and_exposes_coverage():
+    """A stale Redis progress value must not hide a durable terminal result."""
+    now = datetime.now(timezone.utc)
+    task = SimpleNamespace(
+        id=12,
+        pr_url="https://github.com/owner/repo/pull/12",
+        status=TaskStatus.COMPLETED,
+        created_at=now,
+        updated_at=now,
+        results=[SimpleNamespace(
+            agent_name="LogicAgent",
+            filename="app.py",
+            status="completed",
+            error_code=None,
+            findings={"findings": []},
+            confidence=0.0,
+        )],
+        coverage=[SimpleNamespace(
+            filename="README.md",
+            language="markdown",
+            status="unsupported",
+            reason="unsupported language",
+            expected_agents=0,
+            completed_agents=0,
+            failed_agents=0,
+        )],
+        report=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = task
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=execute_result)
+
+    with patch("api.main.get_task_status", new_callable=AsyncMock, return_value="running"):
+        response = await get_review(task_id=12, include_results=True, db=db)
+
+    assert response.status == "completed"
+    assert response.results[0].filename == "app.py"
+    assert response.coverage[0].status == "unsupported"

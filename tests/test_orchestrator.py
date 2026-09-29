@@ -16,7 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agents.base import AgentResult, FileDiff, Finding
+import agents.orchestrator as module
+from agents.base import AgentExecution, AgentResult, FileDiff, Finding
+from agents.aggregator import AggregatedReport
 from agents.orchestrator import Orchestrator, _run_one_agent
 
 
@@ -227,3 +229,98 @@ async def test_run_github_failure():
     assert "failed" in statuses
     # Aggregator should NOT have been called
     orchestrator.aggregator.aggregate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_agent_limiter_is_shared_and_queue_wait_is_outside_timeout(monkeypatch):
+    """Concurrent review tasks share MAX_PARALLEL_AGENTS, without queue timeouts."""
+    monkeypatch.setattr(module, "settings", type(
+        "Settings", (), {"MAX_PARALLEL_AGENTS": 2}
+    )())
+    active = 0
+    peak = 0
+
+    class CountingAgent:
+        async def review(self, file_diff: FileDiff) -> AgentResult:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return _make_agent_result(type(self).__name__, n_findings=0)
+
+    records: list[AgentExecution] = []
+    results = await asyncio.gather(*[
+        _run_one_agent(CountingAgent(), _file_diff(), index, timeout=0.2, execution_records=records)
+        for index in range(6)
+    ])
+    assert peak == 2
+    assert all(isinstance(result, AgentResult) for result in results)
+    assert len(records) == 6
+
+
+@pytest.mark.asyncio
+async def test_agent_limiter_releases_after_cancellation(monkeypatch):
+    """Cancelling a running attempt must not strand the shared permit."""
+    monkeypatch.setattr(module, "settings", type("Settings", (), {"MAX_PARALLEL_AGENTS": 1})())
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingAgent:
+        async def review(self, file_diff: FileDiff) -> AgentResult:
+            started.set()
+            await release.wait()
+            return _make_agent_result(type(self).__name__, n_findings=0)
+
+    blocked = asyncio.create_task(_run_one_agent(BlockingAgent(), _file_diff(), 1, timeout=1))
+    await started.wait()
+    blocked.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await blocked
+
+    class QuickAgent:
+        async def review(self, file_diff: FileDiff) -> AgentResult:
+            return _make_agent_result(type(self).__name__, n_findings=0)
+
+    result = await _run_one_agent(QuickAgent(), _file_diff(), 2, timeout=0.05)
+    assert isinstance(result, AgentResult)
+
+
+@pytest.mark.asyncio
+async def test_zero_findings_are_persisted_as_completed_attempt(monkeypatch):
+    """An empty successful result is a covered attempt, not a missing row."""
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    result = _make_agent_result("LogicAgent", n_findings=0)
+    execution = AgentExecution(
+        agent_name="LogicAgent",
+        filename="app.py",
+        language="python",
+        status="completed",
+        result=result,
+    )
+    report = AggregatedReport(
+        task_id=1,
+        pr_url="url",
+        findings=[],
+        executive_summary="ok",
+        markdown_report="# report",
+        stats={},
+        review_status="completed",
+        agent_executions=[execution],
+    )
+    session = AsyncMock()
+    task = MagicMock()
+    session.get = AsyncMock(return_value=task)
+    session.add = MagicMock()
+    session.commit = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr("agents.orchestrator.AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr("agents.orchestrator.set_task_status", AsyncMock())
+
+    await orchestrator._persist(1, [result], report)
+    rows = [call.args[0] for call in session.add.call_args_list]
+    persisted = next(row for row in rows if row.__class__.__name__ == "ReviewResult")
+    assert persisted.filename == "app.py"
+    assert persisted.status == "completed"
+    assert persisted.findings["findings"] == []

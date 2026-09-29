@@ -1,5 +1,5 @@
 """Full-file analysis must preserve source coordinates and change scope."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ async def test_logic_agent_parses_enclosing_function():
     fd = FileDiff(filename="app.py", added_lines=[(3, "        return 2")], full_source=source)
     agent = LogicAgent.__new__(LogicAgent)
     agent._parser = ASTParser()
-    agent._call_claude = MagicMock(return_value=([], 0))
+    agent._call_claude = AsyncMock(return_value=([], 0))
     with patch.object(agent._parser, "parse_python", wraps=agent._parser.parse_python) as parse:
         await agent.review(fd)
     parse.assert_called_once_with(source)
@@ -29,7 +29,7 @@ async def test_performance_agent_uses_full_source():
     fd = FileDiff(filename="app.py", added_lines=[(2, "    return 1")], full_source="def f():\n    return 1\n")
     agent = PerformanceAgent.__new__(PerformanceAgent)
     agent._parser = MagicMock()
-    agent._call_claude = MagicMock(return_value=([], 0))
+    agent._call_claude = AsyncMock(return_value=([], 0))
     await agent.review(fd)
     agent._parser.get_complexity.assert_called_once_with(fd.full_source, "python")
 

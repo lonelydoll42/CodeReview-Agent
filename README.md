@@ -65,7 +65,24 @@ flowchart LR
     AGG -. 按配置开启 .-> OUT[GitHub 评论 / 通知]
 ```
 
-缓存同时考虑 PR URL、比较版本、共同祖先与分析代码指纹。结果持久化成功且全部 Agent 调用返回后才写入缓存；命中时为新任务复制可查询的报告。Redis 同时用于任务状态和 Agent 结果缓存。
+缓存同时考虑 PR URL、比较版本、共同祖先与分析代码指纹。只有结果持久化成功且全部 Agent 调用完成的审查才写入缓存；部分失败、未覆盖和失败任务不会污染缓存。命中时为新任务复制可查询的报告。Redis 同时用于任务状态和 Agent 结果缓存。
+
+一次审查会明确标记为 `completed`、`partial`、`uncovered` 或 `failed`：空 findings 是一次成功的清洁结果，模型超时、异常或畸形工具输出会进入失败覆盖统计，未支持语言或没有可分析文件则标记为未覆盖。报告还保留文件级覆盖和 Agent 执行状态，便于区分“没有发现问题”和“没有完成审查”。
+
+## 不启动服务，先审查本地 Diff
+
+只想在提交前快速检查当前改动时，不需要 Docker、数据库、Redis、GitHub Token 或模型 Key：
+
+```bash
+# 工作区未暂存改动
+python -m tools.local_review
+
+# 已暂存改动，或相对某个基线分支的改动
+python -m tools.local_review --staged
+python -m tools.local_review --base main --output review.md
+```
+
+这个入口使用仓库内置的静态规则和变更启发式，重点检查新增代码中的常见安全问题，以及被删除的授权校验；结果仍采用统一的 Markdown 报告格式。它适合低成本试用，不替代需要完整源码上下文和模型判断的 GitHub PR 审查。也可以把 unified diff 通过 `--diff-file -` 从标准输入传入。供编程助手调用的最小指引见 [`skills/local-diff-review/SKILL.md`](skills/local-diff-review/SKILL.md)。
 
 ## 四个 Agent 如何分工
 
@@ -165,6 +182,7 @@ curl http://localhost:8000/review/1
 | 设计取舍与面试展示思路 | [项目亮点](docs/recruiter_brief.md) |
 | 本地测试、分支与贡献流程 | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | 固定快照、源码坐标、缓存与持久化改进 | [集成记录](docs/git-optimization.md) |
+| 并发、失败状态与后续优化边界 | [优化路线图](docs/optimization-roadmap.md) |
 | 封面源文件与复用方式 | [视觉素材](docs/assets/README.md) |
 
 <details>
@@ -200,15 +218,17 @@ python -m pip check
 ## 当前边界
 
 - 支持不超过 1 MiB 的 UTF-8 文本；删除文件、二进制及不支持的语言会在报告中注明未分析。
-- 目前使用进程内后台任务，不包含可恢复的分布式队列。Agent 内仍有同步调用，并发控制与超时保证有待完善。
-- 部分失败路径仍可能表现为空结果；没有发现问题不等于证明代码安全，需要结合人工审查。
+- 目前使用进程内后台任务，不包含可恢复的分布式队列；服务重启仍可能丢失运行中的任务。
+- Agent 请求使用异步客户端和有界等待；调度器在服务事件循环内按配置限制跨任务的并发。同步 AST/Semgrep 工作会移出事件循环，但线程本身不能被强制终止。
+- 审查会区分完整、部分失败、未覆盖和失败；没有发现问题不等于证明代码安全，需要结合覆盖信息和人工审查。
 - 工作台登录与 API 访问控制是两回事；API 暂无统一认证层，公开部署需要补充访问控制。
 - 当前没有 RiskProfile、Playbook 路由、自动 Merge Gate 或通用模型 Provider API；`graph/` 是备用编排，不是 API 默认执行入口。
 
 ## 后续方向
 
-- [ ] 显式区分完整、部分失败与未覆盖的审查结果。
-- [ ] 完善异步模型调用、并发上限和可恢复任务队列。
+- [x] 显式区分完整、部分失败与未覆盖的审查结果。
+- [x] 完善异步模型调用与跨任务并发上限。
+- [ ] 引入可恢复的持久化任务队列、租约和幂等消费。
 - [ ] 增加统一 API 认证和部署配置。
 - [ ] 扩展评测数据集，持续观察误报、漏报与成本。
 - [ ] 在已有 Agent 接口基础上探索更多模型与代码托管平台。

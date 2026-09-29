@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -58,7 +58,11 @@ async def test_no_findings_for_clean_code():
     mock_resp = _make_response([])  # model reports nothing
 
     agent = PerformanceAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     assert result.findings == []
@@ -101,7 +105,11 @@ async def test_n_plus_one_detected():
     mock_resp = _make_response(raw_findings)
 
     agent = PerformanceAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     assert len(result.findings) == 1
@@ -145,7 +153,11 @@ async def test_blocking_call_in_async_detected():
     mock_resp = _make_response(raw_findings)
 
     agent = PerformanceAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     categories = {f.category for f in result.findings}

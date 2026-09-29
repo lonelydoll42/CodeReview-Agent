@@ -10,13 +10,14 @@ Steps:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Dict, List, Optional
 
 import anthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from agents.base import AgentResult, Finding
+from agents.base import AgentExecution, AgentResult, FileCoverage, Finding
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,7 +66,10 @@ class AggregatedReport(BaseModel):
     executive_summary: str
     markdown_report: str
     stats: Dict[str, Any]
-    pr_metadata: Dict[str, Any] = {}
+    pr_metadata: Dict[str, Any] = Field(default_factory=dict)
+    review_status: str = "completed"
+    coverage: List[FileCoverage] = Field(default_factory=list)
+    agent_executions: List[AgentExecution] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +79,27 @@ class AggregatedReport(BaseModel):
 class Aggregator:
     """Merges AgentResult objects into a single AggregatedReport."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        enable_llm_summary: bool = True,
+    ) -> None:
+        """Create an aggregator.
+
+        ``enable_llm_summary=False`` is used by the service-free local
+        diff entry point.  It keeps report formatting and deduplication shared
+        with the main workflow while guaranteeing that aggregation does not
+        make an Anthropic request.
+        """
+        self._enable_llm_summary = enable_llm_summary
+        # A local/offline aggregation must not require an API key or even
+        # construct a provider client.  The deterministic path is also used
+        # when a provider is unavailable at runtime.
+        self._client = (
+            anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+            if enable_llm_summary
+            else None
         )
 
     # ------------------------------------------------------------------
@@ -90,6 +112,10 @@ class Aggregator:
         pr_url: str = "",
         task_id: int | None = None,
         pr_metadata: Dict[str, Any] | None = None,
+        *,
+        review_status: str = "completed",
+        coverage: List[FileCoverage] | None = None,
+        agent_executions: List[AgentExecution] | None = None,
     ) -> AggregatedReport:
         """Main entry point: dedup + arbitrate + generate report."""
         # Flatten all findings, tagging each with its agent name
@@ -108,8 +134,20 @@ class Aggregator:
             f.line_start,
         ))
 
-        stats = self._compute_stats(deduped, agent_results)
-        executive_summary = self._generate_executive_summary(deduped)
+        coverage_records = coverage or []
+        execution_records = agent_executions or []
+        stats = self._compute_stats(
+            deduped,
+            agent_results,
+            review_status=review_status,
+            coverage=coverage_records,
+            agent_executions=execution_records,
+        )
+        executive_summary = self._generate_executive_summary(
+            deduped,
+            review_status=review_status,
+            coverage=coverage_records,
+        )
 
         report = AggregatedReport(
             task_id=task_id,
@@ -119,9 +157,22 @@ class Aggregator:
             markdown_report="",
             stats=stats,
             pr_metadata=pr_metadata or {},
+            review_status=review_status,
+            coverage=coverage_records,
+            agent_executions=execution_records,
         )
         report.markdown_report = self._render_markdown(report)
         return report
+
+    async def aggregate_async(self, *args: Any, **kwargs: Any) -> AggregatedReport:
+        """Run the legacy synchronous aggregation off the event loop.
+
+        The provider summary client is intentionally kept synchronous for
+        backwards compatibility with callers and tests.  Production review
+        orchestration uses this method so that a slow summary request cannot
+        block unrelated API requests or agent tasks.
+        """
+        return await asyncio.to_thread(self.aggregate, *args, **kwargs)
 
     # ------------------------------------------------------------------
     # Deduplication
@@ -242,10 +293,27 @@ class Aggregator:
     # Executive summary (Claude)
     # ------------------------------------------------------------------
 
-    def _generate_executive_summary(self, findings: List[DeduplicatedFinding]) -> str:
+    def _generate_executive_summary(
+        self,
+        findings: List[DeduplicatedFinding],
+        *,
+        review_status: str = "completed",
+        coverage: List[FileCoverage] | None = None,
+    ) -> str:
         """Call Claude to produce a 3-5 sentence executive summary."""
+        coverage_warning = _coverage_warning(review_status, coverage or [])
         if not findings:
+            if review_status == "failed":
+                return "The review could not complete because all agent analyses failed; no conclusion can be drawn from this report."
+            if review_status == "partial":
+                return "The review was incomplete because one or more agent analyses failed or timed out; the findings below cover only successful agent runs."
+            if coverage_warning:
+                return f"No issues were found in the analyzed files. {coverage_warning}"
             return "No issues were found. The code looks clean across all review dimensions."
+
+        if not self._enable_llm_summary or self._client is None:
+            summary = self._fallback_executive_summary(findings)
+            return f"{summary} {coverage_warning}" if coverage_warning else summary
 
         counts = _count_by_severity(findings)
         bullet_lines = [
@@ -277,18 +345,26 @@ class Aggregator:
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text.strip()
+            summary = response.content[0].text.strip()
+            return f"{summary} {coverage_warning}" if coverage_warning else summary
         except Exception:  # noqa: BLE001
             # Fallback: generate a plain-text summary without Claude
-            total = len(findings)
-            parts = [
-                f"{sev}: {counts[sev]}" for sev in _SEVERITY_ORDER if counts.get(sev)
-            ]
-            return (
-                f"Code review completed with {total} finding(s) "
-                f"({', '.join(parts)}). "
-                "Please review the detailed findings below."
-            )
+            summary = self._fallback_executive_summary(findings)
+            return f"{summary} {coverage_warning}" if coverage_warning else summary
+
+    @staticmethod
+    def _fallback_executive_summary(findings: List[DeduplicatedFinding]) -> str:
+        """Build a deterministic summary when model output is disabled/unavailable."""
+        total = len(findings)
+        counts = _count_by_severity(findings)
+        parts = [
+            f"{sev}: {counts[sev]}" for sev in _SEVERITY_ORDER if counts.get(sev)
+        ]
+        return (
+            f"Code review completed with {total} finding(s) "
+            f"({', '.join(parts)}). "
+            "Please review the detailed findings below."
+        )
 
     # ------------------------------------------------------------------
     # Markdown rendering
@@ -318,6 +394,16 @@ class Aggregator:
                 lines.append("\n**Coverage:** The following files were not analyzed:")
                 for filename, reason in meta["skipped_files"].items():
                     lines.append(f"- `{filename}`: {reason}")
+            lines.append("")
+
+        if report.coverage:
+            lines.append("**Analysis coverage:**")
+            for item in report.coverage:
+                details = f"{item.completed_agents}/{item.expected_agents} agents"
+                reason = f" ({item.reason})" if item.reason else ""
+                lines.append(
+                    f"- `{item.filename}`: {item.status}, {details}{reason}"
+                )
             lines.append("")
 
         lines.append("## Executive Summary")
@@ -369,15 +455,31 @@ class Aggregator:
     def _compute_stats(
         findings: List[DeduplicatedFinding],
         agent_results: List[AgentResult],
+        *,
+        review_status: str = "completed",
+        coverage: List[FileCoverage] | None = None,
+        agent_executions: List[AgentExecution] | None = None,
     ) -> Dict[str, Any]:
         counts = _count_by_severity(findings)
         by_agent: Dict[str, int] = {}
         for result in agent_results:
             by_agent[result.agent_name] = by_agent.get(result.agent_name, 0) + len(result.findings)
+        coverage_records = coverage or []
+        execution_records = agent_executions or []
         return {
             "total": len(findings),
             "by_severity": counts,
             "by_agent": by_agent,
+            "review_status": review_status,
+            "coverage_complete": all(
+                item.status == "covered" for item in coverage_records
+            ) if coverage_records else review_status == "completed",
+            "coverage": [item.model_dump() for item in coverage_records],
+            "agent_failures": [
+                item.model_dump()
+                for item in execution_records
+                if item.status in {"failed", "timeout"}
+            ],
         }
 
 
@@ -390,3 +492,16 @@ def _count_by_severity(findings: List[DeduplicatedFinding]) -> Dict[str, int]:
     for f in findings:
         counts[f.severity] = counts.get(f.severity, 0) + 1
     return counts
+
+
+def _coverage_warning(review_status: str, coverage: List[FileCoverage]) -> str:
+    """Return a user-facing caveat whenever a report is not globally clean."""
+    skipped = [item for item in coverage if item.status in {"unsupported", "skipped"}]
+    partial = [item for item in coverage if item.status in {"partial", "failed"}]
+    if review_status == "uncovered":
+        return "No supported files were available, so this report does not cover the changed code."
+    if partial:
+        return "Some file analyses did not complete, so this report is scoped to the successful agent runs."
+    if skipped:
+        return f"{len(skipped)} changed file(s) were not analyzed, so this is not a conclusion about the entire change."
+    return ""

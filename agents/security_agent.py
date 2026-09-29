@@ -12,14 +12,20 @@ Checks performed on *added* lines only:
 """
 from __future__ import annotations
 
-import os
 import textwrap
 import time
 from typing import Any, Dict, List
 
-import anthropic
-
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.errors import (
+    AgentRuntime,
+    AgentRuntimeError,
+    max_source_line,
+    maybe_await,
+    parse_tool_findings,
+    run_blocking,
+    token_count,
+)
 from tools.semgrep_runner import SemgrepRunner, SecurityIssue
 
 # ---------------------------------------------------------------------------
@@ -98,11 +104,27 @@ REPORT_FINDINGS_TOOL: Dict[str, Any] = {
 class SecurityAgent(BaseReviewAgent):
     """Review agent that detects security vulnerabilities."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        client: Any | None = None,
+        request_timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        self._runtime = AgentRuntime(
+            agent_name="SecurityAgent",
+            api_key=api_key,
+            client=client,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
+        self._client = self._runtime.client
         self._semgrep = SemgrepRunner()
+
+    async def aclose(self) -> None:
+        """Close the shared async provider client during worker shutdown."""
+        await self._runtime.close()
 
     # ------------------------------------------------------------------
     async def review(self, file_diff: FileDiff) -> AgentResult:
@@ -117,7 +139,10 @@ class SecurityAgent(BaseReviewAgent):
             )
 
         # Run Semgrep on the added code first
-        semgrep_issues = self._run_semgrep(file_diff)
+        # Semgrep invokes a synchronous subprocess/regex scanner.  Cancellation
+        # stops waiting for it but cannot terminate a worker thread already in
+        # progress; the scanner is therefore kept side-effect free.
+        semgrep_issues = await run_blocking(self._run_semgrep, file_diff)
 
         all_findings: List[Finding] = []
         total_tokens = 0
@@ -125,8 +150,11 @@ class SecurityAgent(BaseReviewAgent):
         # Process in chunks
         chunks = self._chunk_lines(file_diff.added_lines)
         for chunk in chunks:
-            findings, tokens = self._review_chunk(
-                chunk, file_diff.filename, file_diff.language, semgrep_issues
+            findings, tokens = await maybe_await(
+                self._review_chunk(
+                    chunk, file_diff.filename, file_diff.language, semgrep_issues,
+                    max_line=max_source_line(file_diff),
+                )
             )
             all_findings.extend(findings)
             total_tokens += tokens
@@ -147,8 +175,15 @@ class SecurityAgent(BaseReviewAgent):
         lang = file_diff.language
         try:
             return [issue for issue in self._semgrep.scan(code, lang) if issue.line in changed_lines]
-        except Exception:
-            return []
+        except AgentRuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - scanner implementations vary
+            raise AgentRuntimeError(
+                "static_analysis_failed",
+                "static security analysis failed",
+                retryable=False,
+                agent_name="SecurityAgent",
+            ) from exc
 
     @staticmethod
     def _chunk_lines(
@@ -157,12 +192,14 @@ class SecurityAgent(BaseReviewAgent):
     ) -> List[List[tuple[int, str]]]:
         return [lines[i: i + size] for i in range(0, max(len(lines), 1), size)]
 
-    def _review_chunk(
+    async def _review_chunk(
         self,
         chunk: List[tuple[int, str]],
         filename: str,
         language: str,
         semgrep_issues: List[SecurityIssue],
+        *,
+        max_line: int = 10**9,
     ) -> tuple[List[Finding], int]:
         """Send one chunk to Claude and return (findings, tokens)."""
         code_block = "\n".join(f"{ln:4d} | {text}" for ln, text in chunk)
@@ -211,7 +248,7 @@ class SecurityAgent(BaseReviewAgent):
             Call the `report_security_findings` tool with your results.
         """)
 
-        response = self._client.messages.create(
+        response = await self._runtime.create_message(
             model=MODEL,
             max_tokens=2048,
             tools=[REPORT_FINDINGS_TOOL],
@@ -219,44 +256,36 @@ class SecurityAgent(BaseReviewAgent):
             messages=[{"role": "user", "content": prompt}],
         )
 
-        tokens = (
-            response.usage.input_tokens + response.usage.output_tokens
-            if hasattr(response, "usage")
-            else 0
-        )
-        findings = self._parse_findings(response, filename)
+        tokens = token_count(response)
+        findings = self._parse_findings(response, filename, max_line)
         return findings, tokens
 
     # ------------------------------------------------------------------
     @staticmethod
     def _parse_findings(
-        response: Any, filename: str
+        response: Any,
+        filename: str,
+        max_line: int = 10**9,
     ) -> List[Finding]:
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            if block.name != "report_security_findings":
-                continue
-            raw: List[Dict[str, Any]] = block.input.get("findings", [])
-            results: List[Finding] = []
-            for item in raw:
-                try:
-                    results.append(
-                        Finding(
-                            file=filename,
-                            line_start=item["line_start"],
-                            line_end=item["line_end"],
-                            severity=item["severity"],
-                            category=item["category"],
-                            description=item["description"],
-                            suggestion=item["suggestion"],
-                            confidence=float(item["confidence"]),
-                        )
-                    )
-                except (KeyError, ValueError):
-                    continue
-            return results
-        return []
+        return parse_tool_findings(
+            response,
+            expected_tool_name="report_security_findings",
+            filename=filename,
+            max_line=max_line,
+            agent_name="SecurityAgent",
+            allowed_categories={
+                "sql_injection",
+                "xss",
+                "hardcoded_secret",
+                "path_traversal",
+                "command_injection",
+                "insecure_deserialization",
+                "dangerous_api",
+                "missing_auth",
+                "other",
+            },
+            extra_required_keys={"cwe"},
+        )
 
     @staticmethod
     def _build_summary(findings: List[Finding]) -> str:

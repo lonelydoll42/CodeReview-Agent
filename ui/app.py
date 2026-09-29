@@ -44,14 +44,19 @@ STATUS_LABELS = {
     "pending": "Queued",
     "running": "Running",
     "completed": "Completed",
+    "partial": "Partial",
+    "uncovered": "Uncovered",
     "failed": "Failed",
 }
 STATUS_ICON = {
     "pending": "⏳",
     "running": "⚙️",
     "completed": "✅",
+    "partial": "⚠️",
+    "uncovered": "◌",
     "failed": "❌",
 }
+TERMINAL_STATUSES = {"completed", "partial", "uncovered", "failed"}
 TIME_WINDOW_OPTIONS = {
     "24h": 1,
     "7d": 7,
@@ -364,7 +369,7 @@ def _cached_status(task_id: int, include_results: bool) -> dict[str, Any] | None
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_completed_report(task_id: int) -> dict[str, Any] | None:
-    """Long-lived cache for completed/failed tasks whose results never change."""
+    """Long-lived cache for terminal tasks whose results no longer change."""
     return _safe_get(f"/review/{task_id}", params={"include_results": "true"})
 
 
@@ -549,9 +554,20 @@ def _filter_tasks(
 # ── Report renderer ──────────────────────────────────────────────────────────
 
 def _render_report(data: dict[str, Any]) -> None:
-    findings: list[dict[str, Any]] = data.get("findings") or []
-    markdown_report: str = data.get("markdown_report") or ""
-    executive_summary: str = data.get("executive_summary") or ""
+    report_doc: dict[str, Any] = {}
+    report_payload = data.get("report") or {}
+    try:
+        report_doc = json.loads(report_payload.get("final_report", "{}"))
+    except (TypeError, json.JSONDecodeError):
+        report_doc = {}
+    findings: list[dict[str, Any]] = data.get("findings") or report_doc.get("findings") or []
+    markdown_report: str = data.get("markdown_report") or report_payload.get("markdown_report") or ""
+    executive_summary: str = data.get("executive_summary") or report_doc.get("executive_summary") or ""
+    coverage: list[dict[str, Any]] = data.get("coverage") or report_doc.get("coverage") or []
+    failures = [
+        result for result in (data.get("results") or [])
+        if result.get("status") in {"failed", "timeout"}
+    ]
     sev_counts = _severity_counts(findings)
 
     _render_kpis([
@@ -570,6 +586,27 @@ def _render_report(data: dict[str, Any]) -> None:
         st.caption(f"PR: {data.get('pr_url', '')}")
         st.caption(f"Created: {_format_ts(data.get('created_at', ''))}  ·  Updated: {_format_ts(data.get('updated_at', ''))}")
         st.markdown("</div>", unsafe_allow_html=True)
+
+        if data.get("status") == "partial":
+            st.warning("This review is partial. Findings only cover agents that completed successfully.")
+        elif data.get("status") == "uncovered":
+            st.warning("No supported files were analyzed; an empty report is not a clean-code conclusion.")
+        elif data.get("status") == "failed":
+            st.error("The review failed before producing a complete analysis.")
+        if coverage:
+            st.markdown('<div class="panel">', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Analysis Coverage</div>', unsafe_allow_html=True)
+            for item in coverage:
+                counts = f"{item.get('completed_agents', 0)}/{item.get('expected_agents', 0)} agents"
+                reason = f" · {item['reason']}" if item.get("reason") else ""
+                st.caption(f"{item.get('filename', '')}: {item.get('status', '')} · {counts}{reason}")
+            if failures:
+                st.caption(f"{len(failures)} agent attempt(s) failed or timed out.")
+                for failure in failures:
+                    location = failure.get("filename") or "unknown file"
+                    code = failure.get("error_code") or failure.get("status", "failed")
+                    st.caption(f"{failure.get('agent_name', 'Agent')} · {location} · {code}")
+            st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown('<div class="panel">', unsafe_allow_html=True)
@@ -763,7 +800,7 @@ def _render_tasks_page() -> None:
             # Use short-TTL cache for in-progress tasks; long-TTL for completed/failed
             _peek = _cached_status(selected_id, False)
             _status = (_peek or {}).get("status", "")
-            if _status in {"completed", "failed"}:
+            if _status in TERMINAL_STATUSES:
                 data = _cached_completed_report(selected_id)
             else:
                 data = _cached_status(selected_id, True)
@@ -877,7 +914,7 @@ def _render_review_page() -> None:
             return
         current_status = STATUS_LABELS.get(data.get("status", ""), data.get("status", "running")).lower()
         st.info(f"{STATUS_ICON.get(data.get('status',''), '')} Task #{task_id} is {current_status}.")
-        if data.get("status") in {"completed", "failed"}:
+        if data.get("status") in TERMINAL_STATUSES:
             st.session_state["data"] = data
             st.rerun()
         if auto_refresh:
@@ -927,6 +964,8 @@ def _render_dashboard() -> None:
     summary = dashboard.get("summary") or {}
     total_tasks = summary.get("total_tasks", 0)
     completed = summary.get("completed", 0)
+    partial = summary.get("partial", 0)
+    uncovered = summary.get("uncovered", 0)
     failed = summary.get("failed", 0)
     total_findings = summary.get("total_findings", 0)
     success_rate = f"{completed / total_tasks:.0%}" if total_tasks else "—"
@@ -934,6 +973,8 @@ def _render_dashboard() -> None:
     _render_kpis([
         ("Total Tasks", str(total_tasks), f"last {time_window}"),
         ("Completed", str(completed), f"success rate: {success_rate}"),
+        ("Partial", str(partial), "some agents unavailable"),
+        ("Uncovered", str(uncovered), "no supported files"),
         ("Failed", str(failed), "review errors"),
         ("Total Findings", str(total_findings), "across all tasks"),
     ])

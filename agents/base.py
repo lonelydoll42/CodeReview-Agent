@@ -30,6 +30,37 @@ class AgentResult(BaseModel):
     token_used: int
 
 
+class AgentExecution(BaseModel):
+    """Durable outcome for one agent/file attempt.
+
+    ``result`` is deliberately omitted here.  Successful findings remain in
+    :class:`AgentResult`, while this small record makes failures and empty
+    successful results distinguishable in reports and storage.
+    """
+
+    agent_name: str
+    filename: str
+    language: str = ""
+    status: str = "completed"  # completed / failed / timeout
+    error_code: str | None = None
+    duration_seconds: float | None = None
+    # Internal association used while persisting successful empty findings;
+    # excluded from report JSON because findings already live in AgentResult.
+    result: AgentResult | None = Field(default=None, exclude=True)
+
+
+class FileCoverage(BaseModel):
+    """Coverage state for one changed file."""
+
+    filename: str
+    language: str = ""
+    status: str  # covered / partial / failed / unsupported / skipped
+    reason: str = ""
+    expected_agents: int = 0
+    completed_agents: int = 0
+    failed_agents: int = 0
+
+
 class FileDiff(BaseModel):
     """Parsed representation of one file's unified diff."""
 

@@ -8,14 +8,26 @@
 
 API 使用 [config.py](../config.py) 中的 Pydantic Settings，从进程环境和项目根目录 `.env` 读取配置。修改后需要重启服务。
 
+数据库表会在 API 启动时自动创建，并兼容补充本版本新增的终态枚举和覆盖字段。生产环境
+建议在发布前显式执行迁移：
+
+```bash
+alembic upgrade head
+```
+
+迁移同时支持全新数据库和已有的旧版 `review_tasks` / `review_results` 表；应用启动时的
+bootstrap 仍保留，作为未接入迁移命令的部署保护。
+
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | 空 | Claude 审查与摘要生成所用密钥 |
 | `GITHUB_TOKEN` | 空 | 访问仓库；私有仓库和评论回写需要对应权限 |
 | `DATABASE_URL` | `postgresql+asyncpg://postgres:postgres@localhost:5432/codereview` | PostgreSQL 异步连接 |
 | `REDIS_URL` | `redis://localhost:6379/0` | 状态、结果与重复审查缓存 |
-| `AGENT_TIMEOUT_SECONDS` | `30` | 单次 Agent 协程等待超时；同步调用期间不能保证及时取消 |
-| `MAX_PARALLEL_AGENTS` | `5` | 预留配置，当前调度器尚未使用它限制并发 |
+| `AGENT_TIMEOUT_SECONDS` | `30` | 单个 Agent/文件执行的等待上限（不含并发排队）；超时会记录失败覆盖，不会伪装成空 findings |
+| `MAX_PARALLEL_AGENTS` | `5` | 同一服务事件循环内所有并发审查任务共享的 Agent 执行上限；等待信号量不计入 Agent 运行时间 |
+| `ANTHROPIC_REQUEST_TIMEOUT_SECONDS` | `30` | 单次 Anthropic 请求的传输与响应上限；由 Agent 运行时读取 |
+| `ANTHROPIC_MAX_RETRIES` | `2` | Anthropic 客户端的有限重试次数；重试耗尽后记录失败 |
 | `ENABLE_DEDUP_CACHE` | `true` | 开启重复审查报告复用 |
 | `DEDUP_CACHE_TTL` | `86400` | 重复审查缓存有效期，单位为秒 |
 | `REVIEW_RULESET_VERSION` | `1` | 外部规则或分析配置改变后递增并重启服务 |
@@ -55,7 +67,7 @@ README 中的随机密钥命令适合本地体验；长期运行时应由服务�
 3. 使用手动刷新，或在 Review 页面启用 **Auto-refresh (4s)**。
 4. 审查完成后按 Agent、严重级别等条件查看问题，下载 Markdown 报告。
 
-任务状态通常表现为 `pending → running → completed / failed`。耗时受文件数量、GitHub API、模型和静态分析影响，没有固定的秒级完成保证。`Stop Tracking` 停止前端跟踪，不取消后台任务。
+任务状态通常表现为 `pending → running → completed / partial / uncovered / failed`。`completed` 表示所有预期 Agent/文件调用都完成，`partial` 表示至少一个调用失败或超时，`uncovered` 表示没有可分析的支持语言文件，`failed` 表示无法获取快照或无法建立最终报告。一次成功的 Agent 可以返回空 findings；这与调用失败不同。耗时受文件数量、并发等待、GitHub API、模型和静态分析影响，没有固定的秒级完成保证。`Stop Tracking` 停止前端跟踪，不取消后台任务。
 
 Dashboard 合并接口当前接受 **7–90 天**；UI 中的 `24h`、`All` 选项与该范围尚未完全对齐，体验时请使用 `7d`、`30d` 或 `90d`。
 
@@ -148,7 +160,7 @@ NOTIFY_ON_SEVERITIES=CRITICAL,HIGH
 - **权重**：Security `1.0`、Logic `0.8`、Performance `0.6`、Style `0.4`。Security 的 CRITICAL 发现不会降级。
 - **置信度**：聚合后的置信度独立加权计算，不用它直接推断问题严重级别。
 - **统计**：最终报告的严重级别统计基于去重结果；`by_agent` 累加各 Agent 所有文件的原始问题数。Dashboard 当前统计原始 Agent 结果，可能高于去重后的报告总数。
-- **缓存**：仍需获取 GitHub 快照来确认输入版本；缓存主要节省 Agent 调用，不代表完全免网络或毫秒级响应。
+- **缓存**：仍需获取 GitHub 快照来确认输入版本；只有完整且已持久化的结果进入重复审查缓存。部分、未覆盖和失败结果不会成为缓存来源。
 
 ## 常见问题
 
@@ -160,9 +172,9 @@ NOTIFY_ON_SEVERITIES=CRITICAL,HIGH
 | Redis 不可用 | 检查服务与 `REDIS_URL`；部分缓存操作会降级，不能替代数据库 |
 | 找不到支持的文件 | 查看报告 `skipped_files`；删除文件、二进制、编码、大小与语言都可能影响覆盖 |
 | PR 在审查期间有新提交 | 基于最新版本重新提交任务 |
-| 审查结果为空 | 同时检查服务日志与覆盖范围，Agent 或静态分析失败可能被降级处理 |
+| 审查结果为空 | 先看任务状态、文件覆盖和 Agent 执行状态；`completed` 下的空 findings 表示该调用成功且没有发现问题，`partial`/`failed` 需要结合错误码重试 |
 | 修改 UI 密码不生效 | 确认变量已导出到启动 Streamlit 的进程环境，再重启 UI |
-| 任务在重启后没有继续 | 当前使用进程内后台任务，不支持断点恢复，需重新提交 |
+| 任务在重启后没有继续 | 当前仍使用进程内后台任务，不支持断点恢复；持久化队列属于后续路线图 |
 
 ## 测试与实现入口
 

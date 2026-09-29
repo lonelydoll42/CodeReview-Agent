@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agents.aggregator import AGENT_WEIGHTS, Aggregator, DeduplicatedFinding
-from agents.base import AgentResult, FileDiff, Finding
+from agents.base import AgentResult, FileCoverage, FileDiff, Finding
 
 
 # ---------------------------------------------------------------------------
@@ -311,3 +311,29 @@ def test_agent_stats_sum_findings_across_files():
         _agent_result("StyleAgent", []),
     ])
     assert report.stats["by_agent"] == {"LogicAgent": 3, "StyleAgent": 0}
+
+
+def test_offline_aggregator_does_not_construct_provider_client():
+    """Local aggregation remains usable without an Anthropic API key."""
+    agg = Aggregator(api_key=None, enable_llm_summary=False)
+    assert agg._client is None
+    report = agg.aggregate([])
+    assert "clean" in report.executive_summary.lower()
+
+
+def test_incomplete_empty_report_does_not_claim_clean_code():
+    agg = Aggregator(api_key="test-key", enable_llm_summary=False)
+    report = agg.aggregate(
+        [],
+        review_status="partial",
+        coverage=[FileCoverage(
+            filename="app.py",
+            language="python",
+            status="partial",
+            expected_agents=4,
+            completed_agents=1,
+            failed_agents=3,
+        )],
+    )
+    assert "looks clean" not in report.executive_summary.lower()
+    assert "incomplete" in report.executive_summary.lower()

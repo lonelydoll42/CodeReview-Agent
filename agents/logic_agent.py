@@ -12,14 +12,20 @@ Checks performed on *added* lines only:
 """
 from __future__ import annotations
 
-import os
+import asyncio
 import textwrap
 import time
 from typing import Any, Dict, List
 
-import anthropic
-
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.errors import (
+    AgentRuntime,
+    max_source_line,
+    maybe_await,
+    parse_tool_findings,
+    run_blocking,
+    token_count,
+)
 from tools.ast_parser import ASTParser
 
 # ---------------------------------------------------------------------------
@@ -155,11 +161,27 @@ def _chunk_added_lines(
 class LogicAgent(BaseReviewAgent):
     """Detects logical defects using AST analysis and Claude."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = anthropic.Anthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        client: Any | None = None,
+        request_timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        self._runtime = AgentRuntime(
+            agent_name="LogicAgent",
+            api_key=api_key,
+            client=client,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
+        self._client = self._runtime.client
         self._parser = ASTParser()
+
+    async def aclose(self) -> None:
+        """Close the shared async provider client during worker shutdown."""
+        await self._runtime.close()
 
     async def review(self, file_diff: FileDiff) -> AgentResult:
         start = time.monotonic()
@@ -169,8 +191,17 @@ class LogicAgent(BaseReviewAgent):
         if file_diff.added_lines:
             # AST pre-processing (best-effort; non-fatal on failure)
             added_code = file_diff.analysis_source()
-            structure = self._parser.parse_python(added_code)
-            complexity = self._parser.get_complexity(added_code, file_diff.language)
+            # ASTParser is synchronous and can spend noticeable time in radon.
+            # Isolate it from the event loop; cancellation of the awaiter does
+            # not terminate the native worker thread (see run_blocking()).
+            structure, complexity = await asyncio.gather(
+                run_blocking(self._parser.parse_python, added_code),
+                run_blocking(
+                    self._parser.get_complexity,
+                    added_code,
+                    file_diff.language,
+                ),
+            )
 
             function_list = ", ".join(
                 f"{fn.name}(line {fn.lineno}, {fn.arg_count} args)"
@@ -179,9 +210,11 @@ class LogicAgent(BaseReviewAgent):
 
             chunks = _chunk_added_lines(file_diff.added_lines, MAX_ADDED_LINES_PER_CHUNK)
             for chunk in chunks:
-                findings, tokens = self._call_claude(
-                    file_diff, chunk, function_list,
-                    structure.has_error_handling, complexity,
+                findings, tokens = await maybe_await(
+                    self._call_claude(
+                        file_diff, chunk, function_list,
+                        structure.has_error_handling, complexity,
+                    )
                 )
                 all_findings.extend(findings)
                 total_tokens += tokens
@@ -198,7 +231,7 @@ class LogicAgent(BaseReviewAgent):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _call_claude(
+    async def _call_claude(
         self,
         file_diff: FileDiff,
         chunk_added: List[tuple[int, str]],
@@ -210,47 +243,48 @@ class LogicAgent(BaseReviewAgent):
         prompt = _build_prompt(
             file_diff, chunk_added, function_list, has_error_handling, complexity
         )
-        response = self._client.messages.create(
+        response = await self._runtime.create_message(
             model=MODEL,
             max_tokens=4096,
             tools=[REPORT_FINDINGS_TOOL],
             tool_choice={"type": "any"},
             messages=[{"role": "user", "content": prompt}],
         )
-        tokens = response.usage.input_tokens + response.usage.output_tokens
-        return self._parse_tool_response(response, file_diff.filename), tokens
+        tokens = token_count(response)
+        return (
+            self._parse_tool_response(
+                response,
+                file_diff.filename,
+                max_source_line(file_diff),
+            ),
+            tokens,
+        )
 
     @staticmethod
     def _parse_tool_response(
-        response: anthropic.types.Message,
+        response: Any,
         filename: str,
+        max_line: int = 10**9,
     ) -> List[Finding]:
         """Extract findings from the Claude tool-use response."""
-        for block in response.content:
-            if (
-                block.type == "tool_use"
-                and block.name == "report_logic_findings"
-            ):
-                raw: List[Dict[str, Any]] = block.input.get("findings", [])
-                results: List[Finding] = []
-                for item in raw:
-                    try:
-                        results.append(
-                            Finding(
-                                file=filename,
-                                line_start=item["line_start"],
-                                line_end=item["line_end"],
-                                severity=item["severity"],
-                                category=item["category"],
-                                description=item["description"],
-                                suggestion=item["suggestion"],
-                                confidence=float(item["confidence"]),
-                            )
-                        )
-                    except (KeyError, ValueError):
-                        continue
-                return results
-        return []
+        return parse_tool_findings(
+            response,
+            expected_tool_name="report_logic_findings",
+            filename=filename,
+            max_line=max_line,
+            agent_name="LogicAgent",
+            allowed_categories={
+                "null_dereference",
+                "boundary_condition",
+                "bare_except",
+                "missing_error_handling",
+                "high_complexity",
+                "infinite_loop_risk",
+                "unused_return",
+                "infinite_recursion",
+                "other",
+            },
+        )
 
     @staticmethod
     def _build_summary(findings: List[Finding]) -> str:

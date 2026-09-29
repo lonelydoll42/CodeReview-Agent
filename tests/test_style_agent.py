@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -58,7 +58,11 @@ async def test_no_findings_for_clean_code():
     mock_resp = _make_response([])   # model reports nothing
 
     agent = StyleAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     assert result.agent_name == "StyleAgent"
@@ -109,7 +113,11 @@ async def test_naming_findings():
     mock_resp = _make_response(raw_findings)
 
     agent = StyleAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     naming_findings = [f for f in result.findings if f.category == "naming"]
@@ -161,7 +169,11 @@ async def test_magic_number_and_missing_docstring():
     mock_resp = _make_response(raw_findings)
 
     agent = StyleAgent(api_key="test-key")
-    with patch.object(agent._client.messages, "create", return_value=mock_resp):
+    with patch.object(
+        agent._client.messages,
+        "create",
+        new=AsyncMock(return_value=mock_resp),
+    ):
         result = await agent.review(_diff(added))
 
     categories = {f.category for f in result.findings}
