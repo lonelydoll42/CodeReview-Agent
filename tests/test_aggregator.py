@@ -82,9 +82,9 @@ def _aggregator_with_mock_summary(summary_text: str = "Summary.") -> tuple[Aggre
 
 def test_dedup_same_location_same_category():
     """Two agents flagging the same spot / category must produce exactly 1 finding."""
-    f1 = _finding(file="app.py", line_start=10, category="naming",
+    f1 = _finding(file="app.py", line_start=10, line_end=11, category="naming",
                   description="Short name", suggestion="Use longer name", confidence=0.9)
-    f2 = _finding(file="app.py", line_start=11, category="naming",
+    f2 = _finding(file="app.py", line_start=11, line_end=12, category="naming",
                   description="Short name x is ambiguous", suggestion="Rename to index", confidence=0.7)
 
     results = [
@@ -98,9 +98,66 @@ def test_dedup_same_location_same_category():
     assert len(report.findings) == 1
     merged = report.findings[0]
     assert set(merged.source_agents) == {"StyleAgent", "PerformanceAgent"}
-    # Longer description / suggestion wins
+    # Description and suggestion remain paired with the selected primary
+    # finding (PerformanceAgent has the higher weighted confidence here).
     assert merged.description == "Short name x is ambiguous"
-    assert merged.suggestion == "Use longer name"
+    assert merged.suggestion == "Rename to index"
+
+
+def test_findings_one_four_seven_are_kept_separate():
+    """Independent findings on lines 1, 4, and 7 must all remain visible."""
+    findings = [
+        _finding(file="app.py", line_start=line, line_end=line, category="logic")
+        for line in (1, 4, 7)
+    ]
+
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([_agent_result("LogicAgent", findings)])
+
+    assert len(report.findings) == 3
+    assert [finding.line_start for finding in report.findings] == [1, 4, 7]
+
+
+def test_same_agent_overlapping_findings_are_not_merged():
+    """A single agent's separate findings retain their individual evidence."""
+    findings = [
+        _finding(
+            file="app.py",
+            line_start=10,
+            line_end=12,
+            category="logic",
+            description="First issue",
+        ),
+        _finding(
+            file="app.py",
+            line_start=11,
+            line_end=13,
+            category="logic",
+            description="Second issue",
+        ),
+    ]
+
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([_agent_result("LogicAgent", findings)])
+
+    assert len(report.findings) == 2
+    assert all(finding.source_agents == ["LogicAgent"] for finding in report.findings)
+
+
+def test_cross_agent_disjoint_ranges_are_not_merged():
+    """Adjacent findings without a shared line must remain separate."""
+    findings = [
+        _finding(file="app.py", line_start=10, line_end=10, category="logic"),
+        _finding(file="app.py", line_start=11, line_end=11, category="logic"),
+    ]
+
+    agg, _ = _aggregator_with_mock_summary()
+    report = agg.aggregate([
+        _agent_result("LogicAgent", [findings[0]]),
+        _agent_result("StyleAgent", [findings[1]]),
+    ])
+
+    assert len(report.findings) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -110,12 +167,12 @@ def test_dedup_same_location_same_category():
 def test_security_critical_not_downgraded():
     """SecurityAgent CRITICAL must survive even when StyleAgent has low confidence."""
     sec_finding = _finding(
-        file="auth.py", line_start=20, category="sql_injection",
+        file="auth.py", line_start=20, line_end=21, category="sql_injection",
         severity="CRITICAL", confidence=0.95,
         description="SQL injection risk", suggestion="Use parameterised query",
     )
     style_finding = _finding(
-        file="auth.py", line_start=21, category="sql_injection",
+        file="auth.py", line_start=21, line_end=22, category="sql_injection",
         severity="LOW", confidence=0.3,
         description="Possible SQL concat", suggestion="Refactor",
     )
@@ -142,11 +199,11 @@ def test_weighted_confidence_calculation():
     # StyleAgent    weight=0.4, confidence=0.8
     # Expected: (1.0*0.6 + 0.4*0.8) / (1.0 + 0.4) = (0.6 + 0.32) / 1.4 = 0.92/1.4 ≈ 0.6571
     f_sec = _finding(
-        file="b.py", line_start=5, category="high_complexity",
+        file="b.py", line_start=5, line_end=6, category="high_complexity",
         severity="HIGH", confidence=0.6,
     )
     f_sty = _finding(
-        file="b.py", line_start=6, category="high_complexity",
+        file="b.py", line_start=6, line_end=7, category="high_complexity",
         severity="LOW", confidence=0.8,
     )
 
@@ -296,8 +353,8 @@ def test_severity_uses_combined_weighted_votes(reverse):
 def test_tied_severity_votes_choose_higher_risk(confidence):
     agg, _ = _aggregator_with_mock_summary()
     report = agg.aggregate([
-        _agent_result("LogicAgent", [_finding(severity="LOW", confidence=confidence)]),
-        _agent_result("LogicAgent", [_finding(severity="HIGH", confidence=confidence)]),
+        _agent_result("AgentA", [_finding(severity="LOW", confidence=confidence)]),
+        _agent_result("AgentB", [_finding(severity="HIGH", confidence=confidence)]),
     ])
     assert report.findings[0].severity == "HIGH"
 

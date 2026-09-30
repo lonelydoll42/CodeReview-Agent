@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from tools.local_review import parse_unified_diff, review_diff
-from tools.semgrep_runner import SecurityIssue
+from tools.semgrep_runner import SecurityIssue, SemgrepScanError
 
 
 AUTH_DIFF = """diff --git a/app.py b/app.py
@@ -59,6 +61,15 @@ def test_local_review_filters_static_findings_to_added_lines() -> None:
         report = review_diff(diff)
 
     assert len(report.findings) == 0
+
+
+def test_local_review_does_not_report_clean_on_semgrep_failure() -> None:
+    with patch(
+        "tools.local_review.SemgrepRunner.scan",
+        side_effect=SemgrepScanError("semgrep_reported_error"),
+    ):
+        with pytest.raises(SemgrepScanError):
+            review_diff(AUTH_DIFF)
 
 
 def test_local_review_never_calls_model_for_summary() -> None:

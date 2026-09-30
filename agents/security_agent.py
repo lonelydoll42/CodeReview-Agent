@@ -1,6 +1,6 @@
 """Security Agent – detects security vulnerabilities via Semgrep + Claude tool-use.
 
-Checks performed on *added* lines only:
+Checks performed on added lines and deletion-only changes:
   1. SQL injection (CWE-89)
   2. XSS / unsafe HTML injection (CWE-79)
   3. Hardcoded secrets / credentials (CWE-798)
@@ -17,6 +17,7 @@ import time
 from typing import Any, Dict, List
 
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.change_context import deletion_chunks, deletion_context
 from agents.errors import (
     AgentRuntime,
     AgentRuntimeError,
@@ -26,7 +27,7 @@ from agents.errors import (
     run_blocking,
     token_count,
 )
-from tools.semgrep_runner import SemgrepRunner, SecurityIssue
+from tools.semgrep_runner import SemgrepRunner, SemgrepScanError, SecurityIssue
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -129,11 +130,11 @@ class SecurityAgent(BaseReviewAgent):
     # ------------------------------------------------------------------
     async def review(self, file_diff: FileDiff) -> AgentResult:
         start = time.monotonic()
-        if not file_diff.added_lines:
+        if not file_diff.added_lines and not file_diff.removed_lines:
             return AgentResult(
                 agent_name="SecurityAgent",
                 findings=[],
-                summary="No added lines to review.",
+                summary="No changed lines to review.",
                 execution_time=time.monotonic() - start,
                 token_used=0,
             )
@@ -142,13 +143,16 @@ class SecurityAgent(BaseReviewAgent):
         # Semgrep invokes a synchronous subprocess/regex scanner.  Cancellation
         # stops waiting for it but cannot terminate a worker thread already in
         # progress; the scanner is therefore kept side-effect free.
-        semgrep_issues = await run_blocking(self._run_semgrep, file_diff)
+        semgrep_issues = (
+            await run_blocking(self._run_semgrep, file_diff)
+            if file_diff.added_lines else []
+        )
 
         all_findings: List[Finding] = []
         total_tokens = 0
 
         # Process in chunks
-        chunks = self._chunk_lines(file_diff.added_lines)
+        chunks = self._chunk_lines(file_diff.added_lines) if file_diff.added_lines else []
         for chunk in chunks:
             findings, tokens = await maybe_await(
                 self._review_chunk(
@@ -158,6 +162,18 @@ class SecurityAgent(BaseReviewAgent):
             )
             all_findings.extend(findings)
             total_tokens += tokens
+
+        if file_diff.removed_lines:
+            for removed_chunk in deletion_chunks(file_diff):
+                findings, tokens = await maybe_await(
+                    self._review_chunk(
+                        [], file_diff.filename, file_diff.language, [],
+                        max_line=max_source_line(file_diff),
+                        change_context=deletion_context(file_diff, removed_chunk),
+                    )
+                )
+                all_findings.extend(findings)
+                total_tokens += tokens
 
         return AgentResult(
             agent_name="SecurityAgent",
@@ -177,6 +193,13 @@ class SecurityAgent(BaseReviewAgent):
             return [issue for issue in self._semgrep.scan(code, lang) if issue.line in changed_lines]
         except AgentRuntimeError:
             raise
+        except SemgrepScanError as exc:
+            raise AgentRuntimeError(
+                exc.reason_code,
+                "static security analysis failed",
+                retryable=False,
+                agent_name="SecurityAgent",
+            ) from exc
         except Exception as exc:  # noqa: BLE001 - scanner implementations vary
             raise AgentRuntimeError(
                 "static_analysis_failed",
@@ -200,6 +223,7 @@ class SecurityAgent(BaseReviewAgent):
         semgrep_issues: List[SecurityIssue],
         *,
         max_line: int = 10**9,
+        change_context: str = "",
     ) -> tuple[List[Finding], int]:
         """Send one chunk to Claude and return (findings, tokens)."""
         code_block = "\n".join(f"{ln:4d} | {text}" for ln, text in chunk)
@@ -217,9 +241,17 @@ class SecurityAgent(BaseReviewAgent):
                 "(use as hints, validate each one):\n" + "\n".join(lines_ctx)
             )
 
+        review_scope = (
+            "Review the removed protection and current source below. Report only risks "
+            "introduced by this deletion; use a suggested head anchor as the finding "
+            "line. An old-side line number is not a valid finding coordinate."
+            if change_context else
+            "Only report issues introduced in the shown added lines."
+        )
+        code_block = change_context or code_block
         prompt = textwrap.dedent(f"""\
             You are a senior security engineer performing a code security review.
-            Review the following {language} code diff (added lines only) from `{filename}`.
+            Review the following {language} code change from `{filename}`.
 
             Focus on these vulnerability classes:
             - SQL Injection (CWE-89)
@@ -232,7 +264,7 @@ class SecurityAgent(BaseReviewAgent):
             - Missing authentication or authorization checks
 
             Rules:
-            - Only report issues in the shown code (added lines).
+            - {review_scope}
             - Be precise about line numbers.
             - Avoid false positives: only report when you are reasonably confident.
             - Set confidence between 0.0 and 1.0.
@@ -240,7 +272,7 @@ class SecurityAgent(BaseReviewAgent):
             - Provide a concrete remediation suggestion for each finding.
             {semgrep_ctx}
 
-            Code diff:
+            Changed code and context:
             ```{language}
             {code_block}
             ```

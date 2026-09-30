@@ -3,7 +3,7 @@
 Main entry point: ``Aggregator.aggregate(agent_results, pr_url, task_id)``
 
 Steps:
-  1. Deduplicate findings within ±3 lines / same category
+  1. Deduplicate corroborating findings with overlapping line evidence
   2. Arbitrate conflicting severity via weighted confidence
   3. Generate an executive summary with Claude
   4. Render the full Markdown report
@@ -182,7 +182,7 @@ class Aggregator:
         self,
         findings_with_agent: List[tuple[Finding, str]],
     ) -> List[DeduplicatedFinding]:
-        """Merge findings that share (file, category) and are within ±3 lines."""
+        """Merge corroborating findings with shared file/category evidence."""
         # Group by (file, category)
         groups: Dict[tuple[str, str], List[tuple[Finding, str]]] = {}
         for finding, agent in findings_with_agent:
@@ -200,20 +200,45 @@ class Aggregator:
     def _cluster_by_proximity(
         items: List[tuple[Finding, str]],
     ) -> List[List[tuple[Finding, str]]]:
-        """Group items whose line_start values are within 3 lines of each other."""
+        """Group only corroborating findings with overlapping evidence.
+
+        A proximity threshold is too permissive for independent findings from
+        one agent, and it also allows transitive clusters.  A cluster may
+        contain at most one finding per agent, and every finding must overlap
+        every other finding in the cluster's reported line range.
+        """
         if not items:
             return []
-        # Sort by line_start so we can do a single pass
-        sorted_items = sorted(items, key=lambda x: x[0].line_start)
+        # Sort by line_start so clustering is deterministic.  Line ranges are
+        # used as evidence; nearby but disjoint findings remain independent.
+        sorted_items = sorted(items, key=lambda x: (x[0].line_start, x[0].line_end))
         clusters: List[List[tuple[Finding, str]]] = [[sorted_items[0]]]
         for item in sorted_items[1:]:
-            last_cluster = clusters[-1]
-            last_line = last_cluster[-1][0].line_start
-            if abs(item[0].line_start - last_line) <= 3:
-                last_cluster.append(item)
-            else:
+            matching_cluster = next(
+                (
+                    cluster
+                    for cluster in clusters
+                    if item[1] not in {agent for _, agent in cluster}
+                    and all(
+                        Aggregator._line_ranges_overlap(item[0], existing[0])
+                        for existing in cluster
+                    )
+                ),
+                None,
+            )
+            if matching_cluster is None:
                 clusters.append([item])
+            else:
+                matching_cluster.append(item)
         return clusters
+
+    @staticmethod
+    def _line_ranges_overlap(left: Finding, right: Finding) -> bool:
+        """Return whether two findings point to at least one common line."""
+        return (
+            left.line_start <= right.line_end
+            and right.line_start <= left.line_end
+        )
 
     def _merge_cluster(
         self,
@@ -241,13 +266,10 @@ class Aggregator:
             / total_weight
         )
 
-        # Pick the longer description / suggestion
-        description = max(
-            (f.description for f, _ in cluster), key=len
-        )
-        suggestion = max(
-            (f.suggestion for f, _ in cluster), key=len
-        )
+        # Keep the evidence pair from one finding.  Selecting description and
+        # suggestion independently can combine text about different issues.
+        description = primary.description
+        suggestion = primary.suggestion
 
         # Determine severity
         severity = self._arbitrate_severity(cluster)

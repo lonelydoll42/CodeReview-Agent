@@ -7,7 +7,7 @@ import pytest
 
 import agents.orchestrator as module
 from agents.aggregator import Aggregator, AggregatedReport
-from agents.base import AgentResult
+from agents.base import AgentResult, Finding
 from agents.orchestrator import Orchestrator
 from tools.github_client import FileDiff, PRDiff
 from storage.models import TaskStatus
@@ -58,6 +58,35 @@ class _GoodAgent:
 class _FailingAgent:
     async def review(self, _file_diff):
         raise RuntimeError("provider unavailable")
+
+
+class _DeletionFindingAgent:
+    async def review(self, _file_diff):
+        result = _result(type(self).__name__)
+        result.findings = [Finding(
+            file="app.py", line_start=2, line_end=2,
+            severity="HIGH", category="missing_auth",
+            description="The authorization guard was removed.",
+            suggestion="Restore the guard.", confidence=0.9,
+        )]
+        return result
+
+
+@pytest.mark.asyncio
+async def test_inline_only_mode_posts_summary_for_deletion_findings(monkeypatch) -> None:
+    pr_diff = PRDiff(
+        base_sha="base", head_sha="head", merge_base_sha="ancestor",
+        files=[FileDiff(
+            filename="app.py", language="python", patch="", full_source="a\nb\n",
+            added_lines=[], removed_lines=[(2, "require_admin(user)")],
+        )],
+    )
+    orchestrator, _, _, _ = _orchestrator(monkeypatch, pr_diff, [_DeletionFindingAgent()])
+    monkeypatch.setattr(module.settings, "ENABLE_INLINE_COMMENT", True)
+
+    await orchestrator._run(4, "https://github.com/o/r/pull/4")
+
+    orchestrator.github.post_review_comment.assert_called_once()
 
 
 @pytest.mark.asyncio

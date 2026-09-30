@@ -1,6 +1,6 @@
 """Logic Agent – detects logical defects via AST analysis + Claude tool-use.
 
-Checks performed on *added* lines only:
+Checks performed on added lines and deletion-only changes:
   1. Null/None dereference without guard
   2. Off-by-one errors and boundary conditions
   3. Bare except / swallowed exceptions
@@ -18,6 +18,7 @@ import time
 from typing import Any, Dict, List
 
 from agents.base import AgentResult, BaseReviewAgent, FileDiff, Finding
+from agents.change_context import deletion_chunks, deletion_context
 from agents.errors import (
     AgentRuntime,
     max_source_line,
@@ -100,15 +101,23 @@ def _build_prompt(
     function_list: str,
     has_error_handling: bool,
     complexity: int,
+    change_context: str = "",
 ) -> str:
-    """Build the user prompt for a single chunk of added lines."""
+    """Build the user prompt for a single changed-code chunk."""
     added_block = "\n".join(
         f"  {lineno:4d} | {text}" for lineno, text in chunk_added
     )
     complexity_str = str(complexity) if complexity >= 0 else "unknown"
+    review_scope = (
+        "Report only defects introduced by the deletion. Use the suggested head "
+        "anchor as the finding line; old-side line numbers are not valid coordinates."
+        if change_context else
+        "Only report issues introduced in the shown added lines."
+    )
+    code_block = change_context or added_block
     return textwrap.dedent(f"""\
         You are a senior software engineer reviewing code for logical defects.
-        Review the following {file_diff.language} code diff (added lines only) from `{file_diff.filename}`.
+        Review the following {file_diff.language} code change from `{file_diff.filename}`.
 
         Code structure analysis:
         - Functions: {function_list}
@@ -126,12 +135,12 @@ def _build_prompt(
         - Return values of important calls being silently ignored
 
         Rules:
-        - Only report issues in the shown added lines.
+        - {review_scope}
         - confidence >= 0.7 for HIGH/CRITICAL.
         - Provide concrete fix suggestions.
 
-        ## Added lines (format: line_number | code)
-        {added_block}
+        ## Changed code and context
+        {code_block}
 
         Call `report_logic_findings` now with all findings (or an empty list).
     """)
@@ -188,7 +197,7 @@ class LogicAgent(BaseReviewAgent):
         all_findings: List[Finding] = []
         total_tokens = 0
 
-        if file_diff.added_lines:
+        if file_diff.added_lines or file_diff.removed_lines:
             # AST pre-processing (best-effort; non-fatal on failure)
             added_code = file_diff.analysis_source()
             # ASTParser is synchronous and can spend noticeable time in radon.
@@ -208,7 +217,10 @@ class LogicAgent(BaseReviewAgent):
                 for fn in structure.functions
             ) or "none detected"
 
-            chunks = _chunk_added_lines(file_diff.added_lines, MAX_ADDED_LINES_PER_CHUNK)
+            chunks = (
+                _chunk_added_lines(file_diff.added_lines, MAX_ADDED_LINES_PER_CHUNK)
+                if file_diff.added_lines else []
+            )
             for chunk in chunks:
                 findings, tokens = await maybe_await(
                     self._call_claude(
@@ -218,6 +230,18 @@ class LogicAgent(BaseReviewAgent):
                 )
                 all_findings.extend(findings)
                 total_tokens += tokens
+
+            if file_diff.removed_lines:
+                for removed_chunk in deletion_chunks(file_diff):
+                    findings, tokens = await maybe_await(
+                        self._call_claude(
+                            file_diff, [], function_list,
+                            structure.has_error_handling, complexity,
+                            change_context=deletion_context(file_diff, removed_chunk),
+                        )
+                    )
+                    all_findings.extend(findings)
+                    total_tokens += tokens
 
         return AgentResult(
             agent_name="LogicAgent",
@@ -238,10 +262,12 @@ class LogicAgent(BaseReviewAgent):
         function_list: str,
         has_error_handling: bool,
         complexity: int,
+        change_context: str = "",
     ) -> tuple[List[Finding], int]:
         """Send one chunk to Claude and return (findings, tokens_used)."""
         prompt = _build_prompt(
-            file_diff, chunk_added, function_list, has_error_handling, complexity
+            file_diff, chunk_added, function_list, has_error_handling, complexity,
+            change_context,
         )
         response = await self._runtime.create_message(
             model=MODEL,

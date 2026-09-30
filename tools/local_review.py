@@ -272,10 +272,7 @@ def _review_file(file_diff: FileDiff, semgrep: SemgrepRunner) -> list[AgentResul
 
     # SemgrepRunner includes a regex fallback, so this remains useful on a
     # fresh checkout where the semgrep executable has not been installed.
-    try:
-        issues = semgrep.scan(source, file_diff.language)
-    except Exception:  # pragma: no cover - defensive around optional tooling
-        issues = []
+    issues = semgrep.scan(source, file_diff.language)
     for issue in issues:
         if issue.line not in changed_lines:
             continue

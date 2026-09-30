@@ -38,7 +38,7 @@ rules:
     message: "Possible SQL injection via string formatting (CWE-89)"
     metadata:
       cwe: CWE-89
-    patterns:
+    pattern-either:
       - pattern: $DB.execute("..." % ...)
       - pattern: $DB.execute("..." + ...)
       - pattern: $DB.execute(f"...")
@@ -57,7 +57,7 @@ rules:
     message: "Possible SQL injection via string concatenation (CWE-89)"
     metadata:
       cwe: CWE-89
-    patterns:
+    pattern-either:
       - pattern: $DB.query("..." + ...)
       - pattern: $DB.execute("..." + ...)
 
@@ -187,6 +187,14 @@ _LANG_EXT: dict[str, str] = {
 # SemgrepRunner
 # ---------------------------------------------------------------------------
 
+class SemgrepScanError(RuntimeError):
+    """A Semgrep invocation did not produce a trustworthy scan result."""
+
+    def __init__(self, reason_code: str) -> None:
+        self.reason_code = reason_code
+        super().__init__("Semgrep scan failed")
+
+
 class SemgrepRunner:
     """Run semgrep against a code snippet using the built-in rule set."""
 
@@ -244,11 +252,30 @@ class SemgrepRunner:
                     text=True,
                     timeout=60,
                 )
-                data = json.loads(result.stdout or "{}")
-            except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-                return []
+            except subprocess.TimeoutExpired as exc:
+                raise SemgrepScanError("semgrep_timeout") from exc
+            except OSError as exc:
+                raise SemgrepScanError("semgrep_execution_failed") from exc
 
-            for finding in data.get("results", []):
+            try:
+                data = json.loads(result.stdout or "")
+            except json.JSONDecodeError as exc:
+                raise SemgrepScanError("semgrep_invalid_output") from exc
+
+            if not isinstance(data, dict):
+                raise SemgrepScanError("semgrep_invalid_output")
+            if result.returncode != 0:
+                raise SemgrepScanError("semgrep_execution_failed")
+            if data.get("errors"):
+                raise SemgrepScanError("semgrep_reported_error")
+
+            findings = data.get("results", [])
+            if not isinstance(findings, list):
+                raise SemgrepScanError("semgrep_invalid_output")
+
+            for finding in findings:
+                if not isinstance(finding, dict):
+                    raise SemgrepScanError("semgrep_invalid_output")
                 meta = finding.get("extra", {}).get("metadata", {})
                 cwe = meta.get("cwe", "")
                 if isinstance(cwe, list):
@@ -325,4 +352,3 @@ class SemgrepRunner:
                     ))
 
         return issues
-

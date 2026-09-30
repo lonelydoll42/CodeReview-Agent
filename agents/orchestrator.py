@@ -419,7 +419,17 @@ class Orchestrator:
         # Their failures must not turn a durably completed/partial report back
         # into a task stuck in RUNNING.
         try:
-            if settings.ENABLE_PR_COMMENT:
+            inline_lines = {
+                fd.filename: {line for line, _ in fd.added_lines}
+                for fd in file_diffs
+            }
+            has_summary_only_findings = any(
+                finding.line_start not in inline_lines.get(finding.file, set())
+                for finding in report.findings
+            )
+            if settings.ENABLE_PR_COMMENT or (
+                settings.ENABLE_INLINE_COMMENT and has_summary_only_findings
+            ):
                 body = f"Reviewed commit `{commit_sha}`.\n\n{report.markdown_report}"
                 ok = await asyncio.to_thread(self.github.post_review_comment, pr_url, body)
                 if not ok:
