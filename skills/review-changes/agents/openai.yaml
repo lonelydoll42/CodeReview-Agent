@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review changes"
+  short_description: "Review local Git changes with verified evidence"
+  default_prompt: "$review-changes Review the current working-tree changes."

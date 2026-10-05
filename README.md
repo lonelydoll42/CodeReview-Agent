@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/repository-cover.svg" alt="CodeReview-Agent：从 GitHub Pull Request 出发，经安全、逻辑、性能和风格四个专项 Agent，生成可追溯的审查报告" width="100%" />
+  <img src="docs/assets/repository-cover.svg" alt="CodeReview-Agent：捕获代码变更，核实证据并生成审查报告" width="100%" />
 </p>
 
 <h1 align="center">CodeReview-Agent</h1>
 
 <p align="center">
-  <strong>让每一次 Pull Request，都多四个审查视角。</strong><br />
-  基于静态分析与大语言模型的 GitHub PR 审查工作台。
+  <strong>一次请求，完成有证据的本地代码审查。</strong><br />
+  一个可独立打包的 Skill 作为默认入口；服务端保留为可选自动化部署。
 </p>
 
 <p align="center">
@@ -17,74 +17,49 @@
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> ·
+  <a href="#quickstart">Skill quickstart</a> ·
   <a href="docs/example-report.md">报告示例</a> ·
-  <a href="docs/guide.md">使用指南</a> ·
+  <a href="docs/guide.md">Server guide</a> ·
   <a href="docs/recruiter_brief.md">项目亮点</a> ·
   <a href="CONTRIBUTING.md">参与开发</a>
 </p>
 
 ---
 
-## 从一条 PR 链接，到一份可执行的审查报告
+## Review local changes in your coding assistant
 
-输入 GitHub Pull Request URL，系统获取代码变更与固定版本的源码，由 **Security、Logic、Performance、Style** 四个 Agent 分别审查，再将结果去重、仲裁并整理成 Markdown 报告。
+`review-changes` drives one complete local review: select the worktree, index, or a branch comparison; capture a fixed snapshot; inspect relevant callers and tests; run optional static checks; verify candidate defects; and render a validated report. Semantic analysis uses the host assistant's current model, so this path needs no separate model key or running service.
 
-每条问题包含文件、行号、严重级别、修改建议、置信度与来源 Agent。可以在 Web 工作台查看历史、筛选问题和下载报告，也可以按需将结果发布到 GitHub PR。
+The Skill package includes its scripts, review methods, and a standalone copy of the shared standard-library review core. It can run from a different project directory without cloning this service repository. Current supported inputs are local worktree, staged index, and local branch ranges. Remote PR review, recheck of an earlier report, and WorkBuddy distribution are future work and have not been validated.
 
-| 能力 | 具体做什么 |
+| Review step | What it does |
 | --- | --- |
-| **四个专项视角** | 安全漏洞、逻辑缺陷、性能问题、代码风格分别审查 |
-| **工具辅助判断** | Semgrep 提供安全规则信号，Python AST 与 radon 提供结构和复杂度信息 |
-| **可追溯的代码快照** | 记录 base/head/merge-base SHA，使用固定版本源码；PR 在获取期间变化时拒绝继续 |
-| **统一报告** | 合并相近问题，按 Agent 权重与置信度投票决定严重级别，保留问题来源 |
-| **审查工作台** | Tasks、Review、Dashboard 三个页面，支持任务历史、报告浏览和趋势统计 |
-| **可选自动化** | GitHub Webhook 触发、PR 评论与行内评论、Slack / 企业微信通知 |
+| Scope | Worktree, staged index, or an explicitly based branch range |
+| Context | Changed snapshots plus selected callers, tests, and configuration |
+| Static checks | Optional Semgrep; missing and failed states remain visible |
+| Findings | Root cause, trigger, impact, change attribution, evidence, and repair direction |
+| Completion | Completed, partial, uncovered, or failed; an empty list alone is not a clean review |
 
-> 当前是可运行的工程项目，适合本地体验、Agent 应用学习与二次开发。能力范围与部署注意事项见[当前边界](#当前边界)，封面是流程插画，不是产品运行截图。
+> The cover is an illustration, not a product screenshot. The separate service path remains available for GitHub automation; see [Optional server deployment](docs/guide.md).
 
-## 审查链路
+<a id="quickstart"></a>
+## Quick start: independent Skill package
 
-```mermaid
-flowchart LR
-    IN[PR URL / GitHub Webhook] --> SNAP[获取固定版本 diff 与源码]
-    SNAP --> CACHE{版本与规则缓存命中?}
-    CACHE -->|是| COPY[复制历史报告]
-    CACHE -->|否| REVIEW[专项审查]
-    REVIEW --> SEC[Security · Semgrep + LLM]
-    REVIEW --> LOG[Logic · Python AST + LLM]
-    REVIEW --> PERF[Performance · LLM + AST 辅助]
-    REVIEW --> STYLE[Style · LLM]
-    SEC --> AGG[去重 · 严重级别投票 · 摘要]
-    LOG --> AGG
-    PERF --> AGG
-    STYLE --> AGG
-    AGG --> DB[(PostgreSQL)]
-    COPY --> DB
-    DB --> UI[API / Streamlit / Markdown]
-    AGG -. 按配置开启 .-> OUT[GitHub 评论 / 通知]
-```
-
-缓存同时考虑 PR URL、比较版本、共同祖先与分析代码指纹。只有结果持久化成功且全部 Agent 调用完成的审查才写入缓存；部分失败、未覆盖和失败任务不会污染缓存。命中时为新任务复制可查询的报告。Redis 同时用于任务状态和 Agent 结果缓存。
-
-一次审查会明确标记为 `completed`、`partial`、`uncovered` 或 `failed`：空 findings 是一次成功的清洁结果，模型超时、异常或畸形工具输出会进入失败覆盖统计，未支持语言或没有可分析文件则标记为未覆盖。报告还保留文件级覆盖和 Agent 执行状态，便于区分“没有发现问题”和“没有完成审查”。
-
-## 不启动服务，先审查本地 Diff
-
-只想在提交前快速检查当前改动时，不需要 Docker、数据库、Redis、GitHub Token 或模型 Key：
+Build from this repository with Python 3.10+ and Git. The build uses the standard library and writes only to the selected output directory; it does not install the Skill into the host's default skills directory.
 
 ```bash
-# 工作区未暂存改动
-python -m tools.local_review
-
-# 已暂存改动，或相对某个基线分支的改动
-python -m tools.local_review --staged
-python -m tools.local_review --base main --output review.md
+python scripts/build_review_skill.py --output /tmp/review-changes-dist
 ```
 
-这个入口使用仓库内置的静态规则和变更启发式，重点检查新增代码中的常见安全问题，以及被删除的授权校验；结果仍采用统一的 Markdown 报告格式。它适合低成本试用，不替代需要完整源码上下文和模型判断的 GitHub PR 审查。也可以把 unified diff 通过 `--diff-file -` 从标准输入传入。供编程助手调用的最小指引见 [`skills/local-diff-review/SKILL.md`](skills/local-diff-review/SKILL.md)。
+The output directory contains `review-changes.zip`, an unpacked `review-changes/` package, a version manifest with per-file and archive SHA-256 hashes, and a checksum for that manifest. Install the package using the Skill import flow for your assistant. Do not copy the source repository's service dependencies into a target project. No published download is available yet.
 
-## 四个 Agent 如何分工
+After installation, open any Git repository and ask your assistant to review the worktree, staged changes, or a local branch. The package requires Python 3.10+ and Git for snapshot scripts. Semgrep is optional: the host continues semantic review when it is missing or fails, and the final report keeps that tool state.
+
+For a repeatable isolation check, build the package and run the steps in [Skill-first implementation and acceptance](docs/skill-first.md). It uses a separate temporary repository whose staged and worktree contents intentionally differ.
+
+## Optional server deployment
+
+The API, PostgreSQL/Redis storage, Streamlit workbench, and GitHub Webhook/comment integrations remain a separate deployment path. It uses the service's configured model credentials and dependencies; it is not required by `review-changes`. The current server review still has four specialized Agents:
 
 | Agent | 关注的问题 | 分析方式 |
 | --- | --- | --- |
@@ -95,8 +70,7 @@ python -m tools.local_review --base main --output review.md
 
 可识别并送入审查的语言包括 Python、JavaScript、TypeScript、Go、Java、Ruby、Rust、C、C++、C#、PHP、Swift、Kotlin、Scala、Bash、SQL。**语言识别范围不代表静态规则覆盖相同**：AST 分析主要面向 Python，Semgrep 检查取决于内置规则。
 
-<a id="快速开始"></a>
-## 快速开始
+### Server quickstart
 
 准备 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
 
@@ -163,7 +137,7 @@ curl http://localhost:8000/review/1
 
 默认关闭 GitHub 评论与通知。开启方式见[集成配置](docs/guide.md#github-与通知集成)。
 
-## 报告长什么样
+## Example server report
 
 以下是演示数据，**并非对本仓库的真实漏洞结论**。完整的摘要、统计和建议见[报告示例](docs/example-report.md)。
 
@@ -178,6 +152,7 @@ curl http://localhost:8000/review/1
 | 想了解什么 | 从这里开始 |
 | --- | --- |
 | 配置、API、Webhook、工作台使用与故障排查 | [使用指南](docs/guide.md) |
+| 本地 `review-changes` Skill 与隔离验收 | [Skill-first implementation](docs/skill-first.md) |
 | 一份审查结果包含哪些内容 | [报告示例](docs/example-report.md) |
 | 设计取舍与面试展示思路 | [项目亮点](docs/recruiter_brief.md) |
 | 本地测试、分支与贡献流程 | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -190,6 +165,7 @@ curl http://localhost:8000/review/1
 
 ```text
 agents/          四个专项 Agent、共享模型、聚合器与调度器
+review_core/     Skill 与服务共享的纯数据、快照、校验和报告代码
 api/             FastAPI 任务、Webhook 和统计接口
 tools/           GitHub 快照、AST、Semgrep 与缓存版本工具
 storage/         PostgreSQL 模型与 Redis 缓存
@@ -199,6 +175,7 @@ eval/            Precision / Recall / F1 评测工具
 graph/           备用 LangGraph 工作流
 tests/           单元测试与 PostgreSQL 集成测试
 docs/            使用指南、示例与首页素材
+skills/          review-changes 完整流程与按需参考资料
 ```
 
 </details>
@@ -217,17 +194,18 @@ python -m pip check
 <a id="当前边界"></a>
 ## 当前边界
 
-- 支持不超过 1 MiB 的 UTF-8 文本；删除文件、二进制及不支持的语言会在报告中注明未分析。
-- 目前使用进程内后台任务，不包含可恢复的分布式队列；服务重启仍可能丢失运行中的任务。
-- Agent 请求使用异步客户端和有界等待；调度器在服务事件循环内按配置限制跨任务的并发。同步 AST/Semgrep 工作会移出事件循环，但线程本身不能被强制终止。
-- 审查会区分完整、部分失败、未覆盖和失败；没有发现问题不等于证明代码安全，需要结合覆盖信息和人工审查。
-- 工作台登录与 API 访问控制是两回事；API 暂无统一认证层，公开部署需要补充访问控制。
+- `review-changes` 当前面向本地工作区、暂存区和本地分支；远程 PR 取数、GitHub 评论、历史报告复查和 WorkBuddy 包适配尚未实现或验收。
+- 快照脚本要求 Python 3.10+ 和 Git。超出大小限制、二进制、不可读或不支持的代码会作为未覆盖项保留；不能把它们写成已完成审查。
+- Semgrep 是可选项，静态规则只覆盖其声明的语言。工具缺失或失败不阻断宿主语义审查，但状态与实际静态覆盖会写入报告。
+- 宿主负责模型调用；若宿主未提供用量和费用，结果记录为未知。没有发现问题不等于证明代码安全，需要结合覆盖信息和人工审查。
+- 可选服务仍使用进程内后台任务，不包含可恢复的分布式队列；服务重启仍可能丢失运行中的任务。工作台登录与 API 访问控制是两回事，API 暂无统一认证层，公开部署需要补充访问控制。
 - 当前没有 RiskProfile、Playbook 路由、自动 Merge Gate 或通用模型 Provider API；`graph/` 是备用编排，不是 API 默认执行入口。
 
 ## 后续方向
 
 - [x] 显式区分完整、部分失败与未覆盖的审查结果。
 - [x] 完善异步模型调用与跨任务并发上限。
+- [ ] 分别验收 WorkBuddy 分发、远程 PR 与修改后复查。
 - [ ] 引入可恢复的持久化任务队列、租约和幂等消费。
 - [ ] 增加统一 API 认证和部署配置。
 - [ ] 扩展评测数据集，持续观察误报、漏报与成本。

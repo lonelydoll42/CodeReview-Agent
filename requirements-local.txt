@@ -1,0 +1,6 @@
+# Compatibility dependencies for the existing local CLI and legacy report models.
+# The version 2 review_core package itself uses only the Python standard library.
+pydantic==2.7.1
+
+# Semgrep is optional. The local CLI records its fallback scanner behavior when
+# the executable is unavailable; install it separately to enable full scans.

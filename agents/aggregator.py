@@ -14,31 +14,27 @@ import asyncio
 import os
 from typing import Any, Dict, List, Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from agents.base import AgentExecution, AgentResult, FileCoverage, Finding
+from review_core.legacy import (
+    AGENT_WEIGHTS,
+    SEVERITY_ORDER as _SEVERITY_ORDER,
+    arbitrate_severity,
+    cluster_by_proximity,
+    count_by_severity as _legacy_count_by_severity,
+    coverage_warning as _legacy_coverage_warning,
+    deduplicate_legacy,
+    fallback_summary,
+    merge_legacy_cluster,
+    render_legacy_markdown,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 MODEL = "claude-opus-4-6"
-
-AGENT_WEIGHTS: Dict[str, float] = {
-    "SecurityAgent":     1.0,
-    "LogicAgent":        0.8,
-    "PerformanceAgent":  0.6,
-    "StyleAgent":        0.4,
-}
-
-_SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
-_SEVERITY_ICONS = {
-    "CRITICAL": "🔴",
-    "HIGH":     "🟠",
-    "MEDIUM":   "🟡",
-    "LOW":      "🟢",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +92,14 @@ class Aggregator:
         # A local/offline aggregation must not require an API key or even
         # construct a provider client.  The deterministic path is also used
         # when a provider is unavailable at runtime.
-        self._client = (
-            anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
-            if enable_llm_summary
-            else None
-        )
+        if enable_llm_summary:
+            import anthropic
+
+            self._client = anthropic.Anthropic(
+                api_key=api_key or os.environ.get("ANTHROPIC_API_KEY")
+            )
+        else:
+            self._client = None
 
     # ------------------------------------------------------------------
     # Public interface
@@ -182,19 +181,11 @@ class Aggregator:
         self,
         findings_with_agent: List[tuple[Finding, str]],
     ) -> List[DeduplicatedFinding]:
-        """Merge corroborating findings with shared file/category evidence."""
-        # Group by (file, category)
-        groups: Dict[tuple[str, str], List[tuple[Finding, str]]] = {}
-        for finding, agent in findings_with_agent:
-            key = (finding.file, finding.category)
-            groups.setdefault(key, []).append((finding, agent))
-
-        result: List[DeduplicatedFinding] = []
-        for (_file, _category), items in groups.items():
-            clusters = self._cluster_by_proximity(items)
-            for cluster in clusters:
-                result.append(self._merge_cluster(cluster))
-        return result
+        """Run the dependency-free legacy deduplication behavior."""
+        return [
+            DeduplicatedFinding(**item)
+            for item in deduplicate_legacy(findings_with_agent)
+        ]
 
     @staticmethod
     def _cluster_by_proximity(
@@ -207,109 +198,24 @@ class Aggregator:
         contain at most one finding per agent, and every finding must overlap
         every other finding in the cluster's reported line range.
         """
-        if not items:
-            return []
-        # Sort by line_start so clustering is deterministic.  Line ranges are
-        # used as evidence; nearby but disjoint findings remain independent.
-        sorted_items = sorted(items, key=lambda x: (x[0].line_start, x[0].line_end))
-        clusters: List[List[tuple[Finding, str]]] = [[sorted_items[0]]]
-        for item in sorted_items[1:]:
-            matching_cluster = next(
-                (
-                    cluster
-                    for cluster in clusters
-                    if item[1] not in {agent for _, agent in cluster}
-                    and all(
-                        Aggregator._line_ranges_overlap(item[0], existing[0])
-                        for existing in cluster
-                    )
-                ),
-                None,
-            )
-            if matching_cluster is None:
-                clusters.append([item])
-            else:
-                matching_cluster.append(item)
-        return clusters
+        return cluster_by_proximity(items)
 
     @staticmethod
     def _line_ranges_overlap(left: Finding, right: Finding) -> bool:
         """Return whether two findings point to at least one common line."""
-        return (
-            left.line_start <= right.line_end
-            and right.line_start <= left.line_end
-        )
+        return left.line_start <= right.line_end and right.line_start <= left.line_end
 
     def _merge_cluster(
         self,
         cluster: List[tuple[Finding, str]],
     ) -> DeduplicatedFinding:
-        """Merge a cluster of related findings into one DeduplicatedFinding."""
-        # Pick the finding with highest weighted confidence as "primary"
-        def weighted_conf(item: tuple[Finding, str]) -> float:
-            finding, agent = item
-            weight = AGENT_WEIGHTS.get(agent, 0.5)
-            return weight * finding.confidence
-
-        primary_item = max(cluster, key=weighted_conf)
-        primary, _ = primary_item
-
-        # Collect all agents in this cluster
-        source_agents: List[str] = list({
-            agent for _, agent in cluster
-        })
-
-        # Compute weighted average confidence
-        total_weight = sum(AGENT_WEIGHTS.get(a, 0.5) for _, a in cluster)
-        weighted_confidence = (
-            sum(AGENT_WEIGHTS.get(a, 0.5) * f.confidence for f, a in cluster)
-            / total_weight
-        )
-
-        # Keep the evidence pair from one finding.  Selecting description and
-        # suggestion independently can combine text about different issues.
-        description = primary.description
-        suggestion = primary.suggestion
-
-        # Determine severity
-        severity = self._arbitrate_severity(cluster)
-
-        return DeduplicatedFinding(
-            file=primary.file,
-            line_start=primary.line_start,
-            line_end=primary.line_end,
-            severity=severity,
-            category=primary.category,
-            description=description,
-            suggestion=suggestion,
-            confidence=round(weighted_confidence, 4),
-            source_agents=sorted(source_agents),
-        )
+        return DeduplicatedFinding(**merge_legacy_cluster(cluster))
 
     @staticmethod
     def _arbitrate_severity(
         cluster: List[tuple[Finding, str]],
     ) -> str:
-        """Vote on reported severity; preserve SecurityAgent CRITICAL findings."""
-        # Guard: SecurityAgent CRITICAL is immutable
-        for finding, agent in cluster:
-            if agent == "SecurityAgent" and finding.severity == "CRITICAL":
-                return "CRITICAL"
-
-        votes: Dict[str, float] = {}
-        for finding, agent in cluster:
-            votes[finding.severity] = (
-                votes.get(finding.severity, 0.0)
-                + AGENT_WEIGHTS.get(agent, 0.5) * finding.confidence
-            )
-
-        # Confidence measures certainty, not impact. Only select a reported
-        # severity, breaking equal votes in favour of the higher known risk.
-        return min(votes, key=lambda severity: (
-            -votes[severity],
-            _SEVERITY_ORDER.index(severity) if severity in _SEVERITY_ORDER else 99,
-            severity,
-        ))
+        return arbitrate_severity(cluster)
 
     # ------------------------------------------------------------------
     # Executive summary (Claude)
@@ -377,97 +283,14 @@ class Aggregator:
     @staticmethod
     def _fallback_executive_summary(findings: List[DeduplicatedFinding]) -> str:
         """Build a deterministic summary when model output is disabled/unavailable."""
-        total = len(findings)
-        counts = _count_by_severity(findings)
-        parts = [
-            f"{sev}: {counts[sev]}" for sev in _SEVERITY_ORDER if counts.get(sev)
-        ]
-        return (
-            f"Code review completed with {total} finding(s) "
-            f"({', '.join(parts)}). "
-            "Please review the detailed findings below."
-        )
+        return fallback_summary(findings)
 
     # ------------------------------------------------------------------
     # Markdown rendering
     # ------------------------------------------------------------------
 
     def _render_markdown(self, report: AggregatedReport) -> str:
-        """Render the full Markdown report string."""
-        lines: List[str] = []
-        lines.append("# Code Review Report\n")
-
-        meta = report.pr_metadata
-        if meta:
-            author = meta.get("author", "")
-            branch = meta.get("head_branch", "")
-            title = meta.get("title", "")
-            if title:
-                lines.append(f"**PR:** {title}")
-            if author:
-                lines.append(f"**Author:** {author}")
-            if branch:
-                lines.append(f"**Branch:** {branch}")
-            if meta.get("head_sha"):
-                lines.append(f"**Reviewed commit:** `{meta['head_sha']}`")
-            if meta.get("base_sha"):
-                lines.append(f"**Base commit:** `{meta['base_sha']}`")
-            if meta.get("skipped_files"):
-                lines.append("\n**Coverage:** The following files were not analyzed:")
-                for filename, reason in meta["skipped_files"].items():
-                    lines.append(f"- `{filename}`: {reason}")
-            lines.append("")
-
-        if report.coverage:
-            lines.append("**Analysis coverage:**")
-            for item in report.coverage:
-                details = f"{item.completed_agents}/{item.expected_agents} agents"
-                reason = f" ({item.reason})" if item.reason else ""
-                lines.append(
-                    f"- `{item.filename}`: {item.status}, {details}{reason}"
-                )
-            lines.append("")
-
-        lines.append("## Executive Summary")
-        lines.append(report.executive_summary)
-        lines.append("")
-
-        # Statistics table
-        lines.append("## Statistics")
-        lines.append("| Severity | Count |")
-        lines.append("|----------|-------|")
-        counts = _count_by_severity(report.findings)
-        for sev in _SEVERITY_ORDER:
-            lines.append(f"| {sev} | {counts.get(sev, 0)} |")
-        lines.append("")
-
-        # Findings by severity
-        lines.append("## Findings\n")
-        findings_by_sev: Dict[str, List[DeduplicatedFinding]] = {}
-        for f in report.findings:
-            findings_by_sev.setdefault(f.severity, []).append(f)
-
-        for sev in _SEVERITY_ORDER:
-            sev_findings = findings_by_sev.get(sev, [])
-            icon = _SEVERITY_ICONS.get(sev, "")
-            lines.append(f"### {icon} {sev}")
-            if not sev_findings:
-                lines.append("_No issues._\n")
-                continue
-            for f in sev_findings:
-                lines.append(
-                    f"#### [{f.category}] `{f.file}` "
-                    f"L{f.line_start}-{f.line_end}"
-                )
-                lines.append(f"**Description:** {f.description}  ")
-                lines.append(f"**Suggestion:** {f.suggestion}  ")
-                sources = ", ".join(f.source_agents)
-                lines.append(
-                    f"**Confidence:** {f.confidence:.0%} | **Sources:** {sources}"
-                )
-                lines.append("")
-
-        return "\n".join(lines)
+        return render_legacy_markdown(report)
 
     # ------------------------------------------------------------------
     # Stats helper
@@ -510,20 +333,8 @@ class Aggregator:
 # ---------------------------------------------------------------------------
 
 def _count_by_severity(findings: List[DeduplicatedFinding]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
-    for f in findings:
-        counts[f.severity] = counts.get(f.severity, 0) + 1
-    return counts
+    return _legacy_count_by_severity(findings)
 
 
 def _coverage_warning(review_status: str, coverage: List[FileCoverage]) -> str:
-    """Return a user-facing caveat whenever a report is not globally clean."""
-    skipped = [item for item in coverage if item.status in {"unsupported", "skipped"}]
-    partial = [item for item in coverage if item.status in {"partial", "failed"}]
-    if review_status == "uncovered":
-        return "No supported files were available, so this report does not cover the changed code."
-    if partial:
-        return "Some file analyses did not complete, so this report is scoped to the successful agent runs."
-    if skipped:
-        return f"{len(skipped)} changed file(s) were not analyzed, so this is not a conclusion about the entire change."
-    return ""
+    return _legacy_coverage_warning(review_status, coverage)
