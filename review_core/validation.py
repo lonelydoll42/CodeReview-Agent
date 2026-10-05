@@ -619,3 +619,15 @@ def validate_review(result: dict[str, Any], manifest: dict[str, Any]) -> dict[st
         }
     )
     return normalized_result
+
+
+def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a captured schema-version-2 manifest.
+
+    Review results normally validate their manifest as part of
+    :func:`validate_review`. Recheck inputs also need to validate a current
+    manifest when no new host result is available, so this small public wrapper
+    exposes the same strict manifest contract without inventing a result.
+    """
+    normalized, _ = _manifest(manifest)
+    return normalized

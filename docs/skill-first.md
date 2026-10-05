@@ -2,7 +2,7 @@
 
 `review-changes` is the primary local review entry point. The host assistant performs semantic analysis with its current model; the package provides pinned Git inputs, review methods, optional static signals, strict result validation, and deterministic Markdown rendering. It does not require this repository, the API service, a model SDK, a database, or Redis in the target project.
 
-This first package supports worktree, staged-index, and local branch reviews. It does not fetch remote pull requests or recheck an earlier report. WorkBuddy packaging and behavior have not been validated.
+This package supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy packaging and behavior have not been validated.
 
 ## Build
 
@@ -132,6 +132,32 @@ python -S "$REVIEW_SKILL/scripts/finalize_review.py" \
 
 The finalizer must reject evidence paths, sides, fingerprints, or line numbers that are not present in the captured manifest. It saves the normalized result so aggregate status in JSON and Markdown agrees; for example, a claimed `completed` result with uncovered changed files is persisted and rendered as `partial`. A failed validation is not a clean review. The tests `tests/test_review_skill_runtime.py` exercise package execution from outside the repository under `python -S`, differing index/worktree snapshots, captured context, live scope-drift rejection, static-tool missing/failure/coverage states, evidence validation, and normalized status persistence.
 
+## Recheck a previous report
+
+After modifying the code, capture the same scope again and ask the host assistant to produce a new schema-version-2 result tied to the new manifest. The assistant should inspect each prior finding's root cause, trigger, impact, callers, and tests, then add an explicit `recheck_decisions` entry when it can prove a finding is resolved:
+
+```json
+{
+  "previous_finding_id": "authorization-owner-check",
+  "status": "resolved",
+  "reason": "The caller now rejects an unrelated user before the record is returned."
+}
+```
+
+Run the packaged deterministic association and renderer with the prior manifest/result and the new manifest/result:
+
+```bash
+python -S "$REVIEW_DIST/review-changes/scripts/recheck_review.py" \
+  --previous-manifest "$REVIEW_TMP/previous-manifest.json" \
+  --previous-result "$REVIEW_TMP/previous-result.json" \
+  --current-manifest "$REVIEW_TMP/current-manifest.json" \
+  --current-result "$REVIEW_TMP/current-result.json" \
+  --output "$REVIEW_TMP/recheck.json" \
+  --markdown-output "$REVIEW_TMP/recheck.md"
+```
+
+The report associates stable finding IDs first, then falls back to the root cause, trigger, impact, and captured evidence paths. Renames and line-number drift are allowed when the captured snapshots support the association. Each prior finding is `resolved`, `persisting`, or `unverified`; a missing current result, failed review, unavailable source, or insufficient evidence remains unverified. A finding disappearing from the new report never proves that it was fixed. The aggregate recheck status is `partial` when the current review has failed, uncovered, or incomplete coverage. New confirmed findings and coverage gaps are listed separately.
+
 ## Current Boundaries
 
-The host model does semantic analysis; this project does not measure its token use or cost, so unknown measurements stay `null`. Semgrep is optional and the bundled rules cover only their declared languages. Unsupported languages and files whose content could not be captured remain uncovered; the review must be marked partial or uncovered as appropriate. This first-stage package is local-only. PR retrieval, GitHub comments, previous-report recheck, and WorkBuddy packaging await separate implementation and acceptance.
+The host model does semantic analysis; this project does not measure its token use or cost, so unknown measurements stay `null`. Semgrep is optional and the bundled rules cover only their declared languages. Unsupported languages and files whose content could not be captured remain uncovered; the review or recheck must be marked partial or uncovered as appropriate. This package is local-only. PR retrieval, GitHub comments, and WorkBuddy packaging await separate implementation and acceptance.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -306,6 +307,41 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     assert "authorization_bypass" in report
     assert "**Status:** partial" in report
     assert validated["review_status"] == "partial"
+
+    current_result = copy.deepcopy(validated)
+    current_result["findings"] = []
+    current_result["recheck_decisions"] = [
+        {
+            "previous_finding_id": "auth-1",
+            "status": "resolved",
+            "reason": "The updated permission path checks the caller before returning the record.",
+        }
+    ]
+    current_result_path = tmp_path / "current-result.json"
+    _write_json(current_result_path, current_result)
+    recheck_output = tmp_path / "recheck.json"
+    recheck_report = tmp_path / "recheck.md"
+    _run_skill(
+        package,
+        "recheck_review.py",
+        "--previous-manifest",
+        str(staged_final_path),
+        "--previous-result",
+        str(validated_path),
+        "--current-manifest",
+        str(staged_final_path),
+        "--current-result",
+        str(current_result_path),
+        "--output",
+        str(recheck_output),
+        "--markdown-output",
+        str(recheck_report),
+        cwd=repository.parent,
+    )
+    rechecked = json.loads(recheck_output.read_text(encoding="utf-8"))
+    assert rechecked["recheck_status"] == "partial"
+    assert rechecked["findings"][0]["status"] == "resolved"
+    assert "resolved" in recheck_report.read_text(encoding="utf-8")
 
     result["findings"][0]["evidence"][0]["file"] = "not-captured.py"
     bad_result = tmp_path / "bad-result.json"

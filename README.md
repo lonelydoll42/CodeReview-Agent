@@ -30,7 +30,7 @@
 
 `review-changes` drives one complete local review: select the worktree, index, or a branch comparison; capture a fixed snapshot; inspect relevant callers and tests; run optional static checks; verify candidate defects; and render a validated report. Semantic analysis uses the host assistant's current model, so this path needs no separate model key or running service.
 
-The Skill package includes its scripts, review methods, and a standalone copy of the shared standard-library review core. It can run from a different project directory without cloning this service repository. Current supported inputs are local worktree, staged index, and local branch ranges. Remote PR review, recheck of an earlier report, and WorkBuddy distribution are future work and have not been validated.
+The Skill package includes its scripts, review methods, and a standalone copy of the shared standard-library review core. It can run from a different project directory without cloning this service repository. Current supported inputs are local worktree, staged index, local branch ranges, and rechecking a prior schema-version-2 report against a new local snapshot. Remote PR review and WorkBuddy distribution are future work and have not been validated.
 
 | Review step | What it does |
 | --- | --- |
@@ -38,6 +38,7 @@ The Skill package includes its scripts, review methods, and a standalone copy of
 | Context | Changed snapshots plus selected callers, tests, and configuration |
 | Static checks | Optional Semgrep; missing and failed states remain visible |
 | Findings | Root cause, trigger, impact, change attribution, evidence, and repair direction |
+| Recheck | Associate a prior report after edits; classify resolved, persisting, or unverified findings |
 | Completion | Completed, partial, uncovered, or failed; an empty list alone is not a clean review |
 
 > The cover is an illustration, not a product screenshot. The separate service path remains available for GitHub automation; see [Optional server deployment](docs/guide.md).
@@ -194,7 +195,7 @@ python -m pip check
 <a id="当前边界"></a>
 ## 当前边界
 
-- `review-changes` 当前面向本地工作区、暂存区和本地分支；远程 PR 取数、GitHub 评论、历史报告复查和 WorkBuddy 包适配尚未实现或验收。
+- `review-changes` 当前面向本地工作区、暂存区、本地分支和历史报告复查；远程 PR 取数、GitHub 评论和 WorkBuddy 包适配尚未实现或验收。
 - 快照脚本要求 Python 3.10+ 和 Git。超出大小限制、二进制、不可读或不支持的代码会作为未覆盖项保留；不能把它们写成已完成审查。
 - Semgrep 是可选项，静态规则只覆盖其声明的语言。工具缺失或失败不阻断宿主语义审查，但状态与实际静态覆盖会写入报告。
 - 宿主负责模型调用；若宿主未提供用量和费用，结果记录为未知。没有发现问题不等于证明代码安全，需要结合覆盖信息和人工审查。
@@ -205,7 +206,8 @@ python -m pip check
 
 - [x] 显式区分完整、部分失败与未覆盖的审查结果。
 - [x] 完善异步模型调用与跨任务并发上限。
-- [ ] 分别验收 WorkBuddy 分发、远程 PR 与修改后复查。
+- [x] 完成历史报告复查的本地流程与独立包验收。
+- [ ] 分别验收 WorkBuddy 分发与远程 PR。
 - [ ] 引入可恢复的持久化任务队列、租约和幂等消费。
 - [ ] 增加统一 API 认证和部署配置。
 - [ ] 扩展评测数据集，持续观察误报、漏报与成本。

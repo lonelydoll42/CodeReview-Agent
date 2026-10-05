@@ -97,3 +97,17 @@ This schema-version-2 example describes a confirmed authorization issue in `src/
 ```
 
 If any selected file is semantically partial, failed, or uncovered, record that per-file status and let validation derive the aggregate status. Do not copy the example's `completed` value over incomplete work.
+
+## Recheck output
+
+`recheck_review.py` produces a separate result with `recheck_status`, the previous and current input fingerprints, one `findings` entry per prior finding, `new_findings`, and `coverage_gaps`. Each prior entry is `resolved`, `persisting`, or `unverified` and includes a reason. The host may provide an explicit `recheck_decisions` entry in the current semantic result:
+
+```json
+{
+  "previous_finding_id": "finding-null-lookup",
+  "status": "resolved",
+  "reason": "The caller now handles a missing record before dereferencing it."
+}
+```
+
+An explicit reason is required for `resolved`. An empty current result, failed review, missing snapshot, or insufficient evidence produces `unverified`; absence from a new report never proves that a prior issue was fixed.
