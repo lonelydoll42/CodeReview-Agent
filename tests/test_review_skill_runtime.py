@@ -186,13 +186,17 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     )
     assert rejected.returncode != 0
 
+    branch_path = tmp_path / "branch.json"
     branch = _manifest(
         package,
         repository,
         "branch",
-        tmp_path / "branch.json",
+        branch_path,
         "--base",
         "main",
+        "--context",
+        "app.py",
+        "tests/test_permissions.py",
     )
     assert next(item for item in branch["files"] if item["filename"] == "src/permissions.py")["after"]["content"].endswith(
         "return True\n"
@@ -244,24 +248,35 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     assert {item["file"] for item in scan["uncovered_files"]} == {"src/handler.go"}
 
     finding = {
-        "finding_id": "auth-1",
-        "category": "authorization_bypass",
-        "severity": "HIGH",
-        "root_cause": "The selected caller permits access without an ownership check.",
-        "trigger": "A non-admin user requests another user's record.",
-        "impact": "The handler can return a record the caller does not own.",
-        "change_reason": "The branch change replaced the owner/admin predicate with an unconditional allow.",
-        "suggestion": "Restore an owner or administrator authorization check.",
+        "finding_id": "owner-access-1",
+        "category": "authorization_denial",
+        "severity": "MEDIUM",
+        "root_cause": "The permission helper requires administrator status and ignores record ownership.",
+        "trigger": "A non-admin user requests their own record.",
+        "impact": "The legitimate owner is denied access to their record.",
+        "change_reason": "The staged change replaced the owner-or-admin predicate with an administrator-only check.",
+        "suggestion": "Allow the owner as well as administrators.",
         "validation_status": "confirmed",
         "evidence": [
             {
-                "file": "tests/test_permissions.py",
+                "file": "src/permissions.py",
                 "side": "after",
                 "line_start": 2,
                 "line_end": 2,
-                "snapshot_fingerprint": context["tests/test_permissions.py"]["after"]["fingerprint"],
-                "description": "The captured test contract denies unrelated users.",
-            }
+                "snapshot_fingerprint": next(
+                    item for item in staged_final["files"]
+                    if item["filename"] == "src/permissions.py"
+                )["after"]["fingerprint"],
+                "description": "The permission helper contains the authorization predicate.",
+            },
+            {
+                "file": "app.py",
+                "side": "after",
+                "line_start": 4,
+                "line_end": 4,
+                "snapshot_fingerprint": context["app.py"]["after"]["fingerprint"],
+                "description": "The selected application caller delegates to the permission helper.",
+            },
         ],
         "sources": ["host-semantic-review"],
     }
@@ -304,34 +319,194 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     )
     report = report_path.read_text(encoding="utf-8")
     validated = json.loads(validated_path.read_text(encoding="utf-8"))
-    assert "authorization_bypass" in report
+    assert "authorization_denial" in report
     assert "**Status:** partial" in report
     assert validated["review_status"] == "partial"
 
-    current_result = copy.deepcopy(validated)
-    current_result["findings"] = []
-    current_result["recheck_decisions"] = [
+    branch_context = {item["filename"]: item for item in branch["context_files"]}
+    branch_permission = next(
+        item for item in branch["files"] if item["filename"] == "src/permissions.py"
+    )
+    prior_finding = copy.deepcopy(finding)
+    prior_finding.update(
+        {
+            "finding_id": "auth-1",
+            "category": "authorization_bypass",
+            "severity": "HIGH",
+            "root_cause": "The selected caller permits access without an ownership check.",
+            "trigger": "A non-admin user requests another user's record.",
+            "impact": "The handler can return a record the caller does not own.",
+            "change_reason": "The branch change replaced the owner/admin predicate with an unconditional allow.",
+            "suggestion": "Restore an owner or administrator authorization check.",
+            "evidence": [
+                {
+                    "file": "src/permissions.py",
+                    "side": "after",
+                    "line_start": 2,
+                    "line_end": 2,
+                    "snapshot_fingerprint": branch_permission["after"]["fingerprint"],
+                    "description": "The branch version unconditionally allows access.",
+                },
+                {
+                    "file": "app.py",
+                    "side": "after",
+                    "line_start": 4,
+                    "line_end": 4,
+                    "snapshot_fingerprint": branch_context["app.py"]["after"]["fingerprint"],
+                    "description": "The selected caller delegates without another authorization check.",
+                },
+                {
+                    "file": "tests/test_permissions.py",
+                    "side": "after",
+                    "line_start": 2,
+                    "line_end": 2,
+                    "snapshot_fingerprint": branch_context["tests/test_permissions.py"]["after"]["fingerprint"],
+                    "description": "The captured test contract denies unrelated users.",
+                },
+            ],
+        }
+    )
+    prior_result = copy.deepcopy(validated)
+    prior_result.update(
+        {
+            "input_fingerprint": branch["content_fingerprint"],
+            "review_status": "completed",
+            "findings": [prior_finding],
+            "coverage": [
+                {
+                    "file": item["filename"],
+                    "semantic_status": "completed",
+                    "static_status": "not_run",
+                    "reason": "",
+                    "context_gaps": [],
+                }
+                for item in branch["files"]
+            ],
+            "tool_runs": [],
+        }
+    )
+    prior_result_path = tmp_path / "prior-result.json"
+    _write_json(prior_result_path, prior_result)
+    prior_report_path = tmp_path / "prior-review.md"
+    prior_validated_path = tmp_path / "prior-validated-result.json"
+    _run_skill(
+        package,
+        "finalize_review.py",
+        "--input",
+        str(branch_path),
+        "--result",
+        str(prior_result_path),
+        "--output",
+        str(prior_report_path),
+        "--validated-output",
+        str(prior_validated_path),
+        cwd=repository.parent,
+    )
+    prior_validated = json.loads(prior_validated_path.read_text(encoding="utf-8"))
+    assert prior_validated["review_status"] == "completed"
+    assert "authorization_bypass" in prior_report_path.read_text(encoding="utf-8")
+
+    # Recheck a genuinely changed snapshot. Keep the repaired permission path,
+    # its caller, and the existing test contract available as after-side proof.
+    (repository / "src" / "permissions.py").write_text(
+        "def can_read(user, record):\n"
+        "    return user.is_admin or user.id == record.owner_id\n",
+        encoding="utf-8",
+    )
+    (repository / "app.py").write_text(
+        "from src.permissions import can_read\n\n"
+        "def handle(user, record):\n"
+        "    if user is None:\n"
+        "        return False\n"
+        "    return can_read(user, record)\n",
+        encoding="utf-8",
+    )
+    _git(repository, "add", "src/permissions.py", "app.py")
+    fixed_manifest_path = tmp_path / "fixed-manifest.json"
+    fixed_manifest = _manifest(
+        package,
+        repository,
+        "staged",
+        fixed_manifest_path,
+        "--context",
+        "app.py",
+        "tests/test_permissions.py",
+    )
+    assert fixed_manifest["content_fingerprint"] != branch["content_fingerprint"]
+    assert fixed_manifest["content_fingerprint"] != staged_final["content_fingerprint"]
+
+    fixed_result = copy.deepcopy(prior_validated)
+    fixed_result["input_fingerprint"] = fixed_manifest["content_fingerprint"]
+    fixed_result["findings"] = []
+    fixed_result["coverage"] = [
+        {
+            "file": item["filename"],
+            "semantic_status": "uncovered" if item["language"] == "go" else "completed",
+            "static_status": "unsupported" if item["language"] == "go" else "completed",
+            "reason": "No semantic analysis was run for this fixture file." if item["language"] == "go" else "",
+            "context_gaps": ["semantic review not run"] if item["language"] == "go" else [],
+        }
+        for item in fixed_manifest["files"]
+    ]
+    fixed_after_evidence = [
+        {
+            "file": "src/permissions.py",
+            "side": "after",
+            "line_start": 2,
+            "line_end": 2,
+            "snapshot_fingerprint": next(
+                item for item in fixed_manifest["files"]
+                if item["filename"] == "src/permissions.py"
+            )["after"]["fingerprint"],
+            "description": "The repaired helper denies non-admin users who do not own the record.",
+        },
+        {
+            "file": "app.py",
+            "side": "after",
+            "line_start": 6,
+            "line_end": 6,
+            "snapshot_fingerprint": next(
+                item for item in fixed_manifest["files"]
+                if item["filename"] == "app.py"
+            )["after"]["fingerprint"],
+            "description": "The caller rejects a missing user before delegating to authorization.",
+        },
+        {
+            "file": "tests/test_permissions.py",
+            "side": "after",
+            "line_start": 2,
+            "line_end": 2,
+            "snapshot_fingerprint": next(
+                item for item in fixed_manifest["context_files"]
+                if item["filename"] == "tests/test_permissions.py"
+            )["after"]["fingerprint"],
+            "description": "The captured test contract denies unrelated users.",
+        },
+    ]
+    fixed_result["review_status"] = "partial"
+    fixed_result["recheck_decisions"] = [
         {
             "previous_finding_id": "auth-1",
             "status": "resolved",
             "reason": "The updated permission path checks the caller before returning the record.",
+            "evidence": fixed_after_evidence,
         }
     ]
-    current_result_path = tmp_path / "current-result.json"
-    _write_json(current_result_path, current_result)
+    fixed_result_path = tmp_path / "fixed-result.json"
+    _write_json(fixed_result_path, fixed_result)
     recheck_output = tmp_path / "recheck.json"
     recheck_report = tmp_path / "recheck.md"
     _run_skill(
         package,
         "recheck_review.py",
         "--previous-manifest",
-        str(staged_final_path),
+        str(branch_path),
         "--previous-result",
-        str(validated_path),
+        str(prior_validated_path),
         "--current-manifest",
-        str(staged_final_path),
+        str(fixed_manifest_path),
         "--current-result",
-        str(current_result_path),
+        str(fixed_result_path),
         "--output",
         str(recheck_output),
         "--markdown-output",
@@ -341,7 +516,53 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     rechecked = json.loads(recheck_output.read_text(encoding="utf-8"))
     assert rechecked["recheck_status"] == "partial"
     assert rechecked["findings"][0]["status"] == "resolved"
+    assert rechecked["current_input_fingerprint"] == fixed_manifest["content_fingerprint"]
+    assert rechecked["coverage_gaps"] == [
+        {
+            "file": "src/handler.go",
+            "semantic_status": "uncovered",
+            "reason": "No semantic analysis was run for this fixture file.",
+        }
+    ]
     assert "resolved" in recheck_report.read_text(encoding="utf-8")
+
+    unchanged_result = copy.deepcopy(prior_validated)
+    unchanged_result["findings"] = []
+    unchanged_result["recheck_decisions"] = [
+        {
+            "previous_finding_id": "auth-1",
+            "status": "resolved",
+            "reason": "The permission behavior is now correct.",
+            "evidence": [],
+        }
+    ]
+    unchanged_result_path = tmp_path / "unchanged-result.json"
+    _write_json(unchanged_result_path, unchanged_result)
+    no_proof_output = tmp_path / "no-proof-recheck.json"
+    no_proof_report = tmp_path / "no-proof-recheck.md"
+    _run_skill(
+        package,
+        "recheck_review.py",
+        "--previous-manifest",
+        str(branch_path),
+        "--previous-result",
+        str(prior_validated_path),
+        "--current-manifest",
+        str(branch_path),
+        "--current-result",
+        str(unchanged_result_path),
+        "--output",
+        str(no_proof_output),
+        "--markdown-output",
+        str(no_proof_report),
+        cwd=repository.parent,
+    )
+    no_proof = json.loads(no_proof_output.read_text(encoding="utf-8"))
+    assert no_proof["recheck_status"] == "partial"
+    assert no_proof["current_input_fingerprint"] == prior_validated["input_fingerprint"]
+    assert no_proof["findings"][0]["status"] == "unverified"
+    assert "evidence" in no_proof["findings"][0]["reason"].casefold()
+    assert "**Status:** partial" in no_proof_report.read_text(encoding="utf-8")
 
     result["findings"][0]["evidence"][0]["file"] = "not-captured.py"
     bad_result = tmp_path / "bad-result.json"

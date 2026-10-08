@@ -2,7 +2,7 @@
 
 `review-changes` is the primary local review entry point. The host assistant performs semantic analysis with its current model; the package provides pinned Git inputs, review methods, optional static signals, strict result validation, and deterministic Markdown rendering. It does not require this repository, the API service, a model SDK, a database, or Redis in the target project.
 
-This package supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy packaging and behavior have not been validated.
+This package (version `0.2.1`) supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy packaging and behavior have not been validated.
 
 ## Build
 
@@ -140,9 +140,37 @@ After modifying the code, capture the same scope again and ask the host assistan
 {
   "previous_finding_id": "authorization-owner-check",
   "status": "resolved",
-  "reason": "The caller now rejects an unrelated user before the record is returned."
+  "reason": "The route now rejects a non-owner before returning the record, so the prior unauthorized-read path cannot reach the response.",
+  "evidence": [
+    {
+      "file": "src/permissions.py",
+      "side": "after",
+      "line_start": 8,
+      "line_end": 11,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for src/permissions.py from the current manifest>",
+      "description": "The repaired check denies a non-owner before the record is returned."
+    },
+    {
+      "file": "src/routes.py",
+      "side": "after",
+      "line_start": 30,
+      "line_end": 34,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for src/routes.py from the current manifest>",
+      "description": "The caller returns the denial instead of exposing the record."
+    },
+    {
+      "file": "tests/test_permissions.py",
+      "side": "after",
+      "line_start": 20,
+      "line_end": 25,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for tests/test_permissions.py from the current manifest>",
+      "description": "The test exercises access by an unrelated user through the repaired path."
+    }
+  ]
 }
 ```
+
+Before running the example, replace every fingerprint placeholder with the exact `after.fingerprint` from that file in the current manifest; the cited lines must exist in those captured snapshots. Keep every prior evidence path accessible in current snapshots and cite each available path with current `after` evidence. A deleted path needs its current `before` snapshot and an after-side citation to its remaining caller when that caller was prior evidence. Cite each required prior context path with current `after` evidence, including caller and test context.
 
 Run the packaged deterministic association and renderer with the prior manifest/result and the new manifest/result:
 
@@ -156,7 +184,9 @@ python -S "$REVIEW_DIST/review-changes/scripts/recheck_review.py" \
   --markdown-output "$REVIEW_TMP/recheck.md"
 ```
 
-The report associates stable finding IDs first, then falls back to the root cause, trigger, impact, and captured evidence paths. Renames and line-number drift are allowed when the captured snapshots support the association. Each prior finding is `resolved`, `persisting`, or `unverified`; a missing current result, failed review, unavailable source, or insufficient evidence remains unverified. A finding disappearing from the new report never proves that it was fixed. The aggregate recheck status is `partial` when the current review has failed, uncovered, or incomplete coverage. New confirmed findings and coverage gaps are listed separately.
+The report reserves all stable finding ID matches before deterministic fallback association. Fallback requires exact equality of `category`, `root_cause`, `trigger`, and `impact` after case and whitespace normalization; captured evidence paths can disambiguate candidates. Each current finding is associated at most once, and ambiguous matches remain unverified. This is normalized exact text matching, not fuzzy semantic matching. Renames and line-number drift are allowed when the captured snapshots support the association.
+
+Each prior finding is `resolved`, `persisting`, or `unverified`. A resolved decision requires valid repair evidence from the current manifest, including an `after` citation to a prior evidence path with a detectable source change relative to the prior snapshot (or the required deleted-file evidence), plus a reason describing how the trigger path changed. The helper compares captured source contents exactly, including whitespace. Keep every prior evidence path accessible and cite every available path using current `after` evidence; for deletion, cite the prior file's current `before` snapshot and the current after-side caller when that caller was prior evidence. Cite required prior context paths using current `after` evidence, and ensure related changed files have completed semantic coverage without context gaps. A same-ID current `confirmed` or `needs_confirmation` finding conflicts with resolution. Missing or invalid evidence, incomplete relevant coverage, a failed current semantic review, or unavailable source leaves the finding unverified. Unrelated coverage gaps may leave an individually verified finding resolved while the aggregate recheck remains `partial`. The host performs semantic verification; the script checks captured evidence and decision/scope constraints. A finding disappearing from the new report never proves that it was fixed. New confirmed findings and coverage gaps are listed separately.
 
 ## Current Boundaries
 

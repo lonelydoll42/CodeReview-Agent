@@ -100,14 +100,44 @@ If any selected file is semantically partial, failed, or uncovered, record that 
 
 ## Recheck output
 
-`recheck_review.py` produces a separate result with `recheck_status`, the previous and current input fingerprints, one `findings` entry per prior finding, `new_findings`, and `coverage_gaps`. Each prior entry is `resolved`, `persisting`, or `unverified` and includes a reason. The host may provide an explicit `recheck_decisions` entry in the current semantic result:
+`recheck_review.py` produces a separate result with `recheck_status`, the previous and current input fingerprints, one `findings` entry per prior finding, `new_findings`, and `coverage_gaps`. Each prior entry is `resolved`, `persisting`, or `unverified` and includes a reason. Matching first reserves all stable finding IDs. The remaining findings use exact equality on `category`, `root_cause`, `trigger`, and `impact` after case and whitespace normalization; captured evidence paths may disambiguate candidates. A current finding can be associated only once, and ambiguity remains unverified. This deterministic fallback is normalized exact text matching, not fuzzy semantic similarity.
+
+The host may provide an explicit `recheck_decisions` entry in the current semantic result. `resolved` requires valid evidence tied to the current captured manifest, a reason explaining how the trigger path changed, and an `after` citation to a prior evidence path with a detectable source change relative to the prior snapshot. The helper compares captured source contents exactly, including whitespace. Keep every prior evidence path accessible in current snapshots, and cite every available prior evidence path using current `after` evidence. A deleted prior path must have its current `before` snapshot; also cite the remaining caller on its current `after` side when it was part of the prior evidence. All related changed files must have completed semantic coverage without context gaps. A same-ID current `confirmed` or `needs_confirmation` finding conflicts with a resolved decision and cannot be marked resolved. Missing or invalid evidence, a failed review, or incomplete relevant coverage leaves the prior finding unverified. Unrelated incomplete files may keep the aggregate `recheck_status` at `partial` while a finding with complete relevant coverage is resolved. The host is responsible for semantic verification; the script checks captured evidence and decision/scope constraints but does not prove the explanation is true.
+
+Example decision structure:
 
 ```json
 {
   "previous_finding_id": "finding-null-lookup",
   "status": "resolved",
-  "reason": "The caller now handles a missing record before dereferencing it."
+  "reason": "The caller now returns the not-found response before dereferencing the optional record, so the prior null-trigger path cannot reach this access.",
+  "evidence": [
+    {
+      "file": "src/records.py",
+      "side": "after",
+      "line_start": 24,
+      "line_end": 27,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for src/records.py from the current manifest>",
+      "description": "The repaired branch checks for a missing record before dereferencing it."
+    },
+    {
+      "file": "src/routes.py",
+      "side": "after",
+      "line_start": 41,
+      "line_end": 44,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for src/routes.py from the current manifest>",
+      "description": "The caller propagates the not-found result without accessing the missing record."
+    },
+    {
+      "file": "tests/test_records.py",
+      "side": "after",
+      "line_start": 18,
+      "line_end": 22,
+      "snapshot_fingerprint": "<copy the exact after.fingerprint for tests/test_records.py from the current manifest>",
+      "description": "The regression test covers a missing record through the caller."
+    }
+  ]
 }
 ```
 
-An explicit reason is required for `resolved`. An empty current result, failed review, missing snapshot, or insufficient evidence produces `unverified`; absence from a new report never proves that a prior issue was fixed.
+This is a schema example, not a ready-to-run result: replace each fingerprint placeholder with the exact `after.fingerprint` from the named file in the current manifest, and keep the cited lines within that captured snapshot. Keep every prior evidence path accessible in current snapshots and cite every available path on its `after` side; for a deleted path, cite the current `before` snapshot and the after-side caller when that caller was prior evidence. The helper compares captured source contents exactly, including whitespace. The relevant changed files need completed semantic coverage and no context gaps; unrelated incomplete files may still leave the aggregate result `partial`. An empty current result or a finding disappearing from a report never proves that a prior issue was fixed. The host must verify that the explanation is semantically correct; structural validation alone cannot prove it.

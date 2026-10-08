@@ -41,6 +41,8 @@ The Skill package includes its scripts, review methods, and a standalone copy of
 | Recheck | Associate a prior report after edits; classify resolved, persisting, or unverified findings |
 | Completion | Completed, partial, uncovered, or failed; an empty list alone is not a clean review |
 
+For rechecks, a resolved status requires valid repair evidence from the current captured snapshot, a reason that explains how the trigger path changed, accessible citations for prior evidence/context, and completed semantic coverage without context gaps for related changed files. Matching is deterministic: stable IDs are reserved first, then the remaining findings use exact equality on normalized category, root cause, trigger, and impact; ambiguous matches stay unverified. The helper checks captured evidence and decision/scope constraints, while semantic verification remains the host assistant's responsibility.
+
 > The cover is an illustration, not a product screenshot. The separate service path remains available for GitHub automation; see [Optional server deployment](docs/guide.md).
 
 <a id="quickstart"></a>
