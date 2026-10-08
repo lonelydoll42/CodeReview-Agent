@@ -5,7 +5,7 @@
 ## 当前基线
 
 - `review-changes` 0.2.1 已提供本地变更收集、证据校验、报告导出和修改后复查；复查脚本仍只做证据与状态约束校验，不代替宿主的语义判断。
-- PR1 的本地 hermetic fixture、包外 smoke 和三 scope 验收已通过；相关测试为 225 passed、4 skipped。Linux/Windows 远端 CI 矩阵仍待 push 后结果。
+- PR1 的本地 hermetic fixture、包外 smoke 和三 scope 验收已通过；相关测试为 225 passed、4 skipped。代码提交 `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。
 - PR2 核心、Skill、统一入口、固定历史资源和 Codex 新会话恢复验收已通过；Skill 资源 `latest` 链接漂移 P1 已修复并独立复验，核心定向测试为 39 passed。首次恢复命令因 `python` 不存在返回 127，改用 `/usr/bin/python3 -S` 后通过。
 - PR3 的宿主中立输入契约、run-record schema 和 seed 索引已整理并校验；尚无三组对照数据集或质量分数，因此 PR3 整体未完成。
 - 当前三个 seed 是验收准备器生成的合成隔离夹具，不是真实项目盲测。真实 WorkBuddy 验收仍为 `not_run`，PR 输入接入和评论发布尚未开展。
@@ -16,17 +16,17 @@
 
 | 任务 | 状态 | Owner | 依赖 |
 |---|---|---|---|
-| PR1 自动验收基础 | 本地 fixture、包 smoke 和定向测试通过（225 passed、4 skipped）；Linux/Windows 远端 CI 待验 | `skill_ci` | 当前打包器和 Skill 测试 |
+| PR1 自动验收基础 | 本地 fixture、包 smoke 和定向测试通过（225 passed、4 skipped）；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 Linux/Windows × Python 3.10/3.11 远端 CI 四项通过 | `skill_ci` | 当前打包器和 Skill 测试 |
 | PR2 统一入口与会话记录 | 本地定向测试、固定历史资源和 Codex 新会话恢复通过；WorkBuddy 未实测 | `review_session` | 当前 `review_core` 输入、报告和复查契约 |
 | PR3 宿主中立评测基线 | 契约、schema、seed 索引已校验；对照数据集与质量分数未开始 | `eval_tasks` | 现有 seed 准备器；后续真实宿主原始产物和人工标注 |
-| PR4 上下文候选选择器 | 待排期，未分派 | 未分派 | PR3 可比较的基线；稳定的快照输入 |
-| PR5 历史报告与发布规划 | 后置，未分派 | 未分派 | PR2 会话关联；稳定的校验结果与复查契约 |
+| PR4 上下文候选选择器 | 排队中（queued），未分派 | 未分派 | PR3 可比较的基线；稳定的快照输入 |
+| PR5 历史报告与发布规划 | 后置排队（queued），未分派 | 未分派 | PR2 会话关联；稳定的校验结果与复查契约 |
 
 ### PR1：自动验收基础
 
 - **范围：** 将 Skill/package 验收作为独立 CI job；从仓库外运行打包产物，覆盖 Linux 与 Windows 的包内脚本和路径行为。
 - **验收：** job 不依赖 API 服务启动；安装/构建产物在独立项目中可导入和执行；工作区、暂存区、差异及中文/空格路径用例结果可追溯；常规测试和打包检查通过。
-- **当前进度：** 本地 hermetic fixture、包外 worktree/staged/branch smoke 与 start/resume 验收通过，相关测试为 225 passed、4 skipped。Linux/Windows 远端 CI 矩阵仍待 push 后实际运行；本地结果不代表远端验收完成。
+- **当前进度：** 本地 hermetic fixture、包外 worktree/staged/branch smoke 与 start/resume 验收通过，相关测试为 225 passed、4 skipped。代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [远端 run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 于 2026-10-09 完成，Ubuntu/Windows × Python 3.10/3.11 四个 job 均成功：[Ubuntu 3.10](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329/job/113425907617)、[Ubuntu 3.11](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329/job/113425908062)、[Windows 3.10](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329/job/113425908039)、[Windows 3.11](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329/job/113425907970)。
 - **未覆盖边界：** CI 不能证明 WorkBuddy 能导入 Skill、运行工具或完成跨会话复查；这些仍需真实宿主记录。
 
 ### PR2：统一入口与会话记录
@@ -57,6 +57,6 @@
 
 ## 推进顺序与门槛
 
-PR1 与 PR2 可并行；PR2 本地验收和 Codex 新会话恢复已通过，WorkBuddy 验收仍待执行。PR1 本地验收通过，远端 Linux/Windows CI 矩阵返回前不标作完整验收通过。PR3 的数据集与人工标注形成后，才可进行三组比较和质量评分。PR4 只有在三组条件能使用同一宿主、同一案例和可追溯快照时才进入收益评估。PR5 依赖稳定 session 与结果契约，外部 PR 获取和评论发布继续单独排期。
+PR1 与 PR2 可并行；PR2 本地验收和 Codex 新会话恢复已通过，WorkBuddy 验收仍待执行。PR1 本地验收与远端 Linux/Windows CI 矩阵均已通过；这不代表 WorkBuddy 宿主验收完成。PR3 的数据集与人工标注形成后，才可进行三组比较和质量评分。PR4 只有在三组条件能使用同一宿主、同一案例和可追溯快照时才进入收益评估。PR5 依赖稳定 session 与结果契约，外部 PR 获取和评论发布继续单独排期。
 
-当前可发布的结论是：PR2 本地定向验证与 Codex case-01 新会话恢复通过；PR1 本地 fixture、包 smoke 和测试通过，但远端 Linux/Windows CI 仍待运行；PR3 仅完成输入基线，不存在质量分数。Codex 运行不是 WorkBuddy 实测、盲测或增益比较；WorkBuddy 安装/运行仍为 `not_run`，PR 输入接入未开始。固定 `0.2.1` 发布包未重建，ZIP/manifest 哈希仍分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。测试数、真实案例数和模型质量分数应由主控按后续实测更新。
+当前可发布的结论是：PR2 本地定向验证与 Codex case-01 新会话恢复通过；PR1 本地 fixture、包 smoke 和测试通过，代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的远端 Linux/Windows × Python 3.10/3.11 CI 四项均成功。PR3 仅完成输入基线，不存在质量分数。Codex 运行不是 WorkBuddy 实测、盲测或增益比较；WorkBuddy 安装/运行仍为 `not_run`，PR 输入接入未开始。PR4/PR5 仍排队，尚未分派。固定 `0.2.1` 发布包未重建，ZIP/manifest 哈希仍分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。测试数、真实案例数和模型质量分数应由主控按后续实测更新。
