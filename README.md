@@ -30,7 +30,7 @@
 
 `review-changes` drives one complete local review: select the worktree, index, or a branch comparison; capture a fixed snapshot; inspect relevant callers and tests; run optional static checks; verify candidate defects; and render a validated report. Semantic analysis uses the host assistant's current model, so this path needs no separate model key or running service.
 
-The Skill package includes its scripts, review methods, and a standalone copy of the shared standard-library review core. It can run from a different project directory without cloning this service repository. Current supported inputs are local worktree, staged index, local branch ranges, and rechecking a prior schema-version-2 report against a new local snapshot. Remote PR review and WorkBuddy distribution are future work and have not been validated.
+The Skill package includes its scripts, review methods, and a standalone copy of the shared standard-library review core. It can run from a different project directory without cloning this service repository. Current supported inputs are local worktree, staged index, local branch ranges, and rechecking a prior schema-version-2 report against a new local snapshot. Remote PR review remains future work. WorkBuddy import and host behavior have not been validated; see the [WorkBuddy acceptance run sheet](docs/workbuddy-acceptance.md).
 
 | Review step | What it does |
 | --- | --- |
@@ -156,6 +156,7 @@ curl http://localhost:8000/review/1
 | --- | --- |
 | 配置、API、Webhook、工作台使用与故障排查 | [使用指南](docs/guide.md) |
 | 本地 `review-changes` Skill 与隔离验收 | [Skill-first implementation](docs/skill-first.md) |
+| WorkBuddy 宿主验收（待实测） | [WorkBuddy acceptance run sheet](docs/workbuddy-acceptance.md) |
 | 一份审查结果包含哪些内容 | [报告示例](docs/example-report.md) |
 | 设计取舍与面试展示思路 | [项目亮点](docs/recruiter_brief.md) |
 | 本地测试、分支与贡献流程 | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -197,7 +198,7 @@ python -m pip check
 <a id="当前边界"></a>
 ## 当前边界
 
-- `review-changes` 当前面向本地工作区、暂存区、本地分支和历史报告复查；远程 PR 取数、GitHub 评论和 WorkBuddy 包适配尚未实现或验收。
+- `review-changes` 当前面向本地工作区、暂存区、本地分支和历史报告复查；远程 PR 取数和 GitHub 评论尚未实现。WorkBuddy 导入与宿主行为等待验收，见[验收单](docs/workbuddy-acceptance.md)。
 - 快照脚本要求 Python 3.10+ 和 Git。超出大小限制、二进制、不可读或不支持的代码会作为未覆盖项保留；不能把它们写成已完成审查。
 - Semgrep 是可选项，静态规则只覆盖其声明的语言。工具缺失或失败不阻断宿主语义审查，但状态与实际静态覆盖会写入报告。
 - 宿主负责模型调用；若宿主未提供用量和费用，结果记录为未知。没有发现问题不等于证明代码安全，需要结合覆盖信息和人工审查。

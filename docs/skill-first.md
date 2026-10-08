@@ -2,7 +2,7 @@
 
 `review-changes` is the primary local review entry point. The host assistant performs semantic analysis with its current model; the package provides pinned Git inputs, review methods, optional static signals, strict result validation, and deterministic Markdown rendering. It does not require this repository, the API service, a model SDK, a database, or Redis in the target project.
 
-This package (version `0.2.1`) supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy packaging and behavior have not been validated.
+This package (version `0.2.1`) supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy import and host behavior have not been validated; the [acceptance run sheet](workbuddy-acceptance.md) records the pending host checks separately from script/package tests.
 
 ## Build
 
@@ -190,4 +190,4 @@ Each prior finding is `resolved`, `persisting`, or `unverified`. A resolved deci
 
 ## Current Boundaries
 
-The host model does semantic analysis; this project does not measure its token use or cost, so unknown measurements stay `null`. Semgrep is optional and the bundled rules cover only their declared languages. Unsupported languages and files whose content could not be captured remain uncovered; the review or recheck must be marked partial or uncovered as appropriate. This package is local-only. PR retrieval, GitHub comments, and WorkBuddy packaging await separate implementation and acceptance.
+The host model does semantic analysis; this project does not measure its token use or cost, so unknown measurements stay `null`. Semgrep is optional and the bundled rules cover only their declared languages. Unsupported languages and files whose content could not be captured remain uncovered; the review or recheck must be marked partial or uncovered as appropriate. This package is local-only. PR retrieval and GitHub comments await separate implementation. WorkBuddy import and runtime behavior remain pending the [host acceptance](workbuddy-acceptance.md).
