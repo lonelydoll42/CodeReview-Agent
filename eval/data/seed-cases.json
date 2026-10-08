@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "review-changes-synthetic-seeds-v1",
+  "origin": "synthetic_fixture",
+  "blind_eligible": false,
+  "host_evaluation_status": "not_run",
+  "source": "scripts/prepare_workbuddy_acceptance.py",
+  "cases": [
+    {
+      "case_id": "runtime-missing-record",
+      "host_case_id": "case-01",
+      "case_family": "runtime_defect",
+      "fixture_status": "prepared_by_acceptance_helper",
+      "oracle_reference": "generated kit operator/oracle.md#runtime-missing-record",
+      "workbuddy_status": "not_run"
+    },
+    {
+      "case_id": "safe-authorization-move",
+      "host_case_id": "case-02",
+      "case_family": "behavior_preserving_security_refactor",
+      "fixture_status": "prepared_by_acceptance_helper",
+      "oracle_reference": "generated kit operator/oracle.md#safe-authorization-move",
+      "workbuddy_status": "not_run"
+    },
+    {
+      "case_id": "cross-file-contract",
+      "host_case_id": "case-03",
+      "case_family": "cross_file_contract_regression",
+      "fixture_status": "prepared_by_acceptance_helper",
+      "oracle_reference": "generated kit operator/oracle.md#cross-file-contract",
+      "workbuddy_status": "not_run"
+    }
+  ],
+  "real_repository_cases_target": {
+    "minimum": 20,
+    "maximum": 30,
+    "status": "not_started",
+    "note": "Accumulation target only; no real-project cases or scores are represented by this seed index."
+  }
+}

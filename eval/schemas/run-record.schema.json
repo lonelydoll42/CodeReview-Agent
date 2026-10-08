@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Host-neutral review evaluation run record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_id",
+    "case_id",
+    "case_origin",
+    "condition",
+    "run_status",
+    "host",
+    "environment",
+    "input",
+    "artifacts",
+    "annotation",
+    "scoring",
+    "execution",
+    "model_usage"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "benchmark_id": {"type": "string", "minLength": 1},
+    "case_id": {"type": "string", "minLength": 1},
+    "case_origin": {
+      "enum": ["synthetic_fixture", "real_repository"]
+    },
+    "condition": {
+      "enum": ["same_host_direct", "current_skill", "context_selector_skill"]
+    },
+    "run_status": {
+      "enum": ["not_run", "completed", "failed", "incomplete"]
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "model"],
+      "properties": {
+        "name": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "model": {"type": ["string", "null"]}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {
+        "os": {"type": ["string", "null"]},
+        "architecture": {"type": ["string", "null"]}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_id", "review_manifest", "snapshot_fingerprint"],
+      "properties": {
+        "repository_id": {"type": ["string", "null"]},
+        "review_manifest": {"type": ["string", "null"]},
+        "snapshot_fingerprint": {"type": ["string", "null"]},
+        "prior_result": {"type": ["string", "null"]},
+        "current_manifest": {"type": ["string", "null"]}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_transcript",
+        "raw_host_output",
+        "validated_result",
+        "markdown_report",
+        "recheck_json",
+        "recheck_markdown"
+      ],
+      "properties": {
+        "raw_transcript": {"type": ["string", "null"]},
+        "raw_host_output": {"type": ["string", "null"]},
+        "validated_result": {"type": ["string", "null"]},
+        "markdown_report": {"type": ["string", "null"]},
+        "recheck_json": {"type": ["string", "null"]},
+        "recheck_markdown": {"type": ["string", "null"]}
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "oracle", "human_labels"],
+      "properties": {
+        "status": {"enum": ["not_started", "pending", "reviewed", "adjudicated"]},
+        "oracle": {"type": ["string", "null"]},
+        "human_labels": {"type": ["string", "null"]}
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "script", "version", "output"],
+      "properties": {
+        "status": {"enum": ["not_run", "completed", "failed", "incomplete"]},
+        "script": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "output": {"type": ["string", "null"]}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failure_reason",
+        "uncovered_paths",
+        "context_omissions",
+        "manual_interventions",
+        "duration_seconds"
+      ],
+      "properties": {
+        "failure_reason": {"type": ["string", "null"]},
+        "uncovered_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "context_omissions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "manual_interventions": {"type": ["integer", "null"], "minimum": 0},
+        "duration_seconds": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "cost", "currency"],
+      "properties": {
+        "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cost": {"type": ["number", "null"], "minimum": 0},
+        "currency": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"run_status": {"const": "failed"}},
+        "required": ["run_status"]
+      },
+      "then": {
+        "properties": {
+          "execution": {
+            "properties": {
+              "failure_reason": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

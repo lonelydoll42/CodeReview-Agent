@@ -10,12 +10,22 @@ from pathlib import Path
 
 import pytest
 
-from scripts.prepare_workbuddy_acceptance import _extract_verified
+from scripts.prepare_workbuddy_acceptance import (
+    PINNED_ARCHIVE_SHA256,
+    PINNED_MANIFEST_SHA256,
+    PINNED_SOURCE_REVISION,
+    _extract_verified,
+)
+from tests.workbuddy_acceptance_driver import (
+    FIXTURE_ARCHIVE_SHA256,
+    FIXTURE_MANIFEST_SHA256,
+    FIXTURE_SOURCE_REVISION,
+    build_test_release,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "prepare_workbuddy_acceptance.py"
-RELEASE = ROOT / "dist" / "review-changes-0.2.1"
+DRIVER = ROOT / "tests" / "workbuddy_acceptance_driver.py"
 CASE_IDS = (
     "runtime-missing-record",
     "safe-authorization-move",
@@ -28,18 +38,32 @@ HOST_IDS = {
 }
 
 
+def test_acceptance_release_pins_remain_at_confirmed_0_2_1_values() -> None:
+    assert PINNED_SOURCE_REVISION == "0a1a8756546ee15801180b06b3d9c6ac3558d481"
+    assert PINNED_ARCHIVE_SHA256 == "42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa"
+    assert PINNED_MANIFEST_SHA256 == "5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf"
+
+
 def _run(cwd: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-S", str(SCRIPT), *arguments],
+        [sys.executable, "-B", "-S", str(DRIVER), *arguments],
         cwd=cwd,
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
 
+def _test_release(tmp_path: Path) -> Path:
+    release = tmp_path / "pinned test release"
+    build_test_release(release)
+    return release
+
+
 def test_preparation_and_followups_work_outside_source_checkout(tmp_path: Path) -> None:
+    release = _test_release(tmp_path)
     launcher = tmp_path / "unrelated 工作目录 with spaces"
     launcher.mkdir()
     output = tmp_path / "WorkBuddy 验收 输出 0.2.1"
@@ -47,7 +71,7 @@ def test_preparation_and_followups_work_outside_source_checkout(tmp_path: Path) 
         launcher,
         "prepare",
         "--release-dir",
-        str(RELEASE),
+        str(release),
         "--output",
         str(output),
     )
@@ -56,9 +80,16 @@ def test_preparation_and_followups_work_outside_source_checkout(tmp_path: Path) 
     provenance = json.loads((output / "provenance" / "verification.json").read_text())
     assert provenance["verified"] is True
     assert provenance["version"] == "0.2.1"
-    assert provenance["files_verified"] == 23
+    assert provenance["source_revision"] == FIXTURE_SOURCE_REVISION
+    assert provenance["archive_sha256"] == FIXTURE_ARCHIVE_SHA256
+    assert provenance["manifest_sha256"] == FIXTURE_MANIFEST_SHA256
+    release_manifest = json.loads((release / "review-changes.manifest.json").read_text())
+    expected_package_files = {item["path"] for item in release_manifest["files"]}
+    assert provenance["files_verified"] == len(expected_package_files)
     assert provenance["extracted_from_verified_zip"] is True
     verified_package = output / "verified-release" / "review-changes"
+    assert "scripts/collect_changes.py" in expected_package_files
+    assert (verified_package / "scripts" / "collect_changes.py").is_file()
     assert not list(verified_package.rglob("__pycache__"))
 
     run_record = json.loads((output / "run-record.json").read_text())
@@ -202,7 +233,7 @@ def test_preparation_and_followups_work_outside_source_checkout(tmp_path: Path) 
         launcher,
         "prepare",
         "--release-dir",
-        str(RELEASE),
+        str(release),
         "--output",
         str(output),
     )
@@ -271,6 +302,7 @@ def test_preparation_and_followups_work_outside_source_checkout(tmp_path: Path) 
 
 
 def test_release_hash_failure_stops_before_creating_output(tmp_path: Path) -> None:
+    release = _test_release(tmp_path)
     tampered_release = tmp_path / "tampered release"
     tampered_release.mkdir()
     for name in (
@@ -278,7 +310,7 @@ def test_release_hash_failure_stops_before_creating_output(tmp_path: Path) -> No
         "review-changes.manifest.json",
         "review-changes.manifest.json.sha256",
     ):
-        shutil.copyfile(RELEASE / name, tampered_release / name)
+        shutil.copyfile(release / name, tampered_release / name)
     archive = tampered_release / "review-changes.zip"
     archive.write_bytes(archive.read_bytes() + b"tampered")
     output = tmp_path / "should not be created"
@@ -296,18 +328,19 @@ def test_release_hash_failure_stops_before_creating_output(tmp_path: Path) -> No
 
 
 def test_rehashed_same_version_release_is_rejected_by_pinned_manifest(tmp_path: Path) -> None:
+    release = _test_release(tmp_path)
     tampered_release = tmp_path / "self-consistent replacement"
     tampered_release.mkdir()
     archive_path = tampered_release / "review-changes.zip"
     with (
-        zipfile.ZipFile(RELEASE / "review-changes.zip") as original,
+        zipfile.ZipFile(release / "review-changes.zip") as original,
         zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as replacement,
     ):
         for info in original.infolist():
             replacement.writestr(info, original.read(info))
         replacement.writestr("review-changes/extra.txt", b"replacement file\n")
 
-    manifest = json.loads((RELEASE / "review-changes.manifest.json").read_text())
+    manifest = json.loads((release / "review-changes.manifest.json").read_text())
     manifest["files"].append(
         {
             "path": "extra.txt",
@@ -382,6 +415,7 @@ def test_extraction_rejects_package_root_symlink(tmp_path: Path) -> None:
 def test_apply_fix_rejects_paths_outside_output_symlinks_and_moved_runs(
     tmp_path: Path,
 ) -> None:
+    release = _test_release(tmp_path)
     launcher = tmp_path / "launch"
     launcher.mkdir()
     output = tmp_path / "acceptance output"
@@ -389,7 +423,7 @@ def test_apply_fix_rejects_paths_outside_output_symlinks_and_moved_runs(
         launcher,
         "prepare",
         "--release-dir",
-        str(RELEASE),
+        str(release),
         "--output",
         str(output),
     )
