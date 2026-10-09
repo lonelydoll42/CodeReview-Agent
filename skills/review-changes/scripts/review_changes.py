@@ -60,7 +60,15 @@ def _show(record: dict[str, object], *reference_names: str) -> None:
         print(f"snapshot: {fingerprints.get('final')}")
 
 
+def _configure_cli_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_cli_encoding()
     args = _parser().parse_args(argv)
     try:
         import_review_core()
