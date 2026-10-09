@@ -6,10 +6,65 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "scripts" / "build_review_skill.py"
+
+
+def _session_result(
+    manifest: dict[str, Any], *, finding_id: str | None
+) -> dict[str, Any]:
+    files = manifest["files"]
+    findings: list[dict[str, Any]] = []
+    if finding_id is not None:
+        item = files[0]
+        snapshot = item["after"]
+        findings.append(
+            {
+                "finding_id": finding_id,
+                "category": "logic",
+                "severity": "HIGH",
+                "root_cause": "The changed function returns an unsafe value.",
+                "trigger": "A caller uses the changed function result.",
+                "impact": "The caller can observe an invalid result.",
+                "change_reason": "The reviewed change alters the function result.",
+                "suggestion": "Validate the result before returning it.",
+                "validation_status": "confirmed",
+                "evidence": [
+                    {
+                        "file": item["filename"],
+                        "side": "after",
+                        "line_start": 1,
+                        "line_end": 1,
+                        "snapshot_fingerprint": snapshot["fingerprint"],
+                        "description": "The changed function returns the unsafe value.",
+                    }
+                ],
+                "sources": ["packaged-session-smoke"],
+            }
+        )
+    return {
+        "schema_version": "2",
+        "input_fingerprint": manifest["content_fingerprint"],
+        "rules_version": "packaged-session-smoke-1",
+        "review_status": "completed",
+        "findings": findings,
+        "coverage": [
+            {
+                "file": item["filename"],
+                "semantic_status": "completed",
+                "static_status": "not_run",
+                "reason": "",
+                "context_gaps": [],
+            }
+            for item in files
+        ],
+        "tool_runs": [],
+        "limits": {},
+        "measurements": {"host": None, "model": None, "tokens": None, "cost": None},
+    }
 
 
 def test_builder_creates_hashed_standalone_package(tmp_path: Path) -> None:
@@ -289,3 +344,197 @@ def test_unpacked_skill_runs_from_an_external_unicode_repository(tmp_path: Path)
     assert resumed_record["workflow_status"] == "awaiting_semantic_review"
     assert resumed_record["review_coverage_status"] == "uncovered"
     assert resumed_record["fingerprints"] == record["fingerprints"]
+
+
+def test_packaged_session_regressions_run_without_site_packages(tmp_path: Path) -> None:
+    build_output = tmp_path / "session-skill-build"
+    build = subprocess.run(
+        [sys.executable, "-S", str(BUILDER), "--output", str(build_output)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    package_root = tmp_path / "已解包 Skill"
+    with zipfile.ZipFile(build_output / "review-changes.zip") as bundle:
+        bundle.extractall(package_root)
+    entrypoint = package_root / "review-changes" / "scripts" / "review_changes.py"
+
+    repository = tmp_path / "外部项目" / "中文 示例 仓库"
+    repository.mkdir(parents=True)
+    initialized = subprocess.run(
+        ["git", "init", "--initial-branch=main", str(repository)],
+        cwd=repository.parent,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert initialized.returncode == 0, initialized.stderr
+
+    def git(*args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(repository), *args],
+            cwd=repository.parent,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    git("config", "user.name", "Standalone Skill Test")
+    git("config", "user.email", "skill-test@example.invalid")
+    git("config", "core.autocrlf", "false")
+    source = repository / "src" / "worker.py"
+    source.parent.mkdir()
+    source.write_text("def compute():\n    return 1\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "baseline")
+    source.write_text("def compute():\n    return 2\n", encoding="utf-8")
+    git("add", "src/worker.py")
+
+    def run_cli(*args: str | Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-B", "-S", str(entrypoint), *(str(arg) for arg in args)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+    drift_session = tmp_path / "会话" / "input drift"
+    started = run_cli(
+        "start",
+        "--repo",
+        repository,
+        "--scope",
+        "staged",
+        "--session-dir",
+        drift_session,
+    )
+    assert started.returncode == 0, started.stderr
+    initial_drift_record = json.loads((drift_session / "session.json").read_text(encoding="utf-8"))
+    source.write_text("def compute():\n    return 3\n", encoding="utf-8")
+    git("add", "src/worker.py")
+    drifted = run_cli("resume", "--session", drift_session, "--repo", repository)
+    assert drifted.returncode == 2
+    assert "selected Git snapshot changed" in drifted.stderr
+    failed_drift_record = json.loads((drift_session / "session.json").read_text(encoding="utf-8"))
+    assert failed_drift_record["fingerprints"] == initial_drift_record["fingerprints"]
+    assert failed_drift_record["failures"][-1]["step"] == "resume"
+
+    previous_dir = tmp_path / "会话" / "previous"
+    previous_start = run_cli(
+        "start",
+        "--repo",
+        repository,
+        "--scope",
+        "staged",
+        "--session-dir",
+        previous_dir,
+    )
+    assert previous_start.returncode == 0, previous_start.stderr
+    previous_record = json.loads((previous_dir / "session.json").read_text(encoding="utf-8"))
+    previous_manifest = json.loads(
+        (previous_dir / previous_record["references"]["manifest"]).read_text(encoding="utf-8")
+    )
+
+    def write_result(name: str, result: dict[str, Any]) -> Path:
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(result), encoding="utf-8")
+        return path
+
+    first_result = write_result(
+        "previous-result",
+        _session_result(previous_manifest, finding_id="pinned-finding"),
+    )
+    first_finalize = run_cli("finalize", "--session", previous_dir, "--result", first_result)
+    assert first_finalize.returncode == 0, first_finalize.stderr
+    first_success = json.loads((previous_dir / "session.json").read_text(encoding="utf-8"))
+    first_result_ref = first_success["references"]["validated_result"]
+
+    invalid_result_data = _session_result(previous_manifest, finding_id="pinned-finding")
+    invalid_result_data["input_fingerprint"] = "0" * 64
+    invalid_result = write_result("invalid-result", invalid_result_data)
+    failed_finalize = run_cli("finalize", "--session", previous_dir, "--result", invalid_result)
+    assert failed_finalize.returncode == 2
+    after_failure = json.loads((previous_dir / "session.json").read_text(encoding="utf-8"))
+    assert after_failure["references"]["validated_result"] == first_result_ref
+    assert (previous_dir / first_result_ref).is_file()
+    assert after_failure["attempts"][-1]["status"] == "failed"
+
+    retry_result = write_result(
+        "retry-result",
+        _session_result(previous_manifest, finding_id="pinned-finding"),
+    )
+    retried = run_cli("finalize", "--session", previous_dir, "--result", retry_result)
+    assert retried.returncode == 0, retried.stderr
+    after_retry = json.loads((previous_dir / "session.json").read_text(encoding="utf-8"))
+    pinned_result_ref = after_retry["references"]["validated_result"]
+    assert pinned_result_ref != first_result_ref
+    assert (previous_dir / first_result_ref).is_file()
+    assert [attempt["status"] for attempt in after_retry["attempts"]] == [
+        "completed",
+        "failed",
+        "completed",
+    ]
+
+    current_dir = tmp_path / "会话" / "current"
+    current_start = run_cli(
+        "start",
+        "--repo",
+        repository,
+        "--scope",
+        "staged",
+        "--session-dir",
+        current_dir,
+        "--previous-session",
+        previous_dir,
+    )
+    assert current_start.returncode == 0, current_start.stderr
+    current_record = json.loads((current_dir / "session.json").read_text(encoding="utf-8"))
+    assert current_record["references"]["previous_session"]["validated_result"] == pinned_result_ref
+
+    no_findings = write_result(
+        "updated-previous-result",
+        _session_result(previous_manifest, finding_id=None),
+    )
+    updated_previous = run_cli("finalize", "--session", previous_dir, "--result", no_findings)
+    assert updated_previous.returncode == 0, updated_previous.stderr
+    latest_previous = json.loads((previous_dir / "session.json").read_text(encoding="utf-8"))
+    assert latest_previous["references"]["validated_result"] != pinned_result_ref
+
+    current_manifest = json.loads(
+        (current_dir / current_record["references"]["manifest"]).read_text(encoding="utf-8")
+    )
+    current_result = write_result(
+        "current-result",
+        _session_result(current_manifest, finding_id=None),
+    )
+    rechecked = run_cli(
+        "recheck",
+        "--session",
+        current_dir,
+        "--current-result",
+        current_result,
+    )
+    assert rechecked.returncode == 0, rechecked.stderr
+    current_after_recheck = json.loads((current_dir / "session.json").read_text(encoding="utf-8"))
+    assert current_after_recheck["references"]["previous_session"]["validated_result"] == pinned_result_ref
+    recheck = json.loads(
+        (current_dir / current_after_recheck["references"]["recheck_result"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert recheck["findings"][0]["previous_finding_id"] == "pinned-finding"
+    assert recheck["findings"][0]["status"] == "unverified"

@@ -8,7 +8,7 @@
 
 默认产品入口改为 `review-changes`：使用宿主模型完成变更范围固定、上下文阅读、可选静态检查、语义审查、证据核实和报告生成。共享底座不依赖模型 SDK 或服务组件，现有服务继续提供可选自动化部署。第一轮实现与安装验收见 [Skill-first 说明](skill-first.md)。
 
-本地工作区、暂存区、分支审查和修改后复查已经形成第一版闭环；PR2 的 Codex 新会话恢复验收也已通过。PR1 本地 fixture 和包 smoke 通过；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。下一步按 [WorkBuddy 验收单](workbuddy-acceptance.md)完成独立项目中的真实宿主测试，再接 PR 输入。质量评测优先比较同一宿主直接审查与加载 Skill 的行为；没有真实数据时不宣称准确率或成本优势。脚本与隔离测试不计作 WorkBuddy 通过。
+本地工作区、暂存区、分支审查和修改后复查已经形成第一版闭环；PR2 的 Codex 新会话恢复验收也已通过。PR1 本地 fixture 和包 smoke 通过；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。下一步先用同一可用宿主和固定真实案例启动 A/B：直接审查与加载当前 Skill 对照，不等待 WorkBuddy 或上下文选择器。WorkBuddy 可连接后另做真实宿主验收；上下文选择器实现后再追加 C 组。没有真实数据时不宣称准确率或成本优势；脚本与隔离测试不计作宿主通过。
 
 ## 已完成：可靠性基础
 
