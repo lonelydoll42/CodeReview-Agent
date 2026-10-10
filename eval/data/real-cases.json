@@ -1,0 +1,382 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "review-changes-real-history-v1",
+  "status": "prepared_partial",
+  "case_count": 11,
+  "blind_root": "/root/project/review-benchmark-20261009/blind",
+  "operator_root": "/root/project/review-benchmark-operator-20261009",
+  "blind_certification": "not_certified",
+  "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+  "cases": [
+    {
+      "case_id": "case0001",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+      "head": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+      "scope": "branch",
+      "scope_paths": [
+        "README.md",
+        "docs/optimization-roadmap.md",
+        "docs/skill-first.md",
+        "review_core/__init__.py",
+        "review_core/recheck.py",
+        "review_core/validation.py",
+        "skills/review-changes/SKILL.md",
+        "skills/review-changes/VERSION",
+        "skills/review-changes/references/output.md",
+        "skills/review-changes/scripts/recheck_review.py",
+        "tests/test_recheck.py",
+        "tests/test_review_skill_runtime.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0001/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0001/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0001/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0001.json",
+      "snapshot": {
+        "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+        "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+        "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
+      },
+      "related_group": "recheck-hardening",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "evidence_supported_not_human_verified",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0002",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+      "head": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0002/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0002/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0002/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0002.json",
+      "snapshot": {
+        "base_tree": "72c20c0a88ddbf6c2c5ebc6923d378de5491c419",
+        "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+        "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
+      },
+      "related_group": "ui-performance-chain",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "scope_control_candidate_not_human_verified",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0003",
+      "case_origin": "real_repository",
+      "source_repository": "pallets/click",
+      "base": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+      "head": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+      "scope": "branch",
+      "scope_paths": [
+        "CHANGES.rst",
+        "src/click/testing.py",
+        "tests/test_chain.py",
+        "tests/test_termui.py",
+        "tests/test_utils.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0003/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0003/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0003/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0003.json",
+      "snapshot": {
+        "base_tree": "0d5274975c57ed2126b4a6a200d5676cdec0fd09",
+        "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488",
+        "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
+      },
+      "related_group": "click-eof-regression",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "evidence_supported_not_human_verified",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0004",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+      "head": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+      "scope": "branch",
+      "scope_paths": [
+        "README.md",
+        "docs/optimization-roadmap.md",
+        "docs/skill-first.md",
+        "review_core/recheck.py",
+        "skills/review-changes/SKILL.md",
+        "skills/review-changes/VERSION",
+        "skills/review-changes/references/output.md",
+        "tests/test_recheck.py",
+        "tests/test_review_skill_runtime.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0004/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0004/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0004/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0004.json",
+      "snapshot": {
+        "base_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+        "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1",
+        "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
+      },
+      "related_group": "recheck-hardening",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "target_tests_present_not_human_adjudicated",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0005",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+      "head": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+      "scope": "branch",
+      "scope_paths": [
+        "agents/aggregator.py",
+        "agents/change_context.py",
+        "agents/logic_agent.py",
+        "agents/orchestrator.py",
+        "agents/security_agent.py",
+        "tests/test_aggregator.py",
+        "tests/test_deletion_review.py",
+        "tests/test_local_review.py",
+        "tests/test_orchestrator_status_contract.py",
+        "tests/test_semgrep_runner.py",
+        "tools/__init__.py",
+        "tools/local_review.py",
+        "tools/semgrep_runner.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0005/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0005/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0005/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0005.json",
+      "snapshot": {
+        "base_tree": "52ba594d826aca86e27faf48ac1beeb1995abf59",
+        "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b",
+        "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
+      },
+      "related_group": "deletion-and-static-analysis-hardening",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "target_tests_present_not_human_adjudicated",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0006",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+      "head": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+      "scope": "branch",
+      "scope_paths": [
+        "agents/aggregator.py",
+        "tests/test_aggregator.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0006/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0006/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0006/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0006.json",
+      "snapshot": {
+        "base_tree": "cea28094a5278e60571bd9e067a862fc62bb9f1c",
+        "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1",
+        "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
+      },
+      "related_group": "aggregator-correction",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "target_tests_present_not_human_adjudicated",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0007",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+      "head": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+      "scope": "branch",
+      "scope_paths": [
+        "storage/models.py",
+        "tests/test_database_integration.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0007/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0007/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0007/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0007.json",
+      "snapshot": {
+        "base_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+        "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb",
+        "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
+      },
+      "related_group": "snapshot-storage-hardening",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "opt_in_database_test_not_run",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0008",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+      "head": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+      "scope": "branch",
+      "scope_paths": [
+        ".env.example",
+        "agents/aggregator.py",
+        "agents/base.py",
+        "agents/logic_agent.py",
+        "agents/orchestrator.py",
+        "agents/performance_agent.py",
+        "agents/security_agent.py",
+        "config.py",
+        "graph/workflow.py",
+        "tests/test_full_source.py",
+        "tests/test_orchestrator.py",
+        "tests/test_review_cache_flow.py",
+        "tests/test_review_snapshot.py",
+        "tools/github_client.py",
+        "tools/review_version.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0008/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0008/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0008/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0008.json",
+      "snapshot": {
+        "base_tree": "b9e3a2a04a74e94dd91ddb0744d8c6fbc9909bb3",
+        "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+        "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
+      },
+      "related_group": "snapshot-storage-hardening",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "target_unit_tests_present_not_human_adjudicated",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0009",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+      "head": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0009/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0009/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0009/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0009.json",
+      "snapshot": {
+        "base_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+        "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+        "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
+      },
+      "related_group": "ui-performance-chain",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "pending_no_behavior_test",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0010",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+      "head": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+      "scope": "branch",
+      "scope_paths": [
+        "skills/review-changes/scripts/review_changes.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0010/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0010/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0010/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0010.json",
+      "snapshot": {
+        "base_tree": "9dfd268f72792c77c30f94db2295faae7e7a11d5",
+        "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2",
+        "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
+      },
+      "related_group": "session-cli-portability",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "fix_commit_present_future_behavior_test",
+      "host_evaluation_status": "not_run"
+    },
+    {
+      "case_id": "case0011",
+      "case_origin": "real_repository",
+      "source_repository": "lonelydoll42/CodeReview-Agent",
+      "base": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+      "head": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "repositories": {
+        "same_host_direct": "/root/project/review-benchmark-20261009/blind/case0011/same_host_direct/repository",
+        "current_skill": "/root/project/review-benchmark-20261009/blind/case0011/current_skill/repository"
+      },
+      "reviewer_input": "/root/project/review-benchmark-20261009/blind/case0011/reviewer-input.json",
+      "annotation": "/root/project/review-benchmark-operator-20261009/annotations/case0011.json",
+      "snapshot": {
+        "base_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+        "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464",
+        "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
+      },
+      "related_group": "ui-performance-chain",
+      "blind_input_prepared": true,
+      "blind_certification": "not_certified",
+      "reviewer_access_boundary": "Prompt-restricted; filesystem isolation is not enforced by this preparer.",
+      "human_label_status": "not_reviewed",
+      "annotation_evidence_status": "pending_no_behavior_test",
+      "host_evaluation_status": "not_run"
+    }
+  ]
+}

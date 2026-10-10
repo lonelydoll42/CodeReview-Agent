@@ -1,0 +1,1132 @@
+{
+  "adjudicated_case_count": 0,
+  "benchmark_id": "review-changes-real-history-v1",
+  "by_condition": {
+    "current_skill": {
+      "duration_known_count": 11,
+      "duration_seconds_mean_known_only": 622.728,
+      "human_precision_case_count": 0,
+      "human_precision_mean": null,
+      "known_defect_recall_case_count": 0,
+      "known_defect_recall_mean": null,
+      "runs_completed": 11,
+      "runs_observed": 11,
+      "unknown_cost_count": 11,
+      "workflow_completion_rate_observed": 1.0
+    },
+    "same_host_direct": {
+      "duration_known_count": 11,
+      "duration_seconds_mean_known_only": 229.0683828729091,
+      "human_precision_case_count": 0,
+      "human_precision_mean": null,
+      "known_defect_recall_case_count": 0,
+      "known_defect_recall_mean": null,
+      "runs_completed": 11,
+      "runs_observed": 12,
+      "unknown_cost_count": 12,
+      "workflow_completion_rate_observed": 0.9166666666666666
+    }
+  },
+  "case_origin": "real_repository",
+  "case_source_counts": {
+    "lonelydoll42/CodeReview-Agent": 10,
+    "pallets/click": 1
+  },
+  "independent_case_groups": [
+    "case0001",
+    "case0002",
+    "case0003",
+    "case0004",
+    "case0005",
+    "case0006",
+    "case0007",
+    "case0008",
+    "case0009",
+    "case0010",
+    "case0011"
+  ],
+  "interpretation": [
+    "Workflow completion and review coverage are execution measures, not review correctness.",
+    "Host-reported read paths do not prove actual file reads; coverage is unknown until independently audited.",
+    "Unlabelled findings are pending and are not counted as false positives.",
+    "Pending clean-case candidates are excluded from clean-case false-alarm denominators.",
+    "Operator or agent evidence checks are provisional and are not human precision or recall.",
+    "A verified protocol violation makes the pair inconclusive, even when both saved outputs are available.",
+    "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
+    "Unknown time, intervention, token, and cost measurements remain null or are summarized only with a known-count.",
+    "When cases are concentrated in one source repository, results have limited external generalization."
+  ],
+  "missing_expected_runs": [],
+  "not_included_conditions": [
+    "context_selector_skill"
+  ],
+  "paired_cases": [
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 390.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 246.0,
+            "review_status": "uncovered",
+            "run_status": "incomplete"
+          },
+          {
+            "attempt": 2,
+            "attempt_kind": "retry",
+            "duration_seconds": 472.505368031,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0001",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 390.0,
+        "same_host_direct": 472.505368031
+      },
+      "finding_count": {
+        "current_skill": 1,
+        "same_host_direct": 2
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 2
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 90.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 105.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0002",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 90.0,
+        "same_host_direct": 105.0
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 718.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 286.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0003",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 718.0,
+        "same_host_direct": 286.0
+      },
+      "finding_count": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": false,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 695.747,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 409.547,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0004",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 695.747,
+        "same_host_direct": 409.547
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 1
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": false,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "not_comparable",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 712.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 209.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0005",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 712.0,
+        "same_host_direct": 209.0
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 522.935,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 232.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0006",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 522.935,
+        "same_host_direct": 232.0
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 428.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 78.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0007",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 428.0,
+        "same_host_direct": 78.0
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": false,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "not_comparable",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 690.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 254.0,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0008",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 690.0,
+        "same_host_direct": 254.0
+      },
+      "finding_count": {
+        "current_skill": 1,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 363.251,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": null,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0009",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 363.251,
+        "same_host_direct": null
+      },
+      "finding_count": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": false,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 1493.46,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 82.115331,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0010",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 1493.46,
+        "same_host_direct": 82.115331
+      },
+      "finding_count": {
+        "current_skill": 0,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [
+        {
+          "event": "source_template_modified_protocol_violation_and_restored",
+          "incident_id": "b10-source-template-modification",
+          "raw_host_output_sha256_matches": true,
+          "restoration_attribution": {
+            "actor": "agent",
+            "phase": "after_review",
+            "role": "coordinator_finisher"
+          },
+          "sha256": "f4d5e5a6579ff86e465a7972da4fef13e25d699ce099fe12e9e4a6761d45fc6e"
+        }
+      ],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": true,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "inconclusive_protocol_violation",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    },
+    {
+      "attempt_history": {
+        "current_skill": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 746.615,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ],
+        "same_host_direct": [
+          {
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "duration_seconds": 145.584512571,
+            "review_status": "completed",
+            "run_status": "completed"
+          }
+        ]
+      },
+      "case_id": "case0011",
+      "coverage_complete": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "duration_seconds": {
+        "current_skill": 746.615,
+        "same_host_direct": 145.584512571
+      },
+      "finding_count": {
+        "current_skill": 1,
+        "same_host_direct": 0
+      },
+      "host_checks": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": true,
+        "version": null
+      },
+      "human_precision": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "input_checks": {
+        "repository_id": true,
+        "review_scope_fingerprint": true,
+        "snapshot_fingerprint": true
+      },
+      "known_defect_recall": {
+        "current_skill": null,
+        "same_host_direct": null
+      },
+      "limitations": [
+        "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+        "Unknown host or model configuration is retained as unknown.",
+        "Host-reported read paths do not independently verify review coverage.",
+        "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+      ],
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_coverage_complete_unverified": {
+        "current_skill": false,
+        "same_host_direct": false
+      },
+      "repository_snapshot_checks": {
+        "current_skill": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        },
+        "same_host_direct": {
+          "build": "verified",
+          "input_fingerprints": "verified",
+          "scoring": "verified"
+        }
+      },
+      "selected_attempts": {
+        "current_skill": 1,
+        "same_host_direct": 1
+      },
+      "skill_bundle_loaded_verified": null,
+      "skill_load_check": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      },
+      "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+      "workflow_completed": {
+        "current_skill": true,
+        "same_host_direct": true
+      }
+    }
+  ],
+  "pending_annotation_case_count": 11,
+  "run_count": 23,
+  "schema_version": 1
+}

@@ -1,0 +1,3040 @@
+{
+  "agent_provisional_adjudication": {
+    "counts": {
+      "known_candidate_count": 2,
+      "known_candidates_covered": 2,
+      "predictions_with_valid_line_references": 10,
+      "supported": 7,
+      "total_predictions": 10,
+      "unresolved": 3,
+      "unsupported": 0
+    },
+    "counts_by_condition": {
+      "current_skill": {
+        "supported": 3,
+        "unresolved": 2
+      },
+      "same_host_direct": {
+        "supported": 4,
+        "unresolved": 1
+      }
+    },
+    "label_source": "agent",
+    "predictions": [
+      {
+        "attempt": 1,
+        "case_id": "case0001",
+        "condition": "current_skill",
+        "confidence": "high",
+        "prediction_id": "p0001",
+        "raw_host_output_sha256": "8b39e1f726c93821800992e9840958b1f92f26727b512853f5ba02ef8add1a49",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 2,
+        "case_id": "case0001",
+        "condition": "same_host_direct",
+        "confidence": "high",
+        "prediction_id": "p0002",
+        "raw_host_output_sha256": "144138f1a6af524c0b42f3d0ce5696ca4d3df45704a8252475568150d8a81abd",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 2,
+        "case_id": "case0001",
+        "condition": "same_host_direct",
+        "confidence": "high",
+        "prediction_id": "p0003",
+        "raw_host_output_sha256": "144138f1a6af524c0b42f3d0ce5696ca4d3df45704a8252475568150d8a81abd",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0003",
+        "condition": "current_skill",
+        "confidence": "high",
+        "prediction_id": "p0004",
+        "raw_host_output_sha256": "fec417db4a2d7b18ddbea9d4ef3438ce424569ea0603b7043318bd0380f88a8f",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0003",
+        "condition": "same_host_direct",
+        "confidence": "high",
+        "prediction_id": "p0005",
+        "raw_host_output_sha256": "028b475ac587d9e0e87b65614cdccad615d3b101f6a72d7b3b8dd44f6ce68c05",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0004",
+        "condition": "same_host_direct",
+        "confidence": "moderate",
+        "prediction_id": "p0006",
+        "raw_host_output_sha256": "e832558ed57b191bdc5865798c5cd64d3fa9942d80a072956c1dff5e5b2cc2cc",
+        "replicate": 1,
+        "verdict": "unresolved"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0008",
+        "condition": "current_skill",
+        "confidence": "moderate",
+        "prediction_id": "p0007",
+        "raw_host_output_sha256": "fcfbe3938abc9dfe6ebeb3bbf1650111257da720fe5aba4cb4d2611ec521ada9",
+        "replicate": 1,
+        "verdict": "unresolved"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0009",
+        "condition": "current_skill",
+        "confidence": "high",
+        "prediction_id": "p0008",
+        "raw_host_output_sha256": "f1e789fab6bab2cb8bc0730e8f17825eccd474671f21fb5cb96c08fb28568b9f",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0009",
+        "condition": "same_host_direct",
+        "confidence": "high",
+        "prediction_id": "p0009",
+        "raw_host_output_sha256": "aef773b811022e6fce13b30ff037a519ab0638d9b39d5cfdf5960cc95ceb3844",
+        "replicate": 1,
+        "verdict": "supported"
+      },
+      {
+        "attempt": 1,
+        "case_id": "case0011",
+        "condition": "current_skill",
+        "confidence": "moderate",
+        "prediction_id": "p0010",
+        "raw_host_output_sha256": "4615589b8e967ea6894b95d650a91099df62f80e5293b13c4f25afcdf8d5fb10",
+        "replicate": 1,
+        "verdict": "unresolved"
+      }
+    ],
+    "revision": {
+      "changed_prediction_ids": [
+        "p0006"
+      ],
+      "derived_from_sha256": "ba4c28a13321d02884cb3e2f6a9b292fbcbb6caa0e2399a927b4d75d8455fe2c",
+      "note": "p0006 was changed from supported to unresolved after checking the explicit fallback-association contract, conservative ambiguity test, and whether the proposed matching proves root-cause instance identity.",
+      "number": 2,
+      "prior_result_reference": "v1 is preserved separately outside this repository"
+    },
+    "status": "provisional"
+  },
+  "benchmark_id": "review-changes-real-history-v1",
+  "generated_at": "2026-10-09",
+  "inclusion": {
+    "agent_prediction_mapping_is_provisional": true,
+    "frozen_oracle_included": false,
+    "private_mapping_included": false,
+    "raw_host_outputs_included": false,
+    "source_run_records_included": false
+  },
+  "limitations": [
+    "Raw host outputs are not included; their SHA-256 digests permit correlation to controlled originals but do not reconstruct them.",
+    "The agent prediction-to-condition projection is provisional evidence, not a human label or quality metric.",
+    "Snapshot checks cannot establish that a repository remained unchanged during review."
+  ],
+  "run_statistics_recomputed_from_records": {
+    "current_skill": {
+      "completed": 11,
+      "duration_known_count": 11,
+      "duration_mean_known_only_seconds": 622.728,
+      "reported_findings_all_attempts": 5,
+      "runs": 11
+    },
+    "same_host_direct": {
+      "completed": 11,
+      "duration_known_count": 11,
+      "duration_mean_known_only_seconds": 229.0683828729091,
+      "reported_findings_all_attempts": 5,
+      "runs": 12
+    }
+  },
+  "run_summary": {
+    "adjudicated_case_count": 0,
+    "benchmark_id": "review-changes-real-history-v1",
+    "by_condition": {
+      "current_skill": {
+        "duration_known_count": 11,
+        "duration_seconds_mean_known_only": 622.728,
+        "human_precision_case_count": 0,
+        "human_precision_mean": null,
+        "known_defect_recall_case_count": 0,
+        "known_defect_recall_mean": null,
+        "runs_completed": 11,
+        "runs_observed": 11,
+        "unknown_cost_count": 11,
+        "workflow_completion_rate_observed": 1.0
+      },
+      "same_host_direct": {
+        "duration_known_count": 11,
+        "duration_seconds_mean_known_only": 229.0683828729091,
+        "human_precision_case_count": 0,
+        "human_precision_mean": null,
+        "known_defect_recall_case_count": 0,
+        "known_defect_recall_mean": null,
+        "runs_completed": 11,
+        "runs_observed": 12,
+        "unknown_cost_count": 12,
+        "workflow_completion_rate_observed": 0.9166666666666666
+      }
+    },
+    "case_origin": "real_repository",
+    "case_source_counts": {
+      "lonelydoll42/CodeReview-Agent": 10,
+      "pallets/click": 1
+    },
+    "independent_case_groups": [
+      "case0001",
+      "case0002",
+      "case0003",
+      "case0004",
+      "case0005",
+      "case0006",
+      "case0007",
+      "case0008",
+      "case0009",
+      "case0010",
+      "case0011"
+    ],
+    "interpretation": [
+      "Workflow completion and review coverage are execution measures, not review correctness.",
+      "Host-reported read paths do not prove actual file reads; coverage is unknown until independently audited.",
+      "Unlabelled findings are pending and are not counted as false positives.",
+      "Pending clean-case candidates are excluded from clean-case false-alarm denominators.",
+      "Operator or agent evidence checks are provisional and are not human precision or recall.",
+      "A verified protocol violation makes the pair inconclusive, even when both saved outputs are available.",
+      "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
+      "Unknown time, intervention, token, and cost measurements remain null or are summarized only with a known-count.",
+      "When cases are concentrated in one source repository, results have limited external generalization."
+    ],
+    "missing_expected_runs": [],
+    "not_included_conditions": [
+      "context_selector_skill"
+    ],
+    "paired_cases": [
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 390.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 246.0,
+              "review_status": "uncovered",
+              "run_status": "incomplete"
+            },
+            {
+              "attempt": 2,
+              "attempt_kind": "retry",
+              "duration_seconds": 472.505368031,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0001",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 390.0,
+          "same_host_direct": 472.505368031
+        },
+        "finding_count": {
+          "current_skill": 1,
+          "same_host_direct": 2
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 2
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 90.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 105.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0002",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 90.0,
+          "same_host_direct": 105.0
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 718.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 286.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0003",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 718.0,
+          "same_host_direct": 286.0
+        },
+        "finding_count": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": false,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 695.747,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 409.547,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0004",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 695.747,
+          "same_host_direct": 409.547
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 1
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": false,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "not_comparable",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 712.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 209.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0005",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 712.0,
+          "same_host_direct": 209.0
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 522.935,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 232.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0006",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 522.935,
+          "same_host_direct": 232.0
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 428.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 78.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0007",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 428.0,
+          "same_host_direct": 78.0
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": false,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "not_comparable",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 690.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 254.0,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0008",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 690.0,
+          "same_host_direct": 254.0
+        },
+        "finding_count": {
+          "current_skill": 1,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 363.251,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": null,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0009",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 363.251,
+          "same_host_direct": null
+        },
+        "finding_count": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": false,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 1493.46,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 82.115331,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0010",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 1493.46,
+          "same_host_direct": 82.115331
+        },
+        "finding_count": {
+          "current_skill": 0,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [
+          {
+            "event": "source_template_modified_protocol_violation_and_restored",
+            "incident_id": "b10-source-template-modification",
+            "raw_host_output_sha256_matches": true,
+            "restoration_attribution": {
+              "actor": "agent",
+              "phase": "after_review",
+              "role": "coordinator_finisher"
+            },
+            "sha256": "f4d5e5a6579ff86e465a7972da4fef13e25d699ce099fe12e9e4a6761d45fc6e"
+          }
+        ],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": true,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "inconclusive_protocol_violation",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      },
+      {
+        "attempt_history": {
+          "current_skill": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 746.615,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ],
+          "same_host_direct": [
+            {
+              "attempt": 1,
+              "attempt_kind": "initial",
+              "duration_seconds": 145.584512571,
+              "review_status": "completed",
+              "run_status": "completed"
+            }
+          ]
+        },
+        "case_id": "case0011",
+        "coverage_complete": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "duration_seconds": {
+          "current_skill": 746.615,
+          "same_host_direct": 145.584512571
+        },
+        "finding_count": {
+          "current_skill": 1,
+          "same_host_direct": 0
+        },
+        "host_checks": {
+          "configuration_fingerprint": null,
+          "model": null,
+          "name": true,
+          "version": null
+        },
+        "human_precision": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "input_checks": {
+          "repository_id": true,
+          "review_scope_fingerprint": true,
+          "snapshot_fingerprint": true
+        },
+        "known_defect_recall": {
+          "current_skill": null,
+          "same_host_direct": null
+        },
+        "limitations": [
+          "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+          "Unknown host or model configuration is retained as unknown.",
+          "Host-reported read paths do not independently verify review coverage.",
+          "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review."
+        ],
+        "protocol_incidents": [],
+        "replicate": 1,
+        "reported_coverage_complete_unverified": {
+          "current_skill": false,
+          "same_host_direct": false
+        },
+        "repository_snapshot_checks": {
+          "current_skill": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          },
+          "same_host_direct": {
+            "build": "verified",
+            "input_fingerprints": "verified",
+            "scoring": "verified"
+          }
+        },
+        "selected_attempts": {
+          "current_skill": 1,
+          "same_host_direct": 1
+        },
+        "skill_bundle_loaded_verified": null,
+        "skill_load_check": {
+          "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "host_reported_bundle_digest_status": "missing",
+          "host_reported_bundle_sha256": null,
+          "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+          "verified_loaded": null
+        },
+        "status": "paired_inputs_verified_host_identity_incomplete_skill_load_unverified",
+        "workflow_completed": {
+          "current_skill": true,
+          "same_host_direct": true
+        }
+      }
+    ],
+    "pending_annotation_case_count": 11,
+    "run_count": 23,
+    "schema_version": 1
+  },
+  "runs": [
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "8b39e1f726c93821800992e9840958b1f92f26727b512853f5ba02ef8add1a49",
+        "run_record_sha256": "c6c2125d01a6732fe4e4513eb34032360e42d23c0aa3a0e03a642519426da886",
+        "score_sha256": "cc0ff650c2efd4286cd65481e71ad9d93a2242fd57bfbf8be5d6028823e28e2f"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0001",
+      "concurrent": false,
+      "condition": "current_skill",
+      "duration_seconds": 390.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "a90df96ac41f4aa81275f379e00da36e74eff386275f56a899335757ea7b13d0",
+        "scope_paths": [
+          "README.md",
+          "docs/optimization-roadmap.md",
+          "docs/skill-first.md",
+          "review_core/__init__.py",
+          "review_core/recheck.py",
+          "review_core/validation.py",
+          "skills/review-changes/SKILL.md",
+          "skills/review-changes/VERSION",
+          "skills/review-changes/references/output.md",
+          "skills/review-changes/scripts/recheck_review.py",
+          "tests/test_recheck.py",
+          "tests/test_review_skill_runtime.py"
+        ],
+        "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+        "build_observed": {
+          "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "full_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f",
+          "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 2,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "740c76294e79c3de0f9e512c5980267067d2c6332a130c6e18d9be8ed3174256",
+        "run_record_sha256": "ed4d05ba6282b3f1dc125ffe60ddb9142ab4a54921ef045263ddbec74cdced45",
+        "score_sha256": "46ad870b0615f8b2a5b4a93463a65faba029b15f2c987ecc0e9989daf3aec71e"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0001",
+      "concurrent": false,
+      "condition": "same_host_direct",
+      "duration_seconds": 246.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "a90df96ac41f4aa81275f379e00da36e74eff386275f56a899335757ea7b13d0",
+        "scope_paths": [
+          "README.md",
+          "docs/optimization-roadmap.md",
+          "docs/skill-first.md",
+          "review_core/__init__.py",
+          "review_core/recheck.py",
+          "review_core/validation.py",
+          "skills/review-changes/SKILL.md",
+          "skills/review-changes/VERSION",
+          "skills/review-changes/references/output.md",
+          "skills/review-changes/scripts/recheck_review.py",
+          "tests/test_recheck.py",
+          "tests/test_review_skill_runtime.py"
+        ],
+        "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+        "build_observed": {
+          "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "full_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f",
+          "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
+        }
+      },
+      "review_status": "uncovered",
+      "run_order": 1,
+      "run_status": "incomplete",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "144138f1a6af524c0b42f3d0ce5696ca4d3df45704a8252475568150d8a81abd",
+        "run_record_sha256": "95d8c275e418e6903826e250f56aa8f11e1b52361df3e451569cb0a50eb67e53",
+        "score_sha256": "333b0bc0041f56a9c9ac7def1e1fa6cfff6cdc2ed4a540b1f62c82d2b1315a2c"
+      },
+      "attempt": 2,
+      "attempt_kind": "retry",
+      "case_id": "case0001",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 472.505368031,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "a90df96ac41f4aa81275f379e00da36e74eff386275f56a899335757ea7b13d0",
+        "scope_paths": [
+          "README.md",
+          "docs/optimization-roadmap.md",
+          "docs/skill-first.md",
+          "review_core/__init__.py",
+          "review_core/recheck.py",
+          "review_core/validation.py",
+          "skills/review-changes/SKILL.md",
+          "skills/review-changes/VERSION",
+          "skills/review-changes/references/output.md",
+          "skills/review-changes/scripts/recheck_review.py",
+          "tests/test_recheck.py",
+          "tests/test_review_skill_runtime.py"
+        ],
+        "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 2,
+      "repository_snapshot": {
+        "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+        "build_observed": {
+          "base_revision": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "full_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f",
+          "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "81d2f64d273b065385b948d946aa4e5d3764dff9",
+          "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 3,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "36f5c87f65b883426a6846899f4fa5ef3a35d5d98ad7ce95ca3d886c9375991d",
+        "run_record_sha256": "b6d23542dc99c7dc105c189b5f5a3fdb20dec2b9d73f893ab2a0f449cf43c308",
+        "score_sha256": "b9cafbb6c902bc7b611baf6e9e8afb1e71c5eb300d5f8ada40ffc545e325c738"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0002",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 90.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "421c694f84cba96d5c19f1ceb5e74038d4374c883442f336368c8a1221836185",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "e8b96351cd96b9ff18dc288d5e125ff9a5a7bed19e17b761ff9c4f536e4162a8"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+        "build_observed": {
+          "base_revision": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+          "base_tree": "72c20c0a88ddbf6c2c5ebc6923d378de5491c419",
+          "full_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6",
+          "head_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+          "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "72c20c0a88ddbf6c2c5ebc6923d378de5491c419",
+          "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 5,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "de1cda1b4330e2676cec58f7f7bdfc076050372d415398c7c18c30a99fab7d37",
+        "run_record_sha256": "15ccc990403fcbd0f0c134c9d88612f2216b5f520abadf7664ca4dd5472f9c44",
+        "score_sha256": "304a8128bf9e2593bd69765da8348bc3281416df8241c1c2865b618d130bd25f"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0002",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 105.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "421c694f84cba96d5c19f1ceb5e74038d4374c883442f336368c8a1221836185",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "e8b96351cd96b9ff18dc288d5e125ff9a5a7bed19e17b761ff9c4f536e4162a8"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+        "build_observed": {
+          "base_revision": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+          "base_tree": "72c20c0a88ddbf6c2c5ebc6923d378de5491c419",
+          "full_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6",
+          "head_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+          "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "72c20c0a88ddbf6c2c5ebc6923d378de5491c419",
+          "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 4,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "fec417db4a2d7b18ddbea9d4ef3438ce424569ea0603b7043318bd0380f88a8f",
+        "run_record_sha256": "4f847ad8500f5c4d34a78eeb772899b6c76351a2296bdf9a74f9f012d91ff156",
+        "score_sha256": "e8f988789c57669652fb3de79101d03a2665fbcf5aa7e7577cf4ff34b9e29824"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0003",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 718.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "pallets/click",
+        "review_scope_fingerprint": "2238301cbbb945087a397fe6e1e100481e6057612e11608c7bc2c5bbe68abe35",
+        "scope_paths": [
+          "CHANGES.rst",
+          "src/click/testing.py",
+          "tests/test_chain.py",
+          "tests/test_termui.py",
+          "tests/test_utils.py"
+        ],
+        "snapshot_fingerprint": "40e8f9e8a13ec5e8f9597451d9b3d146897a1de9c6217e3649b48d0bd9d2d31c"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+        "build_observed": {
+          "base_revision": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+          "base_tree": "0d5274975c57ed2126b4a6a200d5676cdec0fd09",
+          "full_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4",
+          "head_revision": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+          "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "0d5274975c57ed2126b4a6a200d5676cdec0fd09",
+          "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488",
+          "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 7,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "028b475ac587d9e0e87b65614cdccad615d3b101f6a72d7b3b8dd44f6ce68c05",
+        "run_record_sha256": "2210b8eb513f53f6a5314de60eba4edb8f71b170bf6a01fba1adbdcda8b80292",
+        "score_sha256": "1f06ef461790f5a7049a1d12b268ac33b5ccf2e5bf0c26a3cb1e45ca4b4749fe"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0003",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 286.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "pallets/click",
+        "review_scope_fingerprint": "2238301cbbb945087a397fe6e1e100481e6057612e11608c7bc2c5bbe68abe35",
+        "scope_paths": [
+          "CHANGES.rst",
+          "src/click/testing.py",
+          "tests/test_chain.py",
+          "tests/test_termui.py",
+          "tests/test_utils.py"
+        ],
+        "snapshot_fingerprint": "40e8f9e8a13ec5e8f9597451d9b3d146897a1de9c6217e3649b48d0bd9d2d31c"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+        "build_observed": {
+          "base_revision": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+          "base_tree": "0d5274975c57ed2126b4a6a200d5676cdec0fd09",
+          "full_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4",
+          "head_revision": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+          "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "0d5274975c57ed2126b4a6a200d5676cdec0fd09",
+          "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488",
+          "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 6,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "96c1f27001ffbc4191f0cca153056ca2f7c9f85c57fb4c0e51be5f37c19ae006",
+        "run_record_sha256": "5ec1f84069bd4f9696a11f53889ce065156a0d04f6c9a3e2cba6a08e58519468",
+        "score_sha256": "eeb07c9673e662764d5bceed46f0214b06d226083cf60fb2cdf3fbac0c004d72"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0004",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 695.747,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "1be788a176b04836a574d43af99972e45d0665703ba8b6d47daae5ed162288d5",
+        "scope_paths": [
+          "README.md",
+          "docs/optimization-roadmap.md",
+          "docs/skill-first.md",
+          "review_core/recheck.py",
+          "skills/review-changes/SKILL.md",
+          "skills/review-changes/VERSION",
+          "skills/review-changes/references/output.md",
+          "tests/test_recheck.py",
+          "tests/test_review_skill_runtime.py"
+        ],
+        "snapshot_fingerprint": "cce7556b86653108100248b6499060dd9544734f316a18a7b3b400bc9c33d209"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+        "build_observed": {
+          "base_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+          "base_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "full_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69",
+          "head_revision": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+          "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1",
+          "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 8,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "e832558ed57b191bdc5865798c5cd64d3fa9942d80a072956c1dff5e5b2cc2cc",
+        "run_record_sha256": "6d5a398d8f0021e57aae8f6a91a4e2d283fb4f4b8ba7fbda81541ec055f8283f",
+        "score_sha256": "b2ee4a68527a9c13b87aaee97d631d18dff5f85ef3e6d1e65065d7b917a2c2b7"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0004",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 409.547,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "1be788a176b04836a574d43af99972e45d0665703ba8b6d47daae5ed162288d5",
+        "scope_paths": [
+          "README.md",
+          "docs/optimization-roadmap.md",
+          "docs/skill-first.md",
+          "review_core/recheck.py",
+          "skills/review-changes/SKILL.md",
+          "skills/review-changes/VERSION",
+          "skills/review-changes/references/output.md",
+          "tests/test_recheck.py",
+          "tests/test_review_skill_runtime.py"
+        ],
+        "snapshot_fingerprint": "cce7556b86653108100248b6499060dd9544734f316a18a7b3b400bc9c33d209"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+        "build_observed": {
+          "base_revision": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+          "base_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "full_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69",
+          "head_revision": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+          "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+          "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1",
+          "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 9,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "8f090bc48a49e14417102d53f0ffb74e52eb2ca92311cfd4e39c5a97716a68a6",
+        "run_record_sha256": "3ce937f802bff7abbc7c41aabb1a4f1093f5c40a428899d5a13b2c995301b981",
+        "score_sha256": "b00018d2502e1439ebb174d5ad6638ac25eebab04c13346a7636e8a691213d32"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0005",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 712.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "7797157d35aaa61e7ee090af1129136030ecc30998b7f79419797de63d35df96",
+        "scope_paths": [
+          "agents/aggregator.py",
+          "agents/change_context.py",
+          "agents/logic_agent.py",
+          "agents/orchestrator.py",
+          "agents/security_agent.py",
+          "tests/test_aggregator.py",
+          "tests/test_deletion_review.py",
+          "tests/test_local_review.py",
+          "tests/test_orchestrator_status_contract.py",
+          "tests/test_semgrep_runner.py",
+          "tools/__init__.py",
+          "tools/local_review.py",
+          "tools/semgrep_runner.py"
+        ],
+        "snapshot_fingerprint": "1cf8a76578d989f84a2368ce30e1a7540affacc169d0b3c04f5ffd9e5296b0c7"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+        "build_observed": {
+          "base_revision": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+          "base_tree": "52ba594d826aca86e27faf48ac1beeb1995abf59",
+          "full_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939",
+          "head_revision": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+          "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "52ba594d826aca86e27faf48ac1beeb1995abf59",
+          "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b",
+          "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 11,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "0a9bb8f0f28a6888ac0597af54a2986904faf875db67b3852d297187a80307d9",
+        "run_record_sha256": "a581244e176c9009530c9c8fcd80e1fbf99867e0666f94559beb9851e56be6d9",
+        "score_sha256": "e74307d23dc898e18b889d7b16800e1e1967989a3423390173bdb0f606d4e8ef"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0005",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 209.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "7797157d35aaa61e7ee090af1129136030ecc30998b7f79419797de63d35df96",
+        "scope_paths": [
+          "agents/aggregator.py",
+          "agents/change_context.py",
+          "agents/logic_agent.py",
+          "agents/orchestrator.py",
+          "agents/security_agent.py",
+          "tests/test_aggregator.py",
+          "tests/test_deletion_review.py",
+          "tests/test_local_review.py",
+          "tests/test_orchestrator_status_contract.py",
+          "tests/test_semgrep_runner.py",
+          "tools/__init__.py",
+          "tools/local_review.py",
+          "tools/semgrep_runner.py"
+        ],
+        "snapshot_fingerprint": "1cf8a76578d989f84a2368ce30e1a7540affacc169d0b3c04f5ffd9e5296b0c7"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+        "build_observed": {
+          "base_revision": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+          "base_tree": "52ba594d826aca86e27faf48ac1beeb1995abf59",
+          "full_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939",
+          "head_revision": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+          "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "52ba594d826aca86e27faf48ac1beeb1995abf59",
+          "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b",
+          "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 10,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "91455c3c9524adbe0bdf8aa606efa04178898adabd0056ff65803dfd8c36d11f",
+        "run_record_sha256": "b928224d66f4a7b9ed5a54d406fd6f6febc0e27aeea81e0246e6cc47cb0ef163",
+        "score_sha256": "cb065082cef1678e0123947322100e65b7253613c82cc564352d76080fb40118"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0006",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 522.935,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "b133762d4d22143baa44188d83a7a14fefe8bab99531f19757b26de8105a22b5",
+        "scope_paths": [
+          "agents/aggregator.py",
+          "tests/test_aggregator.py"
+        ],
+        "snapshot_fingerprint": "daef045c67d881693555c8fa596c70199c3b40038509e05dff4f03b1bc11e51b"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+        "build_observed": {
+          "base_revision": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+          "base_tree": "cea28094a5278e60571bd9e067a862fc62bb9f1c",
+          "full_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54",
+          "head_revision": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+          "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "cea28094a5278e60571bd9e067a862fc62bb9f1c",
+          "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1",
+          "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 12,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "ffa4c4f9a31244b1c8308c6077a0dd97767e02780ccd080fd90f8b447cf199e2",
+        "run_record_sha256": "9933462744cea3b98aad3549e9a741338eb173659dd13f78efba9b1c58eeaefb",
+        "score_sha256": "7609fde647c19bfd5c115be88b624160b0623a963f35f334e39272582796b528"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0006",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 232.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "b133762d4d22143baa44188d83a7a14fefe8bab99531f19757b26de8105a22b5",
+        "scope_paths": [
+          "agents/aggregator.py",
+          "tests/test_aggregator.py"
+        ],
+        "snapshot_fingerprint": "daef045c67d881693555c8fa596c70199c3b40038509e05dff4f03b1bc11e51b"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+        "build_observed": {
+          "base_revision": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+          "base_tree": "cea28094a5278e60571bd9e067a862fc62bb9f1c",
+          "full_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54",
+          "head_revision": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+          "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "cea28094a5278e60571bd9e067a862fc62bb9f1c",
+          "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1",
+          "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 13,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "9bb09b081001a3039128184bfbd12f12fff787b2682b6372f1172e3f921daea1",
+        "run_record_sha256": "90ca9bacf9fa1c29f03a81135fe45c2316d793c803dfd43943369c92bb8535da",
+        "score_sha256": "926e25324d81998245e95f67322471ccd6f0b0a0716942bda503209420aafcfe"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0007",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 428.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "4f861f045d1c9b944a603310818165c3b442d63a52b5a677c514388f74a36d68",
+        "scope_paths": [
+          "storage/models.py",
+          "tests/test_database_integration.py"
+        ],
+        "snapshot_fingerprint": "d946c90477542f10c943ad90787a70fbc7e790b38c4b44405c19e882406bffd4"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+        "build_observed": {
+          "base_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+          "base_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "full_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f",
+          "head_revision": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+          "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb",
+          "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 16,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "077c4db94d031984c7af92b649b49c6675824e359f4d8bff4d3cf5cfb18dface",
+        "run_record_sha256": "74b787da70ebd13286a72891a80f8d834f0020e4d1cf4f1d7e22ce6586a77386",
+        "score_sha256": "537aef93f7d56cf66d569d5e72de75887495a323be455aeeac19d3146a6b5d1d"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0007",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 78.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "4f861f045d1c9b944a603310818165c3b442d63a52b5a677c514388f74a36d68",
+        "scope_paths": [
+          "storage/models.py",
+          "tests/test_database_integration.py"
+        ],
+        "snapshot_fingerprint": "d946c90477542f10c943ad90787a70fbc7e790b38c4b44405c19e882406bffd4"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+        "build_observed": {
+          "base_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+          "base_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "full_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f",
+          "head_revision": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+          "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb",
+          "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 14,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "fcfbe3938abc9dfe6ebeb3bbf1650111257da720fe5aba4cb4d2611ec521ada9",
+        "run_record_sha256": "6c30e7448bfc230f5945422297c3a457763cabfbbf36131a5da1e9fb55514757",
+        "score_sha256": "ba426fb3c698da0211e5167a86385bcbfb32284cc2f67f635e7e31efc139cda5"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0008",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 690.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "2901b74e0d2d8f21b4a1499fd4adf5c99e552d1003d658dbfd9385a27db7e14b",
+        "scope_paths": [
+          ".env.example",
+          "agents/aggregator.py",
+          "agents/base.py",
+          "agents/logic_agent.py",
+          "agents/orchestrator.py",
+          "agents/performance_agent.py",
+          "agents/security_agent.py",
+          "config.py",
+          "graph/workflow.py",
+          "tests/test_full_source.py",
+          "tests/test_orchestrator.py",
+          "tests/test_review_cache_flow.py",
+          "tests/test_review_snapshot.py",
+          "tools/github_client.py",
+          "tools/review_version.py"
+        ],
+        "snapshot_fingerprint": "aa7bd32d5346cbaf7c9223be8819970dc6b0aaa2765da771d1e7a6b456793d02"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+        "build_observed": {
+          "base_revision": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+          "base_tree": "b9e3a2a04a74e94dd91ddb0744d8c6fbc9909bb3",
+          "full_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d",
+          "head_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+          "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "b9e3a2a04a74e94dd91ddb0744d8c6fbc9909bb3",
+          "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 17,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "9f76dbaf27ed9b996f99d5c9ce29f78c6b46af9f61dc4e0c744e5326e9e3633b",
+        "run_record_sha256": "20d9644aae99d5374d4318759ed818565154f370749e595b7d86324393058328",
+        "score_sha256": "8d840c165ff30e938d4140b6f2d8ae3c40cb48e4c0f1df3fba24fccdd29f1d5c"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0008",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 254.0,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "2901b74e0d2d8f21b4a1499fd4adf5c99e552d1003d658dbfd9385a27db7e14b",
+        "scope_paths": [
+          ".env.example",
+          "agents/aggregator.py",
+          "agents/base.py",
+          "agents/logic_agent.py",
+          "agents/orchestrator.py",
+          "agents/performance_agent.py",
+          "agents/security_agent.py",
+          "config.py",
+          "graph/workflow.py",
+          "tests/test_full_source.py",
+          "tests/test_orchestrator.py",
+          "tests/test_review_cache_flow.py",
+          "tests/test_review_snapshot.py",
+          "tools/github_client.py",
+          "tools/review_version.py"
+        ],
+        "snapshot_fingerprint": "aa7bd32d5346cbaf7c9223be8819970dc6b0aaa2765da771d1e7a6b456793d02"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+        "build_observed": {
+          "base_revision": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+          "base_tree": "b9e3a2a04a74e94dd91ddb0744d8c6fbc9909bb3",
+          "full_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d",
+          "head_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+          "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "b9e3a2a04a74e94dd91ddb0744d8c6fbc9909bb3",
+          "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+          "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 15,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "f1e789fab6bab2cb8bc0730e8f17825eccd474671f21fb5cb96c08fb28568b9f",
+        "run_record_sha256": "70dd980eac4909769789dd58495a1eac05ed0e27798f865b6da318bbf7ae480c",
+        "score_sha256": "c4a8fe0530b229a5fde339e00453522da093a77622aa7d1edd74056653cbfe8f"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0009",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 363.251,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "935c26e6d29d4096a3bcf3f7389659621743ae7186387413ba20ee3508182a85",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "50cf7364124b5a68e767f344612d0d7fb25a87828197249b500f6aa7e01bfad0"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+        "build_observed": {
+          "base_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+          "base_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "full_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c",
+          "head_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+          "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 18,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "aef773b811022e6fce13b30ff037a519ab0638d9b39d5cfdf5960cc95ceb3844",
+        "run_record_sha256": "ae14652a87c6b7231472341e8cc333379173e1926032b7899ddf3d45176d70cf",
+        "score_sha256": "573b7e3463a846503ece3099546dfb67e676516a13f3ca420b8271b6cd5c1758"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0009",
+      "concurrent": null,
+      "condition": "same_host_direct",
+      "duration_seconds": null,
+      "duration_source": "unknown",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "935c26e6d29d4096a3bcf3f7389659621743ae7186387413ba20ee3508182a85",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "50cf7364124b5a68e767f344612d0d7fb25a87828197249b500f6aa7e01bfad0"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+        "build_observed": {
+          "base_revision": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+          "base_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "full_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c",
+          "head_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+          "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+          "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
+        }
+      },
+      "review_status": "completed",
+      "run_order": null,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "8aa70a52d248878865680a7036435557dbe63dd3e59e64cf84ce8426e12dd3b2",
+        "run_record_sha256": "2bdeed982019a6acecaca898a67ead5aa519b5700f6cd8c13474d7d79c183d81",
+        "score_sha256": "6532321b830430ff60f0753e5c589143819a1135d2faba109043e73d3d13b181"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0010",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 1493.46,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "1246abdd7398a4dd5263856f992d23afc440b6e87096c509121093a758e81154",
+        "scope_paths": [
+          "skills/review-changes/scripts/review_changes.py"
+        ],
+        "snapshot_fingerprint": "3cc4e0b691ef75e7128d4e16a98344048a828d0dd433eedc1be6a7daecef412f"
+      },
+      "protocol_incidents": [
+        {
+          "event": "source_template_modified_protocol_violation_and_restored",
+          "incident_id": "b10-source-template-modification",
+          "raw_host_output_sha256_matches": true,
+          "restoration_attribution": {
+            "actor": "agent",
+            "phase": "after_review",
+            "role": "coordinator_finisher"
+          },
+          "sha256": "f4d5e5a6579ff86e465a7972da4fef13e25d699ce099fe12e9e4a6761d45fc6e"
+        }
+      ],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+        "build_observed": {
+          "base_revision": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+          "base_tree": "9dfd268f72792c77c30f94db2295faae7e7a11d5",
+          "full_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd",
+          "head_revision": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+          "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "9dfd268f72792c77c30f94db2295faae7e7a11d5",
+          "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2",
+          "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 19,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "79d3b6652f9c99c350359e22d8200934b802200d2828253e225e1c119772ab26",
+        "run_record_sha256": "8e855eeb5f8ac2db7f4eae5a98ce0f9edf04328652e7351ad89a36a522fe2909",
+        "score_sha256": "3edbfe09a3449eb19c0170c028a06f42fe4ce138a4e2096883d73a77eddeb303"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0010",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 82.115331,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "1246abdd7398a4dd5263856f992d23afc440b6e87096c509121093a758e81154",
+        "scope_paths": [
+          "skills/review-changes/scripts/review_changes.py"
+        ],
+        "snapshot_fingerprint": "3cc4e0b691ef75e7128d4e16a98344048a828d0dd433eedc1be6a7daecef412f"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+        "build_observed": {
+          "base_revision": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+          "base_tree": "9dfd268f72792c77c30f94db2295faae7e7a11d5",
+          "full_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd",
+          "head_revision": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+          "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "9dfd268f72792c77c30f94db2295faae7e7a11d5",
+          "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2",
+          "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 20,
+      "run_status": "completed",
+      "skill_provenance": null
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "4615589b8e967ea6894b95d650a91099df62f80e5293b13c4f25afcdf8d5fb10",
+        "run_record_sha256": "3b7966bc8b66a419d10d028988b1dd7f2d677573f554afa45dadd51199fad4ef",
+        "score_sha256": "d6aa1283930f518f0189f663bc83f65a8fa5f7a6299838810483dbb3708b21d3"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0011",
+      "concurrent": true,
+      "condition": "current_skill",
+      "duration_seconds": 746.615,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "d8c761b7f07e6ba0f39fb764096d67788a09f284f8fc94ee0c620d412281c35d",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "31825d16ffc0cf0edd9a0e81f88c12755ccf2cc63a52cb61f72dee32768c5f26"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 1,
+      "repository_snapshot": {
+        "base_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+        "build_observed": {
+          "base_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+          "base_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "full_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2",
+          "head_revision": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+          "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464",
+          "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 22,
+      "run_status": "completed",
+      "skill_provenance": {
+        "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "host_reported_bundle_digest_status": "missing",
+        "host_reported_bundle_sha256": null,
+        "provided_bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
+        "verified_loaded": null
+      }
+    },
+    {
+      "annotation_status": "pending",
+      "artifacts": {
+        "raw_host_output_included": false,
+        "raw_host_output_sha256": "f0c7f328c2b5f8c773693ae335598521483e428a1f26c0278a1dcd957d940028",
+        "run_record_sha256": "13b46d9aa6f98995e667f081692a0d5a52800578953fb725cb429175579a1e6c",
+        "score_sha256": "f64e0523d2bad7611109a629b8c8779909b496707fcf79844ddb939753b4266e"
+      },
+      "attempt": 1,
+      "attempt_kind": "initial",
+      "case_id": "case0011",
+      "concurrent": true,
+      "condition": "same_host_direct",
+      "duration_seconds": 145.584512571,
+      "duration_source": "host_duration_seconds",
+      "host": {
+        "configuration_fingerprint": null,
+        "model": null,
+        "name": "Codex delegated agent",
+        "version": null
+      },
+      "human_adjudication": {
+        "clean_case_false_alarm": null,
+        "false_positive_count": null,
+        "known_defect_recall": null,
+        "precision": null,
+        "status": "pending",
+        "unresolved_prediction_count": null,
+        "wrong_resolved_count": null
+      },
+      "input": {
+        "repository_id": "lonelydoll42/CodeReview-Agent",
+        "review_scope_fingerprint": "d8c761b7f07e6ba0f39fb764096d67788a09f284f8fc94ee0c620d412281c35d",
+        "scope_paths": [
+          "ui/app.py"
+        ],
+        "snapshot_fingerprint": "31825d16ffc0cf0edd9a0e81f88c12755ccf2cc63a52cb61f72dee32768c5f26"
+      },
+      "protocol_incidents": [],
+      "replicate": 1,
+      "reported_finding_count": 0,
+      "repository_snapshot": {
+        "base_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+        "build_observed": {
+          "base_revision": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+          "base_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "full_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2",
+          "head_revision": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+          "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464"
+        },
+        "build_status": "verified",
+        "build_worktree_status": "clean",
+        "head_revision": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+        "input_fingerprint_status": "verified",
+        "scoring_status": "verified",
+        "scoring_worktree_status": "clean",
+        "snapshot": {
+          "base_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+          "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464",
+          "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
+        }
+      },
+      "review_status": "completed",
+      "run_order": 21,
+      "run_status": "completed",
+      "skill_provenance": null
+    }
+  ],
+  "schema_version": 1,
+  "source_digests": {
+    "ab_summary_sha256": "034c84faad5f1041505b14a4d86db4203aa282bbd5ef38d015181f925a5b475b",
+    "adjudication_input_sha256": "5cddda038fd695db0d2809cdf83ca2de54fc3e60422b64446e8a10ce46f4bdc2",
+    "agent_adjudication_v1_sha256": "ba4c28a13321d02884cb3e2f6a9b292fbcbb6caa0e2399a927b4d75d8455fe2c",
+    "agent_adjudication_v2_sha256": "57d5306874541d2d7e466ae38d2fa1b6b8023365fbfedea67d978f1cb748fce9",
+    "portable_summary_sha256": "ade6783ba5062ad702fea139e8aeec8bb028aa092e718720d22871530a63e36b"
+  }
+}

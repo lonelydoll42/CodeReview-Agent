@@ -6,7 +6,7 @@
 
 - [seed-cases.json](data/seed-cases.json) 索引 `prepare_workbuddy_acceptance.py` 生成的三个合成隔离夹具：缺失记录缺陷、行为保持的鉴权迁移、跨文件返回契约变化。它们适合检查导入、流程和报告/复查行为，不是来自真实项目的盲测。
 - 每次准备器运行会将 host 产物留在其输出目录的 `host-artifacts/case-NN/`，将 operator oracle 放在 `operator/oracle.md`，并将项目测试和外部探针记录留在 `validation/`。遵循 [WorkBuddy 验收单](../docs/workbuddy-acceptance.md)：oracle、探针和准备补丁不能进入宿主提示；目前宿主结果为 `not_run`。
-- 当前 `eval/metrics.py` 读取旧的 `pr_url`/`human_findings` 数据，并依赖服务端 `agents.base.Finding`；只按文件、类别和行号容差匹配 finding。没有现成宿主数据集，也没有对状态、覆盖、失败、复查误判或成本的判分。保留原命令兼容旧数据；本契约不把它描述为 Skill 质量评测器。
+- 旧的 `eval/metrics.py` 读取 `pr_url`/`human_findings` 数据，并依赖服务端 `agents.base.Finding`；只按文件、类别和行号容差匹配 finding。它不读取本目录的宿主运行记录，也不覆盖状态、覆盖、失败、复查误判或成本。保留原命令兼容旧数据；本契约不把它描述为 Skill 质量评测器。
 
 ## A/B 基线与后续 C 组
 
@@ -20,7 +20,15 @@
 | `current_skill` | B：同一宿主加载当前固定版本的 Skill |
 | `context_selector_skill` | C：同一宿主加载加入上下文候选选择器的 Skill；选择器实现前不运行 |
 
-固定仓库快照、审查范围、宿主版本和模型配置；保存其指纹与实际运行条件。若宿主、模型或输入配置不同，分开记录，不能汇总成同条件比较。WorkBuddy 暂时无法连接时，可先用能够执行两种条件的其他同一宿主完成 A/B，并如实记录宿主；这不构成 WorkBuddy 验收。当前没有 A/B 质量结果，C 也尚未运行。
+固定仓库快照、审查范围、宿主版本和模型配置；保存其指纹与实际运行条件。若宿主、模型或输入配置不同，分开记录，不能汇总成同条件比较。WorkBuddy 暂时无法连接时，可先用能够执行两种条件的其他同一宿主完成 A/B，并如实记录宿主；这不构成 WorkBuddy 验收。2026-10-09 已完成 11 个真实案例、23 次保存运行的试跑，见下文；它没有人工质量标签，不能报告 Skill 精度或召回率。C 仍未运行。
+
+## 2026-10-09 A/B 试跑
+
+[试跑报告](results/2026-10-09-ab-pilot.md)与[可移植 summary](results/2026-10-09-ab-pilot-summary.json)记录了 23 条尝试、重试历史、宿主身份限制、快照检查和协议事件；[证据索引](results/2026-10-09-ab-pilot-evidence.json)包含逐次运行摘要、原始 host-output SHA-256 与匿名 agent 判定投影。原始 host-output、冻结 oracle 和完整私有映射保留在仓库外，导出文件不包含它们。
+
+这批运行中 A 完成 11/12 次，B 完成 11/11 次；这些是流程结果，不是质量分数。8 组输入匹配但宿主身份不完整且 Skill 加载未验证，2 组因宿主自报名称不一致而不比较，case 10 因 digest 匹配的协议违规事件而列为 inconclusive。该 incident 的通用 actor 为 `agent`；运行 agent 在 review 中覆盖模板，协调/finisher agent 在 review 结束后从验证过的运行前副本恢复模板。Agent grader v2 的 A 4 条 supported/1 条 unresolved、B 3 条 supported/2 条 unresolved 仅是暂定证据；两个冻结候选都有 agent prediction 覆盖，但不能当作 human recall。没有人工标注，因此人工 precision、recall、clean-case false alarms 和 wrong-resolution 仍为 null。案例集尚未认证为盲测，报告也不代表 WorkBuddy 验收。
+
+用标准库路径 `python -S` 从受控输入重建了 23 条 run record 与分组 summary，并逐条验证记录和输入指纹；23/23 records 通过 JSON Schema。全仓库回归为 239 passed、4 skipped；Ruff、`pip check` 和 `git diff --check` 通过。case 10 的恢复角色/阶段是附加说明，不增加 run event 或干预计数。
 
 ## 记录和产物
 
@@ -97,9 +105,9 @@
 
 ## 案例规模与状态
 
-当前 seed index 只有三组合成 fixture，且 WorkBuddy 状态是 `not_run`。A/B 可先用 10–12 个真实案例试跑，再逐步扩充至 20–30 个作为数据集成熟度目标；无需等到目标规模或 C 组齐备才建立首轮基线。在案例、独立 oracle、人工标注和实际宿主运行记录进入仓库或受控存储前，不得报告该规模已达成，也不生成占位评分。盲测资格应由案例管理者另外标记，含已公开 oracle 的合成夹具不属于盲测。
+当前 `seed-cases.json` 仍只有三组合成 fixture；另外已保存 11 个真实案例、23 次 A/B pilot 尝试。它达到首批 10–12 个真实案例的试跑规模，但不等于已人工标注或认证的基准集；20–30 个案例仍是后续成熟度目标。实际 host-output 和 oracle 留在仓库外受控存储，仓库只提交摘要、摘要哈希和便携证据索引。先完成人工标注、补齐宿主/模型/Skill 元数据并独立审计覆盖，再决定是否重复 A/B 和启动 C；PR4 上下文选择器和 PR5 历史报告/发布规划继续排队，WorkBuddy 状态仍为 `not_run`。盲测资格应由案例管理者另外标记，含已公开 oracle 的合成夹具不属于盲测。
 
-实现 PR3 时先让输入记录、原始结果和评分产物可审计，再以小批真实案例启动 A/B，核实标注一致性与流程。选择器实现后，在相同快照和宿主条件下增加 C，重点比较 B/C 的变化，并保留 A 作为直接审查基线。只有重新运行宿主才可以评价 Skill 或上下文选择效果；单纯回放已存输出只验证判分脚本和该批旧输出。
+PR3 已完成输入记录、保存运行、评分产物和首批 A/B pilot 的可审计实现；当前报告仍是流程与暂定 agent 证据，不是人工质量评估。下一步先完成人工标注和元数据/覆盖审计，再按相同快照与可核验的宿主条件重复 A/B。选择器实现后再增加 C，重点比较 B/C，并保留 A 作为直接审查基线。只有重新运行宿主才可评价 Skill 或上下文选择效果；单纯回放已存输出只验证判分脚本和该批旧输出。
 
 ## 开发流程前向验证
 

@@ -17,7 +17,8 @@
     "annotation",
     "scoring",
     "execution",
-    "model_usage"
+    "model_usage",
+    "repository_snapshot"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -39,7 +40,8 @@
       "properties": {
         "name": {"type": ["string", "null"]},
         "version": {"type": ["string", "null"]},
-        "model": {"type": ["string", "null"]}
+        "model": {"type": ["string", "null"]},
+        "configuration_fingerprint": {"type": ["string", "null"]}
       }
     },
     "environment": {
@@ -59,6 +61,8 @@
         "repository_id": {"type": ["string", "null"]},
         "review_manifest": {"type": ["string", "null"]},
         "snapshot_fingerprint": {"type": ["string", "null"]},
+        "review_scope_fingerprint": {"type": ["string", "null"]},
+        "scope_paths": {"type": ["array", "null"], "items": {"type": "string"}},
         "prior_result": {"type": ["string", "null"]},
         "current_manifest": {"type": ["string", "null"]}
       }
@@ -77,10 +81,16 @@
       "properties": {
         "raw_transcript": {"type": ["string", "null"]},
         "raw_host_output": {"type": ["string", "null"]},
+        "raw_host_output_sha256": {"type": ["string", "null"]},
         "validated_result": {"type": ["string", "null"]},
         "markdown_report": {"type": ["string", "null"]},
         "recheck_json": {"type": ["string", "null"]},
-        "recheck_markdown": {"type": ["string", "null"]}
+        "recheck_markdown": {"type": ["string", "null"]},
+        "review_prompt": {"type": ["string", "null"]},
+        "skill_inventory": {"type": ["string", "null"]},
+        "skill_bundle": {"type": ["string", "null"]},
+        "run_metadata": {"type": ["string", "null"]},
+        "coverage_audit": {"type": ["string", "null"]}
       }
     },
     "annotation": {
@@ -90,7 +100,9 @@
       "properties": {
         "status": {"enum": ["not_started", "pending", "reviewed", "adjudicated"]},
         "oracle": {"type": ["string", "null"]},
-        "human_labels": {"type": ["string", "null"]}
+        "human_labels": {"type": ["string", "null"]},
+        "provisional_labels": {"type": ["string", "null"]},
+        "provisional_source_sha256": {"type": ["string", "null"]}
       }
     },
     "scoring": {
@@ -117,15 +129,90 @@
       "properties": {
         "failure_reason": {"type": ["string", "null"]},
         "uncovered_paths": {
-          "type": "array",
+          "type": ["array", "null"],
           "items": {"type": "string"}
+        },
+        "read_paths": {"type": ["array", "null"], "items": {"type": "string"}},
+        "coverage_reported": {"type": ["boolean", "null"]},
+        "scope_verified": {"type": ["boolean", "null"]},
+        "scope_verification_source": {"type": ["string", "null"]},
+        "coverage_audit": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["status", "artifact"],
+          "properties": {
+            "status": {"enum": ["pending", "invalid", "verified"]},
+            "artifact": {"type": "string"},
+            "source": {"type": ["string", "null"]},
+            "auditor": {"type": ["string", "null"]},
+            "read_paths": {"type": "array", "items": {"type": "string"}},
+            "uncovered_paths": {"type": "array", "items": {"type": "string"}},
+            "context_omissions": {"type": "array", "items": {"type": "string"}},
+            "review_status": {"type": "string"},
+            "scope_verified": {"type": "boolean"},
+            "notes": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "review_status": {
+          "type": ["string", "null"],
+          "enum": ["completed", "partial", "uncovered", "failed", null]
         },
         "context_omissions": {
-          "type": "array",
+          "type": ["array", "null"],
           "items": {"type": "string"}
         },
+        "tool_permissions": {"type": ["string", "null"]},
+        "manual_intervention_log": {"type": ["string", "null"]},
         "manual_interventions": {"type": ["integer", "null"], "minimum": 0},
-        "duration_seconds": {"type": ["number", "null"], "minimum": 0}
+        "operator_event_count": {"type": ["integer", "null"], "minimum": 0},
+        "host_reported_manual_interventions": {"type": ["integer", "null"], "minimum": 0},
+        "manual_intervention_source": {"type": ["string", "null"]},
+        "duration_seconds": {"type": ["number", "null"], "minimum": 0},
+        "started_at": {"type": ["string", "null"]},
+        "finished_at": {"type": ["string", "null"]},
+        "run_order": {"type": ["integer", "null"], "minimum": 1},
+        "concurrent": {"type": ["boolean", "null"]},
+        "reported_finding_count": {"type": ["integer", "null"], "minimum": 0},
+        "normalization_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "raw_value", "normalized_value", "rule"],
+            "properties": {
+              "field": {"const": "condition"},
+              "raw_value": {"enum": ["A", "B"]},
+              "normalized_value": {"enum": ["same_host_direct", "current_skill"]},
+              "rule": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "protocol_incidents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifact", "sha256", "raw_host_output_sha256_matches"],
+            "properties": {
+              "artifact": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "incident_id": {"type": ["string", "null"]},
+              "event": {"type": ["string", "null"]},
+              "raw_host_output_sha256_matches": {"type": ["boolean", "null"]},
+              "restoration_attribution": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["actor", "role", "phase"],
+                "properties": {
+                  "actor": {"enum": ["agent", "user", "system"]},
+                  "role": {"type": "string", "minLength": 1},
+                  "phase": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
       }
     },
     "model_usage": {
@@ -137,6 +224,108 @@
         "output_tokens": {"type": ["integer", "null"], "minimum": 0},
         "cost": {"type": ["number", "null"], "minimum": 0},
         "currency": {"type": ["string", "null"]}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "case_group_id",
+        "replicate",
+        "planned_replicates",
+        "attempt",
+        "attempt_kind",
+        "run_order",
+        "order_seed",
+        "concurrent",
+        "metadata_artifact"
+      ],
+      "properties": {
+        "group_id": {"type": ["string", "null"]},
+        "case_group_id": {"type": ["string", "null"]},
+        "replicate": {"type": ["integer", "null"], "minimum": 1},
+        "planned_replicates": {"type": ["integer", "null"], "minimum": 1},
+        "attempt": {"type": ["integer", "null"], "minimum": 1},
+        "attempt_kind": {"enum": ["initial", "retry", "independent_replicate", null]},
+        "run_order": {"type": ["integer", "null"], "minimum": 1},
+        "order_seed": {"type": ["string", "null"]},
+        "concurrent": {"type": ["boolean", "null"]},
+        "metadata_artifact": {"type": ["string", "null"]}
+      }
+    },
+    "skill_provenance": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "source_revision",
+        "bundle_sha256",
+        "inventory_sha256",
+        "provided_bundle_sha256",
+        "host_reported_bundle_sha256",
+        "host_reported_bundle_digest_status",
+        "verified_loaded"
+      ],
+      "properties": {
+        "label": {"type": ["string", "null"]},
+        "source_revision": {"type": ["string", "null"]},
+        "bundle_sha256": {"type": ["string", "null"]},
+        "provided_bundle_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "inventory_sha256": {"type": ["string", "null"]},
+        "host_reported_bundle_sha256": {"type": ["string", "null"]},
+        "host_reported_bundle_digest_status": {"enum": ["missing", "invalid", "valid"]},
+        "verified_loaded": {"type": ["boolean", "null"]}
+      }
+    },
+    "repository_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_revision",
+        "head_revision",
+        "snapshot",
+        "snapshot_fingerprint",
+        "case_and_reviewer_input_match",
+        "build_check"
+      ],
+      "properties": {
+        "base_revision": {"type": ["string", "null"]},
+        "head_revision": {"type": ["string", "null"]},
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "base_tree": {"type": "string"},
+            "head_tree": {"type": "string"},
+            "scoped_diff_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "snapshot_fingerprint": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "case_and_reviewer_input_match": {"type": ["boolean", "null"]},
+        "build_check": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "checks", "expected", "observed", "worktree_status", "limitation"],
+          "properties": {
+            "status": {"enum": ["verified", "mismatch", "unverified"]},
+            "checks": {"type": "object"},
+            "expected": {"type": "object"},
+            "observed": {"type": "object"},
+            "worktree_status": {"enum": ["clean", "dirty", "unavailable"]},
+            "limitation": {"type": "string"}
+          }
+        }
+      }
+    },
+    "source_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "blind_root", "operator_annotation"],
+      "properties": {
+        "repository": {"type": ["string", "null"]},
+        "blind_root": {"type": ["string", "null"]},
+        "operator_annotation": {"type": ["string", "null"]}
       }
     }
   },
