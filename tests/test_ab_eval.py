@@ -8,14 +8,18 @@ from pathlib import Path
 
 import pytest
 
+import eval.ab_eval as ab_eval
 from eval.ab_eval import (
     _canonical_bytes,
     _protocol_incidents,
     _read_lines,
     _repository_snapshot_check,
     build_run_record,
+    build_runs,
+    main,
     score_record,
     summarize,
+    validate_record,
 )
 
 
@@ -122,6 +126,29 @@ def _build_record(
     )
 
 
+def _prepare_build_runs(tmp_path: Path) -> tuple[Path, Path, dict, Path]:
+    index, case, run_dir = _build_case(tmp_path)
+    _write_json(run_dir / "host-output.json", {"run_status": "completed", "findings": []})
+    index["cases"] = [case]
+    index_path = tmp_path / "index.json"
+    _write_json(index_path, index)
+    return index_path, tmp_path / "runs", case, run_dir
+
+
+def _run_builds(index_path: Path, runs_root: Path) -> list[Path]:
+    return build_runs(
+        index_path,
+        runs_root,
+        skill_root=runs_root.parent / "missing-skill",
+        planned_replicates=1,
+        order_seed="test-seed",
+        skill_label="test-skill",
+        skill_revision=None,
+        skill_bundle_sha256=None,
+        skill_bundle_path=None,
+    )
+
+
 def _score_fixture(
     run_dir: Path,
     *,
@@ -130,7 +157,7 @@ def _score_fixture(
     run_status: str = "completed",
     read_paths: list[str] | None = None,
     review_status: str = "completed",
-    snapshot_fingerprint: str = "same-snapshot",
+    snapshot_fingerprint: str | None = None,
     recheck: dict | None = None,
     condition: str = "same_host_direct",
 ) -> Path:
@@ -148,6 +175,24 @@ def _score_fixture(
     ]
     _write_json(run_dir / "validated-result.json", {"findings": findings})
     _write_json(run_dir / "host-output.json", {"findings": findings})
+    snapshot = {
+        "base_tree": "base-tree",
+        "head_tree": "head-tree",
+        "scoped_diff_sha256": "0" * 64,
+    }
+    reviewer_input = {
+        "scope": "branch",
+        "base": "base-revision",
+        "head": "head-revision",
+        "scope_paths": ["src/app.py"],
+        "snapshot": snapshot,
+    }
+    manifest_path = run_dir / "reviewer-input.json"
+    _write_json(manifest_path, reviewer_input)
+    actual_snapshot_fingerprint = hashlib.sha256(_canonical_bytes(snapshot)).hexdigest()
+    recorded_snapshot_fingerprint = snapshot_fingerprint or actual_snapshot_fingerprint
+    validated_path = run_dir / "validated-result.json"
+    raw_path = run_dir / "host-output.json"
     if recheck is not None:
         _write_json(run_dir / "recheck.json", recheck)
     record = {
@@ -161,15 +206,27 @@ def _score_fixture(
         "environment": {"os": None, "architecture": None},
         "input": {
             "repository_id": "example/project",
-            "snapshot_fingerprint": snapshot_fingerprint,
-            "review_scope_fingerprint": "same-scope",
+            "review_manifest": "reviewer-input.json",
+            "review_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "snapshot_fingerprint": recorded_snapshot_fingerprint,
+            "review_scope_fingerprint": hashlib.sha256(_canonical_bytes({
+                "scope": reviewer_input["scope"],
+                "base": reviewer_input["base"],
+                "head": reviewer_input["head"],
+                "paths": reviewer_input["scope_paths"],
+            })).hexdigest(),
             "scope_paths": ["src/app.py"],
-            "review_manifest": None,
         },
         "artifacts": {
+            "raw_transcript": None,
+            "raw_transcript_sha256": None,
             "raw_host_output": "host-output.json",
+            "raw_host_output_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
             "validated_result": "validated-result.json",
+            "validated_result_sha256": hashlib.sha256(validated_path.read_bytes()).hexdigest(),
+            "markdown_report": None,
             "recheck_json": "recheck.json" if recheck is not None else None,
+            "recheck_markdown": None,
         },
         "annotation": {"status": "pending", "oracle": None, "human_labels": None, "provisional_labels": None},
         "scoring": {"status": "not_run", "script": None, "version": None, "output": None},
@@ -190,14 +247,51 @@ def _score_fixture(
             "group_id": f"test-benchmark:{case_id}:replicate-1",
             "case_group_id": case_id,
             "replicate": 1,
+            "planned_replicates": 1,
             "attempt": int(run_dir.name.replace("repeat", "")),
             "attempt_kind": "initial" if run_dir.name == "repeat01" else "retry",
             "run_order": 1,
+            "order_seed": "test-seed",
+            "concurrent": False,
+            "metadata_artifact": None,
         },
+        "repository_snapshot": {
+            "base_revision": "base-revision",
+            "head_revision": "head-revision",
+            "snapshot": snapshot,
+            "snapshot_fingerprint": actual_snapshot_fingerprint,
+            "case_and_reviewer_input_match": True,
+            "build_check": {
+                "status": "unverified",
+                "checks": {},
+                "expected": {},
+                "observed": {},
+                "worktree_status": "unavailable",
+                "limitation": "test fixture",
+            },
+        },
+        "source_paths": {"repository": None, "blind_root": None, "operator_annotation": None},
     }
     path = run_dir / "run.json"
     _write_json(path, record)
     return path
+
+
+def _persist_score(run_path: Path) -> dict:
+    score = score_record(run_path)
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    score_path = run_path.parent / "score.json"
+    _write_json(score_path, score)
+    record["scoring"] = {
+        "status": "completed",
+        "script": "eval/ab_eval.py",
+        "version": score["scorer"]["version"],
+        "output": "score.json",
+        "dependency_manifest_version": 1,
+        "dependency_fingerprint": score["dependencies"]["fingerprint"],
+    }
+    _write_json(run_path, record)
+    return score
 
 
 def test_build_preserves_raw_output_and_keeps_operator_counts_unknown_without_events(tmp_path: Path) -> None:
@@ -470,18 +564,68 @@ def test_summary_pairs_latest_completed_retry_and_rejects_snapshot_mismatch(tmp_
 
 def _prepare_pair_summary_record(run_path: Path, *, condition: str, protocol_violation: bool = False) -> None:
     record = json.loads(run_path.read_text(encoding="utf-8"))
+    repository = run_path.parents[4] / "pair-repository"
+    if not (repository / ".git").is_dir():
+        _make_repository(repository)
+    base = _git(repository, "rev-list", "--max-parents=0", "HEAD").decode().strip()
+    head = _git(repository, "rev-parse", "HEAD").decode().strip()
+    snapshot = _repository_snapshot(repository, base, head)
+    snapshot_fingerprint = hashlib.sha256(_canonical_bytes(snapshot)).hexdigest()
+    reviewer_input = {
+        "scope": "branch",
+        "base": base,
+        "head": head,
+        "scope_paths": ["src/app.py"],
+        "snapshot": snapshot,
+    }
+    manifest_path = run_path.parent / "reviewer-input.json"
+    _write_json(manifest_path, reviewer_input)
+    record["input"].update({
+        "review_manifest": "reviewer-input.json",
+        "review_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "snapshot_fingerprint": snapshot_fingerprint,
+        "review_scope_fingerprint": hashlib.sha256(_canonical_bytes({
+            "scope": reviewer_input["scope"],
+            "base": base,
+            "head": head,
+            "paths": reviewer_input["scope_paths"],
+        })).hexdigest(),
+        "scope_paths": ["src/app.py"],
+    })
     record["host"] = {
         "name": "same-host",
         "version": "1",
         "model": "model",
         "configuration_fingerprint": "configuration",
     }
-    record["repository_snapshot"] = {"build_check": {"status": "verified"}}
-    record["execution"]["protocol_incidents"] = (
-        [{"incident_id": "incident", "raw_host_output_sha256_matches": True}]
-        if protocol_violation
-        else []
-    )
+    record["repository_snapshot"] = {
+        "base_revision": base,
+        "head_revision": head,
+        "snapshot": snapshot,
+        "snapshot_fingerprint": snapshot_fingerprint,
+        "case_and_reviewer_input_match": True,
+        "build_check": {
+            "status": "verified",
+            "checks": {},
+            "expected": {},
+            "observed": {},
+            "worktree_status": "clean",
+            "limitation": "test fixture",
+        },
+    }
+    record["source_paths"]["repository"] = str(repository)
+    if protocol_violation:
+        incident_path = run_path.parent / "incident.json"
+        _write_json(incident_path, {"incident_id": "incident"})
+        record["execution"]["protocol_incidents"] = [{
+            "artifact": "incident.json",
+            "sha256": hashlib.sha256(incident_path.read_bytes()).hexdigest(),
+            "incident_id": "incident",
+            "event": "protocol_violation",
+            "raw_host_output_sha256_matches": True,
+        }]
+    else:
+        record["execution"]["protocol_incidents"] = []
     if condition == "current_skill":
         record["skill_provenance"] = {
             "provided_bundle_sha256": "a" * 64,
@@ -492,9 +636,16 @@ def _prepare_pair_summary_record(run_path: Path, *, condition: str, protocol_vio
         }
     _write_json(run_path, record)
     score = score_record(run_path)
-    score["workflow"]["repository_snapshot_check"]["status"] = "verified"
-    score["workflow"]["input_fingerprint_check"] = {"status": "verified"}
     _write_json(run_path.parent / "score.json", score)
+    record["scoring"] = {
+        "status": "completed",
+        "script": "eval/ab_eval.py",
+        "version": score["scorer"]["version"],
+        "output": "score.json",
+        "dependency_manifest_version": 1,
+        "dependency_fingerprint": score["dependencies"]["fingerprint"],
+    }
+    _write_json(run_path, record)
 
 
 def test_summary_limits_pair_status_when_skill_load_is_unverified(tmp_path: Path) -> None:
@@ -569,3 +720,435 @@ def test_protocol_incident_preserves_restoration_attribution(tmp_path: Path) -> 
         "role": "coordinator_finisher",
         "phase": "after_review",
     }
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    ["host-output.json", "validated-result.json", "reviewer-input.json"],
+)
+def test_invalid_immutable_artifact_cannot_replace_a_completed_score(
+    tmp_path: Path, artifact_name: str
+) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    _persist_score(run_path)
+    score_path = run_path.parent / "score.json"
+    previous_score = score_path.read_bytes()
+    previous_record = run_path.read_bytes()
+    artifact_path = run_path.parent / artifact_name
+    artifact_path.write_bytes(artifact_path.read_bytes() + b"\n")
+
+    errors = validate_record(json.loads(run_path.read_text(encoding="utf-8")), run_path.parent)
+    assert any("SHA-256 does not match" in error for error in errors)
+    with pytest.raises(ValueError, match="Cannot score"):
+        score_record(run_path)
+    assert main(["score", str(run_path)]) == 2
+    with pytest.raises(ValueError, match="Cannot summarize invalid run records"):
+        summarize([run_path])
+
+    assert score_path.read_bytes() == previous_score
+    assert run_path.read_bytes() == previous_record
+
+
+def test_score_dependency_fingerprint_is_stable_for_unchanged_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    cached = _persist_score(run_path)
+    again = score_record(run_path)
+    assert again["dependencies"]["fingerprint"] == cached["dependencies"]["fingerprint"]
+
+    captured: list[dict] = []
+    original = ab_eval._score_run_record
+
+    def capture_score(*args, **kwargs):
+        score = original(*args, **kwargs)
+        captured.append(score)
+        return score
+
+    monkeypatch.setattr(ab_eval, "_score_run_record", capture_score)
+    summarize([run_path])
+    assert captured[0]["dependencies"]["fingerprint"] == cached["dependencies"]["fingerprint"]
+
+
+def test_summarize_recomputes_when_human_labels_change(tmp_path: Path) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    labels_path = run_path.parent / "labels.json"
+    labels = {
+        "label_source": "human",
+        "status": "adjudicated",
+        "case_classification": "defect",
+        "known_findings": [],
+        "prediction_labels": [
+            {"finding_id": "finding-1", "verdict": "valid", "matches_known_findings": []}
+        ],
+    }
+    _write_json(labels_path, labels)
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    record["annotation"].update({"status": "adjudicated", "human_labels": "labels.json"})
+    _write_json(run_path, record)
+    cached = _persist_score(run_path)
+    assert cached["human_adjudication"]["precision"] == 1.0
+
+    labels["prediction_labels"][0]["verdict"] = "false_positive"
+    _write_json(labels_path, labels)
+    report = summarize([run_path])
+
+    assert report["by_condition"]["same_host_direct"]["human_precision_mean"] == 0.0
+    assert json.loads((run_path.parent / "score.json").read_text(encoding="utf-8"))[
+        "human_adjudication"
+    ]["precision"] == 1.0
+
+
+def test_summarize_recomputes_live_repository_state_instead_of_cached_verified(
+    tmp_path: Path,
+) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01"
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    assert json.loads((direct.parent / "score.json").read_text(encoding="utf-8"))[
+        "workflow"
+    ]["repository_snapshot_check"]["status"] == "verified"
+
+    repository = Path(json.loads(direct.read_text(encoding="utf-8"))["source_paths"]["repository"])
+    (repository / "untracked.txt").write_text("changed after scoring\n", encoding="utf-8")
+    report = summarize([direct, skill], ["case0001"])
+
+    pair = report["paired_cases"][0]
+    assert pair["status"] == "not_comparable"
+    assert pair["repository_snapshot_checks"]["same_host_direct"]["scoring"] == "mismatch"
+    assert pair["repository_snapshot_checks"]["current_skill"]["scoring"] == "mismatch"
+
+
+def test_summary_keeps_null_skill_provenance_as_missing_load_evidence(tmp_path: Path) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01"
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    record = json.loads(skill.read_text(encoding="utf-8"))
+    record["skill_provenance"] = None
+    _write_json(skill, record)
+
+    report = summarize([direct, skill], ["case0001"])
+    pair = report["paired_cases"][0]
+
+    assert report["run_count"] == 2
+    assert pair["skill_load_check"]["verified_loaded"] is None
+    assert pair["skill_load_check"]["evidence_status"] == "missing_provenance"
+    assert pair["status"] == "paired_inputs_and_host_identity_verified_skill_load_unverified"
+
+
+def test_coverage_audit_changes_invalidate_score_dependencies(tmp_path: Path) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01", read_paths=["src/app.py"])
+    audit_path = run_path.parent / "coverage-audit.json"
+    audit = {
+        "verified": True,
+        "read_paths": ["src/app.py"],
+        "uncovered_paths": [],
+        "context_omissions": [],
+        "review_status": "completed",
+        "scope_verified": True,
+    }
+    _write_json(audit_path, audit)
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    record["artifacts"]["coverage_audit"] = "coverage-audit.json"
+    record["execution"]["coverage_audit"] = {
+        "status": "verified",
+        "artifact": "coverage-audit.json",
+        "source": None,
+        "auditor": None,
+        "read_paths": ["src/app.py"],
+        "uncovered_paths": [],
+        "context_omissions": [],
+        "review_status": "completed",
+        "scope_verified": True,
+        "notes": [],
+    }
+    _write_json(run_path, record)
+    before = score_record(run_path)
+    assert before["workflow"]["coverage_complete"] is True
+
+    audit["uncovered_paths"] = ["src/app.py"]
+    _write_json(audit_path, audit)
+    after = score_record(run_path)
+
+    assert after["workflow"]["coverage_complete"] is False
+    assert after["dependencies"]["fingerprint"] != before["dependencies"]["fingerprint"]
+
+
+def test_recheck_changes_invalidate_score_dependencies(tmp_path: Path) -> None:
+    run_path = _score_fixture(
+        tmp_path / "run" / "repeat01",
+        recheck={"recheck_status": "completed", "findings": []},
+    )
+    labels_path = run_path.parent / "labels.json"
+    _write_json(labels_path, {
+        "label_source": "human",
+        "status": "adjudicated",
+        "case_classification": "defect",
+        "known_findings": [],
+        "prediction_labels": [
+            {"finding_id": "finding-1", "verdict": "valid", "matches_known_findings": []}
+        ],
+        "recheck_reviews": [
+            {"previous_finding_id": "finding-1", "actual_status": "persisting"}
+        ],
+    })
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    record["annotation"].update({"status": "adjudicated", "human_labels": "labels.json"})
+    _write_json(run_path, record)
+    before = score_record(run_path)
+    assert before["human_adjudication"]["wrong_resolved_count"] == 0
+
+    _write_json(run_path.parent / "recheck.json", {
+        "recheck_status": "completed",
+        "findings": [{"previous_finding_id": "finding-1", "status": "resolved"}],
+    })
+    after = score_record(run_path)
+
+    assert after["human_adjudication"]["wrong_resolved_count"] == 1
+    assert after["dependencies"]["fingerprint"] != before["dependencies"]["fingerprint"]
+
+
+def test_scorer_version_change_invalidates_dependency_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    cached = _persist_score(run_path)
+    monkeypatch.setattr(ab_eval, "VERSION", "test-scorer-version")
+    captured: list[dict] = []
+    original = ab_eval._score_run_record
+
+    def capture_score(*args, **kwargs):
+        score = original(*args, **kwargs)
+        captured.append(score)
+        return score
+
+    monkeypatch.setattr(ab_eval, "_score_run_record", capture_score)
+    summarize([run_path])
+    changed = captured[0]
+
+    assert changed["scorer"]["version"] == "test-scorer-version"
+    assert changed["scorer"]["implementation_sha256"] == cached["scorer"]["implementation_sha256"]
+    assert changed["dependencies"]["fingerprint"] != cached["dependencies"]["fingerprint"]
+
+
+@pytest.mark.parametrize("mutation", ["unchanged", "raw", "input", "both"])
+def test_build_runs_refuses_to_rebuild_recorded_attempt_without_mutation(
+    tmp_path: Path, mutation: str
+) -> None:
+    index_path, runs_root, case, run_dir = _prepare_build_runs(tmp_path)
+    run_path = _run_builds(index_path, runs_root)[0]
+    score_path = run_dir / "score.json"
+    input_copy = run_dir / "artifacts" / "reviewer-input.json"
+    preserved = {
+        run_path: run_path.read_bytes(),
+        score_path: score_path.read_bytes(),
+        input_copy: input_copy.read_bytes(),
+    }
+
+    if mutation in {"raw", "both"}:
+        host_path = run_dir / "host-output.json"
+        host_path.write_bytes(host_path.read_bytes() + b"\n")
+    if mutation in {"input", "both"}:
+        input_path = Path(case["reviewer_input"])
+        input_path.write_bytes(input_path.read_bytes() + b"\n")
+
+    with pytest.raises(ValueError, match="Attempt is already recorded"):
+        _run_builds(index_path, runs_root)
+
+    assert {path: path.read_bytes() for path in preserved} == preserved
+
+
+def test_build_runs_preflights_every_attempt_before_creating_any_record(
+    tmp_path: Path,
+) -> None:
+    index_path, runs_root, case, first_run_dir = _prepare_build_runs(tmp_path)
+    second_run_dir = runs_root / case["case_id"] / "current_skill" / "repeat01"
+    second_run_dir.mkdir(parents=True)
+    _write_json(second_run_dir / "host-output.json", {"run_status": "completed", "findings": []})
+    existing_record = second_run_dir / "run.json"
+    existing_score = second_run_dir / "score.json"
+    existing_copy = second_run_dir / "artifacts" / "reviewer-input.json"
+    _write_json(existing_record, {"preserved": "run"})
+    _write_json(existing_score, {"preserved": "score"})
+    existing_copy.parent.mkdir(parents=True)
+    existing_copy.write_bytes(b"preserved input copy\n")
+    preserved = {
+        existing_record: existing_record.read_bytes(),
+        existing_score: existing_score.read_bytes(),
+        existing_copy: existing_copy.read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="Attempt is already recorded"):
+        _run_builds(index_path, runs_root)
+
+    assert not (first_run_dir / "run.json").exists()
+    assert not (first_run_dir / "score.json").exists()
+    assert not (first_run_dir / "artifacts" / "reviewer-input.json").exists()
+    assert {path: path.read_bytes() for path in preserved} == preserved
+
+
+def test_build_run_record_refuses_existing_attempt_before_copying_input(
+    tmp_path: Path,
+) -> None:
+    index, case, run_dir = _build_case(tmp_path)
+    _write_json(run_dir / "host-output.json", {"run_status": "completed", "findings": []})
+    first_record = _build_record(index, case, run_dir)
+    run_path = run_dir / "run.json"
+    score_path = run_dir / "score.json"
+    _write_json(run_path, first_record)
+    _write_json(score_path, {"preserved": "score"})
+    input_copy = run_dir / "artifacts" / "reviewer-input.json"
+    preserved = {
+        run_path: run_path.read_bytes(),
+        score_path: score_path.read_bytes(),
+        input_copy: input_copy.read_bytes(),
+    }
+    input_path = Path(case["reviewer_input"])
+    input_path.write_bytes(input_path.read_bytes() + b"\n")
+
+    with pytest.raises(ValueError, match="Attempt is already recorded"):
+        _build_record(index, case, run_dir)
+
+    assert {path: path.read_bytes() for path in preserved} == preserved
+
+
+def test_build_cli_and_summary_share_normalized_score_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index, case, run_dir = _build_case(tmp_path)
+    findings = [{
+        "finding_id": "finding-1",
+        "root_cause": "A concrete root cause.",
+        "trigger": "A concrete trigger.",
+        "impact": "A concrete impact.",
+        "introduced_by_change": True,
+        "evidence": [],
+    }]
+    _write_json(run_dir / "host-output.json", {
+        "condition": "same_host_direct",
+        "run_status": "completed",
+        "review_status": "completed",
+        "scope": {"base": case["base"], "head": case["head"], "paths": ["src/app.py"]},
+        "read_paths": ["src/app.py"],
+        "uncovered_paths": [],
+        "context_omissions": [],
+        "findings": findings,
+        "host": {"name": "same-host", "version": "1", "model": "model"},
+        "model_usage": {},
+    })
+    _write_json(run_dir / "validated-result.json", {"findings": findings})
+    index_path = tmp_path / "index.json"
+    index["cases"] = [case]
+    _write_json(index_path, index)
+    (tmp_path / "runs").mkdir(exist_ok=True)
+
+    paths = build_runs(
+        index_path,
+        tmp_path / "runs",
+        skill_root=tmp_path / "missing-skill",
+        planned_replicates=1,
+        order_seed="test-seed",
+        skill_label="test-skill",
+        skill_revision=None,
+        skill_bundle_sha256=None,
+        skill_bundle_path=None,
+    )
+    run_path = paths[0]
+    built_score = json.loads((run_dir / "score.json").read_text(encoding="utf-8"))
+    assert main(["score", str(run_path)]) == 0
+    cli_score = json.loads((run_dir / "score.json").read_text(encoding="utf-8"))
+    assert cli_score == built_score
+
+    captured: list[dict] = []
+    original = ab_eval._score_run_record
+
+    def capture_score(*args, **kwargs):
+        score = original(*args, **kwargs)
+        captured.append(score)
+        return score
+
+    monkeypatch.setattr(ab_eval, "_score_run_record", capture_score)
+    report = summarize([run_path], [case["case_id"]])
+
+    assert report["run_count"] == 1
+    assert captured[0] == cli_score
+    assert captured[0]["dependencies"]["fingerprint"] == built_score["dependencies"]["fingerprint"]
+
+
+def test_legacy_run_without_original_immutable_digests_cannot_be_rescored(
+    tmp_path: Path,
+) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    record["artifacts"].pop("validated_result_sha256")
+    record["input"].pop("review_manifest_sha256")
+    record["scoring"] = {
+        "status": "completed",
+        "script": "eval/ab_eval.py",
+        "version": "0.2.0",
+        "output": "score.json",
+    }
+    _write_json(run_path, record)
+    _write_json(run_path.parent / "score.json", {"schema_version": 1, "legacy": True})
+    run_bytes = run_path.read_bytes()
+    score_bytes = (run_path.parent / "score.json").read_bytes()
+
+    errors = validate_record(record, run_path.parent)
+    assert any("artifacts.validated_result_sha256 is required" in error for error in errors)
+    assert any("input.review_manifest_sha256 is required" in error for error in errors)
+    with pytest.raises(ValueError, match="Cannot score"):
+        score_record(run_path)
+    with pytest.raises(ValueError, match="Cannot summarize invalid run records"):
+        summarize([run_path])
+    assert main(["score", str(run_path)]) == 2
+
+    assert run_path.read_bytes() == run_bytes
+    assert (run_path.parent / "score.json").read_bytes() == score_bytes
+
+
+def test_legacy_run_with_original_immutable_digests_can_be_rescored(
+    tmp_path: Path,
+) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    original_digests = {
+        (group, name): record[group][name]
+        for group, name in (
+            ("artifacts", "raw_host_output_sha256"),
+            ("artifacts", "validated_result_sha256"),
+            ("input", "review_manifest_sha256"),
+        )
+    }
+    record["scoring"] = {
+        "status": "completed",
+        "script": "eval/ab_eval.py",
+        "version": "0.2.0",
+        "output": "score.json",
+    }
+    _write_json(run_path, record)
+    _write_json(run_path.parent / "score.json", {"schema_version": 1, "legacy": True})
+
+    assert validate_record(record, run_path.parent) == []
+    legacy_rescore = score_record(run_path)
+    assert len(legacy_rescore["dependencies"]["fingerprint"]) == 64
+    assert summarize([run_path])["run_count"] == 1
+    assert main(["score", str(run_path)]) == 0
+
+    upgraded = json.loads(run_path.read_text(encoding="utf-8"))
+    for (group, name), digest in original_digests.items():
+        assert upgraded[group][name] == digest
+    assert upgraded["scoring"]["dependency_manifest_version"] == 1
+    assert upgraded["scoring"]["dependency_fingerprint"] == legacy_rescore["dependencies"]["fingerprint"]
+    assert validate_record(upgraded, run_path.parent) == []

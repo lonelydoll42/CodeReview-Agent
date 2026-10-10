@@ -60,11 +60,14 @@
       "properties": {
         "repository_id": {"type": ["string", "null"]},
         "review_manifest": {"type": ["string", "null"]},
+        "review_manifest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "snapshot_fingerprint": {"type": ["string", "null"]},
         "review_scope_fingerprint": {"type": ["string", "null"]},
         "scope_paths": {"type": ["array", "null"], "items": {"type": "string"}},
         "prior_result": {"type": ["string", "null"]},
-        "current_manifest": {"type": ["string", "null"]}
+        "prior_result_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "current_manifest": {"type": ["string", "null"]},
+        "current_manifest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
       }
     },
     "artifacts": {
@@ -80,9 +83,11 @@
       ],
       "properties": {
         "raw_transcript": {"type": ["string", "null"]},
+        "raw_transcript_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "raw_host_output": {"type": ["string", "null"]},
-        "raw_host_output_sha256": {"type": ["string", "null"]},
+        "raw_host_output_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "validated_result": {"type": ["string", "null"]},
+        "validated_result_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "markdown_report": {"type": ["string", "null"]},
         "recheck_json": {"type": ["string", "null"]},
         "recheck_markdown": {"type": ["string", "null"]},
@@ -113,7 +118,9 @@
         "status": {"enum": ["not_run", "completed", "failed", "incomplete"]},
         "script": {"type": ["string", "null"]},
         "version": {"type": ["string", "null"]},
-        "output": {"type": ["string", "null"]}
+        "output": {"type": ["string", "null"]},
+        "dependency_manifest_version": {"const": 1},
+        "dependency_fingerprint": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
       }
     },
     "execution": {
@@ -330,6 +337,97 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scoring": {
+            "properties": {"dependency_manifest_version": {"const": 1}},
+            "required": ["dependency_manifest_version"]
+          }
+        },
+        "required": ["scoring"]
+      },
+      "then": {
+        "properties": {
+          "scoring": {
+            "required": ["dependency_fingerprint"],
+            "properties": {
+              "dependency_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifacts": {"properties": {"raw_transcript": {"type": "string"}}, "required": ["raw_transcript"]}
+        },
+        "required": ["artifacts"]
+      },
+      "then": {
+        "properties": {"artifacts": {"required": ["raw_transcript_sha256"], "properties": {"raw_transcript_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifacts": {"properties": {"raw_host_output": {"type": "string"}}, "required": ["raw_host_output"]}
+        },
+        "required": ["artifacts"]
+      },
+      "then": {
+        "properties": {"artifacts": {"required": ["raw_host_output_sha256"], "properties": {"raw_host_output_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scoring": {"properties": {"dependency_manifest_version": {"const": 1}}, "required": ["dependency_manifest_version"]},
+          "artifacts": {"properties": {"validated_result": {"type": "string"}}, "required": ["validated_result"]}
+        },
+        "required": ["scoring", "artifacts"]
+      },
+      "then": {
+        "properties": {"artifacts": {"required": ["validated_result_sha256"], "properties": {"validated_result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scoring": {"properties": {"dependency_manifest_version": {"const": 1}}, "required": ["dependency_manifest_version"]},
+          "input": {"properties": {"review_manifest": {"type": "string"}}, "required": ["review_manifest"]}
+        },
+        "required": ["scoring", "input"]
+      },
+      "then": {
+        "properties": {"input": {"required": ["review_manifest_sha256"], "properties": {"review_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scoring": {"properties": {"dependency_manifest_version": {"const": 1}}, "required": ["dependency_manifest_version"]},
+          "input": {"properties": {"prior_result": {"type": "string"}}, "required": ["prior_result"]}
+        },
+        "required": ["scoring", "input"]
+      },
+      "then": {
+        "properties": {"input": {"required": ["prior_result_sha256"], "properties": {"prior_result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scoring": {"properties": {"dependency_manifest_version": {"const": 1}}, "required": ["dependency_manifest_version"]},
+          "input": {"properties": {"current_manifest": {"type": "string"}}, "required": ["current_manifest"]}
+        },
+        "required": ["scoring", "input"]
+      },
+      "then": {
+        "properties": {"input": {"required": ["current_manifest_sha256"], "properties": {"current_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+      }
+    },
     {
       "if": {
         "properties": {"run_status": {"const": "failed"}},

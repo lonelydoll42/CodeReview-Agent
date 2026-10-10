@@ -1,0 +1,148 @@
+{
+  "benchmark_id": "review-changes-real-history-v1",
+  "case_labels": [
+    {
+      "case_classification": null,
+      "case_key": "g-c766f758",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-84ea9fff",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-8d50f374",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-d0ad861d",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-9d41b995",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-eea972dc",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-418d37af",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-febf1513",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-38aae3bb",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-4c7037d6",
+      "known_findings": null,
+      "rationale": null
+    },
+    {
+      "case_classification": null,
+      "case_key": "g-0c935b0f",
+      "known_findings": null,
+      "rationale": null
+    }
+  ],
+  "label_source": "human",
+  "prediction_labels": [
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0003",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0001",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0002",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0006",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0010",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0009",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0008",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0007",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0004",
+      "rationale": null,
+      "verdict": null
+    },
+    {
+      "duplicate_of": null,
+      "matches_known_findings": null,
+      "prediction_id": "p0005",
+      "rationale": null,
+      "verdict": null
+    }
+  ],
+  "reviewed_at": null,
+  "reviewer_id": null,
+  "schema_version": 1,
+  "status": "pending"
+}

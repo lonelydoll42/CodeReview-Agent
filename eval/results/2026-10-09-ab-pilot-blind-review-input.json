@@ -1,0 +1,469 @@
+{
+  "benchmark_id": "review-changes-real-history-v1",
+  "cases": [
+    {
+      "case_key": "g-c766f758",
+      "predictions": []
+    },
+    {
+      "case_key": "g-84ea9fff",
+      "predictions": [
+        {
+          "prediction": {
+            "category": null,
+            "change_reason": null,
+            "evidence": [
+              {
+                "basis": "Partial results are not treated as semantically unavailable.",
+                "line_end": 203,
+                "line_start": 203,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "Decision evidence defaults to an empty list and is only validated when truthy.",
+                "line_end": 132,
+                "line_start": 130,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "The resolved decision is emitted without checking current source availability or evidence.",
+                "line_end": 224,
+                "line_start": 220,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "The documented contract says unavailable current snapshot or required context must remain unverified.",
+                "line_end": 33,
+                "line_start": 33,
+                "path": "skills/review-changes/SKILL.md",
+                "side": "after"
+              }
+            ],
+            "impact": "The individual finding is reported as resolved despite the new code needed to verify that claim not being captured; the aggregate partial status does not correct the misleading per-finding status.",
+            "introduced_by_change": true,
+            "root_cause": "Only failed and uncovered current review statuses block decisions; a partial result with unavailable relevant source still accepts a resolved decision, and empty decision evidence is allowed.",
+            "severity": "P2",
+            "title": "A prior finding can be resolved without its current source snapshot",
+            "trigger": "The changed source needed to verify a prior finding is unavailable in the current manifest, coverage is partial, and current_result supplies a resolved decision without evidence.",
+            "validation": "Reproduced with current after content unavailable (file_too_large), partial coverage, and an evidence-free resolved decision: output was partial overall but the prior finding was resolved with empty evidence."
+          },
+          "prediction_id": "p0003"
+        },
+        {
+          "prediction": {
+            "category": null,
+            "change_reason": null,
+            "evidence": [
+              {
+                "basis": "The code skips evidence validation for an omitted or empty evidence list.",
+                "line_end": 132,
+                "line_start": 130,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "An accepted explicit decision is applied directly to the prior finding.",
+                "line_end": 224,
+                "line_start": 220,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "The runtime test submits a resolved decision with a reason and no evidence.",
+                "line_end": 318,
+                "line_start": 313,
+                "path": "tests/test_review_skill_runtime.py",
+                "side": "after"
+              },
+              {
+                "basis": "The test reuses the same manifest for prior and current inputs and asserts a resolved status.",
+                "line_end": 343,
+                "line_start": 331,
+                "path": "tests/test_review_skill_runtime.py",
+                "side": "after"
+              }
+            ],
+            "impact": "The recheck report can claim a still-present defect is fixed, allowing users to treat it as closed without a captured repair.",
+            "introduced_by_change": true,
+            "root_cause": "The decision parser validates evidence only when the supplied list is truthy, and the result loop applies accepted resolved decisions without checking for a source change.",
+            "severity": "P1",
+            "title": "Recheck can mark an unchanged finding resolved without evidence",
+            "trigger": "A current result contains a resolved recheck_decision with a non-empty reason and no evidence while using the same manifest as the prior report.",
+            "validation": "The captured source and added runtime test confirm the behavior; Skill finalization accepted the evidence. The targeted pytest command could not run because pytest is unavailable."
+          },
+          "prediction_id": "p0001"
+        },
+        {
+          "prediction": {
+            "category": null,
+            "change_reason": null,
+            "evidence": [
+              {
+                "basis": "A decision unconditionally takes precedence over the already-computed association.",
+                "line_end": 224,
+                "line_start": 220,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              },
+              {
+                "basis": "The skipped association branch would report an associated confirmed finding as persisting.",
+                "line_end": 233,
+                "line_start": 225,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              }
+            ],
+            "impact": "The recheck closes a defect that the same current report still confirms; consumers can stop tracking a known issue based on a completed/resolved status.",
+            "introduced_by_change": true,
+            "root_cause": "The explicit decision branch is evaluated before the associated current finding's validation status, and it accepts resolved without reconciling contradictory current findings.",
+            "severity": "P1",
+            "title": "A resolved decision overrides a still-confirmed matching finding",
+            "trigger": "The current semantic result contains a confirmed finding associated by the prior finding ID (or semantic fallback) and also supplies a resolved decision for that prior ID.",
+            "validation": "Reproduced with the same confirmed finding ID in current_result and a resolved decision: output was recheck_status=completed, status=resolved, current_finding_id=old-1."
+          },
+          "prediction_id": "p0002"
+        }
+      ]
+    },
+    {
+      "case_key": "g-8d50f374",
+      "predictions": [
+        {
+          "prediction": {
+            "category": "logic_error",
+            "change_reason": "The new request_count check marks every prior finding that requests a contested candidate ambiguous, without checking whether the remaining candidate sets admit a unique one-to-one assignment. The prior sequential matcher would associate the single-path prior finding with app.py and then associate the remaining prior finding with helper.py.",
+            "evidence": [
+              {
+                "basis": "Candidate requests are counted, then any prior finding with a candidate requested by more than one prior is marked ambiguous, even when another candidate makes the overall one-to-one assignment unique. A direct _associate reproduction with the trigger above returns no associations and marks both prior IDs ambiguous.",
+                "line_end": 218,
+                "line_start": 202,
+                "path": "review_core/recheck.py",
+                "side": "after"
+              }
+            ],
+            "impact": "Both prior findings become unverified, both confirmed current findings are listed as new, and the aggregate recheck becomes partial despite a unique path-supported association. This creates duplicate review items and prevents a clean completed recheck.",
+            "introduced_by_change": true,
+            "root_cause": "The fallback matcher treats any shared candidate as ambiguity instead of solving the one-to-one candidate assignment; a finding with a unique candidate is rejected even when the competing prior finding has a distinct remaining candidate.",
+            "severity": null,
+            "title": null,
+            "trigger": "Two prior and two current findings have identical normalized semantic fields; prior evidence paths are {app.py} and {app.py, helper.py}, while current evidence paths are {app.py} and {helper.py} respectively.",
+            "validation": null
+          },
+          "prediction_id": "p0006"
+        }
+      ]
+    },
+    {
+      "case_key": "g-d0ad861d",
+      "predictions": [
+        {
+          "prediction": {
+            "category": "availability",
+            "change_reason": "This change adds max_connections=10 and pool=2.0 to a client that previously used HTTPX's default connection limits and a 15-second timeout for all phases.",
+            "evidence": [
+              {
+                "basis": "The globally cached client is capped at 10 total connections and waits only 2 seconds for a pool slot.",
+                "line_end": 335,
+                "line_start": 330,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "Client exceptions are displayed as request failures and return None, so pool exhaustion drops the UI operation.",
+                "line_end": 347,
+                "line_start": 340,
+                "path": "ui/app.py",
+                "side": "after"
+              }
+            ],
+            "impact": "The waiting request raises PoolTimeout before reaching the API. The UI catches it, displays a request failure, and returns no data; a review submission can therefore fail to enqueue.",
+            "introduced_by_change": true,
+            "root_cause": "The Streamlit-cached HTTPX client is shared across sessions but is limited to 10 total connections with a 2-second pool timeout.",
+            "severity": null,
+            "title": null,
+            "trigger": "Ten requests occupy all shared connections for more than 2 seconds while another UI session starts a request.",
+            "validation": null
+          },
+          "prediction_id": "p0010"
+        }
+      ]
+    },
+    {
+      "case_key": "g-9d41b995",
+      "predictions": [
+        {
+          "prediction": {
+            "category": "reliability",
+            "change_reason": "The new completed-report cache has a 300-second TTL, while before this change the full report used _cached_status with a 3-second TTL; transient full-report failures therefore became sticky for much longer.",
+            "evidence": [
+              {
+                "basis": "_safe_get catches HTTP, status, and JSON errors and returns None, making a transient failure look like an ordinary function result to its caller.",
+                "line_end": 346,
+                "line_start": 339,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "_cached_completed_report caches the result of _safe_get for 300 seconds, including the None returned on failure.",
+                "line_end": 367,
+                "line_start": 364,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "Completed and failed tasks use the long-lived report cache, and a cached None is rendered as 'Could not load task'.",
+                "line_end": 770,
+                "line_start": 765,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "Before the change, the full-report request used _cached_status with a 3-second TTL, allowing transient failures to be retried sooner.",
+                "line_end": 361,
+                "line_start": 359,
+                "path": "ui/app.py",
+                "side": "before"
+              }
+            ],
+            "impact": "Streamlit caches None for that task for five minutes, so reruns keep showing 'Could not load task' after the API recovers. The report is retried only after expiry or a manual cache-clearing refresh.",
+            "introduced_by_change": true,
+            "root_cause": "The 300-second report cache wraps _safe_get, which converts request failures into a cacheable None result.",
+            "severity": null,
+            "title": null,
+            "trigger": "A selected task is reported as completed or failed by the status-only request, then the first full-report request times out, returns an HTTP error, or fails while decoding JSON.",
+            "validation": null
+          },
+          "prediction_id": "p0009"
+        },
+        {
+          "prediction": {
+            "category": "reliability",
+            "change_reason": "The change adds a 300-second cache around the nullable _safe_get result for terminal tasks; previously the same full-report request used a three-second cache.",
+            "evidence": [
+              {
+                "basis": "The new report cache has a 300-second TTL and returns the nullable _safe_get result directly.",
+                "line_end": 367,
+                "line_start": 364,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "_safe_get catches HTTP errors and exceptions and returns None.",
+                "line_end": 346,
+                "line_start": 339,
+                "path": "ui/app.py",
+                "side": "after"
+              },
+              {
+                "basis": "Terminal tasks use the long-lived cache, and a None response displays the load-error message without automatic retry.",
+                "line_end": 770,
+                "line_start": 763,
+                "path": "ui/app.py",
+                "side": "after"
+              }
+            ],
+            "impact": "The task detail stays on the load-error message for up to five minutes after the API recovers unless the user manually clears the UI caches.",
+            "introduced_by_change": true,
+            "root_cause": "The new five-minute completed-report cache memoizes None returned by _safe_get for request failures.",
+            "severity": null,
+            "title": null,
+            "trigger": "A completed or failed task is selected while its full-report request times out, returns a non-success HTTP status, or otherwise raises in the HTTP client.",
+            "validation": null
+          },
+          "prediction_id": "p0008"
+        }
+      ]
+    },
+    {
+      "case_key": "g-eea972dc",
+      "predictions": [
+        {
+          "prediction": {
+            "category": "reliability",
+            "change_reason": "The change fetches complete file contents and switches the logic agent's AST input from added lines to the complete source, so the function list now covers the whole file.",
+            "evidence": [
+              {
+                "basis": "Supported source files up to 1 MiB are fetched and attached to the file diff.",
+                "line_end": 158,
+                "line_start": 156,
+                "path": "tools/github_client.py",
+                "side": "after"
+              },
+              {
+                "basis": "analysis_source returns the complete source when present.",
+                "line_end": 52,
+                "line_start": 47,
+                "path": "agents/base.py",
+                "side": "after"
+              },
+              {
+                "basis": "The full source is parsed, every function is formatted into function_list, and that list is sent with every added-line chunk.",
+                "line_end": 184,
+                "line_start": 171,
+                "path": "agents/logic_agent.py",
+                "side": "after"
+              },
+              {
+                "basis": "Agent exceptions and timeouts are converted to a missing result.",
+                "line_end": 69,
+                "line_start": 59,
+                "path": "agents/orchestrator.py",
+                "side": "after"
+              },
+              {
+                "basis": "Missing agent results are filtered out and the remaining aggregate is persisted.",
+                "line_end": 154,
+                "line_start": 138,
+                "path": "agents/orchestrator.py",
+                "side": "after"
+              }
+            ],
+            "impact": "The model request can fail, after which the orchestrator drops that agent result and still persists the review as completed, silently omitting logic findings for the file.",
+            "introduced_by_change": true,
+            "root_cause": "The logic agent serializes every function from the full source into each prompt without limiting the summary size.",
+            "severity": null,
+            "title": null,
+            "trigger": "A supported Python file near the 1 MiB source limit contains enough function definitions to make the summary exceed the model request/context limit; each added-line chunk repeats that summary.",
+            "validation": null
+          },
+          "prediction_id": "p0007"
+        }
+      ]
+    },
+    {
+      "case_key": "g-418d37af",
+      "predictions": [
+        {
+          "prediction": {
+            "category": null,
+            "change_reason": null,
+            "evidence": [
+              {
+                "basis": "The changed wrapper turns normal iterator exhaustion into EOFError for all consumers.",
+                "line_end": 124,
+                "line_start": 119,
+                "path": "src/click/testing.py",
+                "side": "after"
+              },
+              {
+                "basis": "The test supplies finite stdin through the '-' file argument.",
+                "line_end": 132,
+                "line_start": 130,
+                "path": "tests/test_chain.py",
+                "side": "after"
+              },
+              {
+                "basis": "Opening '-' for reading returns the current stdin stream.",
+                "line_end": 390,
+                "line_start": 383,
+                "path": "src/click/_compat.py",
+                "side": "after"
+              },
+              {
+                "basis": "The result callback reads the supplied file using ordinary iteration.",
+                "line_end": 147,
+                "line_start": 143,
+                "path": "tests/test_chain.py",
+                "side": "after"
+              },
+              {
+                "basis": "The changed test now expects trailing Aborted output for this EOF path.",
+                "line_end": 167,
+                "line_start": 165,
+                "path": "tests/test_chain.py",
+                "side": "after"
+              },
+              {
+                "basis": "The CLI converts EOFError into Abort.",
+                "line_end": 1376,
+                "line_start": 1374,
+                "path": "src/click/core.py",
+                "side": "after"
+              },
+              {
+                "basis": "Standalone execution prints Aborted! and exits with status 1.",
+                "line_end": 1406,
+                "line_start": 1402,
+                "path": "src/click/core.py",
+                "side": "after"
+              }
+            ],
+            "impact": "Normal end-of-input becomes an Abort, so the command exits with status 1 after processing its available input instead of completing successfully. This makes CliRunner misrepresent ordinary stdin iteration and breaks tests or callers that depend on normal EOF termination.",
+            "introduced_by_change": true,
+            "root_cause": "_NamedTextIOWrapper.__next__ converts StopIteration into EOFError for every iterator consumer of the CliRunner-installed sys.stdin, not only prompt readers.",
+            "severity": "MEDIUM",
+            "title": "CliRunner aborts when a command consumes stdin to EOF",
+            "trigger": "A command invoked with CliRunner reads stdin to exhaustion by iterating sys.stdin or a click.File('-') stream.",
+            "validation": "confirmed; reproduced with CliRunner and input foo followed by bar, yielding exit code 1 and Aborted output"
+          },
+          "prediction_id": "p0004"
+        },
+        {
+          "prediction": {
+            "category": null,
+            "change_reason": null,
+            "evidence": [
+              {
+                "basis": "The changed iterator override raises EOFError when the wrapped TextIOWrapper reaches ordinary end of input.",
+                "line_end": 124,
+                "line_start": 119,
+                "path": "src/click/testing.py",
+                "side": "after"
+              },
+              {
+                "basis": "The same _NamedTextIOWrapper instance is installed as sys.stdin.",
+                "line_end": 329,
+                "line_start": 327,
+                "path": "src/click/testing.py",
+                "side": "after"
+              },
+              {
+                "basis": "Command.main treats EOFError as an abort and raises Abort.",
+                "line_end": 1376,
+                "line_start": 1374,
+                "path": "src/click/core.py",
+                "side": "after"
+              },
+              {
+                "basis": "The existing Click stdin pipeline test was changed to accept the trailing Aborted output caused by exhaustion.",
+                "line_end": 167,
+                "line_start": 165,
+                "path": "tests/test_chain.py",
+                "side": "after"
+              }
+            ],
+            "impact": "After successfully processing all supplied lines, the command raises EOFError instead of ending iteration normally. Command.main converts that exception to Abort, so an otherwise successful CLI run exits 1 and reports Aborted; stdin-consuming tests and clients observe a false failure.",
+            "introduced_by_change": true,
+            "root_cause": "_NamedTextIOWrapper is used as sys.stdin, but its new __next__ override changes the standard iterator contract by translating normal StopIteration into EOFError for every consumer. The prompt functions need EOFError to abort, but the translation is applied globally to the wrapped stream.",
+            "severity": "P2",
+            "title": "CliRunner stdin iteration aborts at normal EOF",
+            "trigger": "A command invoked by CliRunner iterates sys.stdin (or a Click stdin file) with a for loop until the supplied input is exhausted.",
+            "validation": "A PYTHONPATH=src python3 -B CliRunner reproduction with a command that loops over sys.stdin and input 'one\\n' returned exit_code 1, exception SystemExit, and output 'one\\n\\nAborted!\\n'. The new prompt EOF scenario returned exit_code 1 as intended. pytest checks could not run because pytest is not installed."
+          },
+          "prediction_id": "p0005"
+        }
+      ]
+    },
+    {
+      "case_key": "g-febf1513",
+      "predictions": []
+    },
+    {
+      "case_key": "g-38aae3bb",
+      "predictions": []
+    },
+    {
+      "case_key": "g-4c7037d6",
+      "predictions": []
+    },
+    {
+      "case_key": "g-0c935b0f",
+      "predictions": []
+    }
+  ],
+  "schema_version": 1,
+  "source_sha256": "5cddda038fd695db0d2809cdf83ca2de54fc3e60422b64446e8a10ce46f4bdc2"
+}

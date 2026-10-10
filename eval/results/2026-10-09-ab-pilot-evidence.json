@@ -135,6 +135,70 @@
   },
   "benchmark_id": "review-changes-real-history-v1",
   "generated_at": "2026-10-09",
+  "historical_source_verification": {
+    "derived_artifact_hash_refresh": {
+      "run_record_hash_mismatch_count": 0,
+      "score_hash_mismatch_count": 0,
+      "stale_template_hashes_not_trusted": true,
+      "status": "recomputed_from_preserved_source_bytes"
+    },
+    "descriptive_replay": {
+      "basis": "original run-record workflow metadata plus findings arrays in raw outputs bound by recorded SHA-256",
+      "raw_host_outputs_verified_count": 23,
+      "run_count": 23,
+      "status": "completed"
+    },
+    "historical_input_binding": {
+      "current_copy_digests_are_audit_only": true,
+      "note": "Current reviewer-input hashes are observed during export and do not establish the bytes present during the historical run.",
+      "status": "historical_input_binding_unknown",
+      "unknown_count": 23
+    },
+    "original_scores": {
+      "file_count": 23,
+      "status": "preserved_only_not_replayed"
+    },
+    "raw_host_outputs": {
+      "binding": "each current host-output file SHA-256 equals the digest in its preserved original run.json",
+      "checked_count": 23,
+      "finding_arrays_valid_count": 23,
+      "matched_count": 23,
+      "mismatch_count": 0,
+      "status": "raw_bound_verified"
+    },
+    "recalculation_basis": {
+      "agent_verdicts": "frozen agent adjudication v2 source file; no verdicts changed",
+      "duration": "original run.json execution.duration_seconds values",
+      "pair_statuses": "retained historical classifications from the original summary; not newly strict-scored",
+      "reported_findings": "finding arrays in raw host outputs verified against each original record digest",
+      "workflow_status": "original run.json run_status values"
+    },
+    "replay_tool": {
+      "sha256": "83e7f84ecc1898085df573827f89894e8ed5af08142d736183c3c026aee9824b",
+      "source": "eval/ab_eval.py",
+      "version": "0.2.0"
+    },
+    "run_record_count": 23,
+    "source_manifests": {
+      "original_scores_sha256": "d0ec5e69d8ab2d261d6050d612057d58005b656ead343ee6c13d57a5997c027a",
+      "raw_host_outputs_sha256": "cb3e5fa2dedf78eb65f0742c19227c40368f250a66df6d12e27f7db65c3b2284",
+      "run_records_sha256": "fad1db94b0457bb978ef42474d6cc7633d2b2e6a9abf236b4c4edcbac4679702"
+    },
+    "status": "retained_historical_descriptive",
+    "strict_replay": {
+      "blocked_reason": "The preserved original records lack input.review_manifest_sha256; current copied bytes cannot retroactively bind a historical run.",
+      "legacy_compatibility_results_discarded": 0,
+      "new_score_files_written": 0,
+      "original_score_cache_used": false,
+      "score_accepted_count": 0,
+      "score_attempt_count": 23,
+      "score_blocked_count": 23,
+      "score_validation_error_count": 23,
+      "status": "blocked",
+      "strict_rescore_status": "blocked",
+      "summary_status": "blocked"
+    }
+  },
   "inclusion": {
     "agent_prediction_mapping_is_provisional": true,
     "frozen_oracle_included": false,
@@ -174,6 +238,7 @@
         "human_precision_mean": null,
         "known_defect_recall_case_count": 0,
         "known_defect_recall_mean": null,
+        "reported_findings_all_attempts": 5,
         "runs_completed": 11,
         "runs_observed": 11,
         "unknown_cost_count": 11,
@@ -186,6 +251,7 @@
         "human_precision_mean": null,
         "known_defect_recall_case_count": 0,
         "known_defect_recall_mean": null,
+        "reported_findings_all_attempts": 5,
         "runs_completed": 11,
         "runs_observed": 12,
         "unknown_cost_count": 12,
@@ -196,6 +262,16 @@
     "case_source_counts": {
       "lonelydoll42/CodeReview-Agent": 10,
       "pallets/click": 1
+    },
+    "historical_recalculation": {
+      "descriptive_replay_status": "completed",
+      "human_adjudication_status": "pending",
+      "raw_host_output_status": "raw_bound_verified",
+      "status": "retained_historical_descriptive",
+      "strict_replay_status": "blocked",
+      "strict_rescore_status": "blocked",
+      "strict_summary_replay_status": "blocked",
+      "strict_summary_status": "blocked"
     },
     "independent_case_groups": [
       "case0001",
@@ -219,7 +295,10 @@
       "A verified protocol violation makes the pair inconclusive, even when both saved outputs are available.",
       "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
       "Unknown time, intervention, token, and cost measurements remain null or are summarized only with a known-count.",
-      "When cases are concentrated in one source repository, results have limited external generalization."
+      "When cases are concentrated in one source repository, results have limited external generalization.",
+      "Historical workflow counts were recalculated from original run-record metadata and raw host-output bytes whose SHA-256 matched the original records.",
+      "Strict score and summary replay is blocked because the original records do not bind reviewer-input bytes; hashes of current copies are audit-only and were not backfilled.",
+      "Original score files were preserved by hash but were not used as a replay cache; no new score files were produced."
     ],
     "missing_expected_runs": [],
     "not_included_conditions": [
@@ -302,12 +381,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -397,12 +480,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -492,12 +579,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -587,12 +678,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -682,12 +777,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -777,12 +876,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -872,12 +975,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -967,12 +1074,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -1062,12 +1173,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -1169,12 +1284,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -1264,12 +1383,16 @@
           "current_skill": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           },
           "same_host_direct": {
             "build": "verified",
             "input_fingerprints": "verified",
-            "scoring": "verified"
+            "original_summary_reported_scoring": "verified",
+            "scoring": "not_replayed",
+            "strict_rescore": "blocked"
           }
         },
         "selected_attempts": {
@@ -1299,10 +1422,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "cc0ff650c2efd4286cd65481e71ad9d93a2242fd57bfbf8be5d6028823e28e2f",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "8b39e1f726c93821800992e9840958b1f92f26727b512853f5ba02ef8add1a49",
-        "run_record_sha256": "c6c2125d01a6732fe4e4513eb34032360e42d23c0aa3a0e03a642519426da886",
-        "score_sha256": "cc0ff650c2efd4286cd65481e71ad9d93a2242fd57bfbf8be5d6028823e28e2f"
+        "run_record_sha256": "8b47fe57dbe5e20a0b8af548abe4be0e23d3ff5a47c102172fee363b0d67ee30"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -1345,6 +1469,9 @@
         ],
         "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -1369,6 +1496,11 @@
           "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "91786106a0e1c8a2b3d09e2c8b3e06a2663dc3404ba5064bdbde28f6b0366653",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
       "run_order": 2,
       "run_status": "completed",
@@ -1383,10 +1515,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "46ad870b0615f8b2a5b4a93463a65faba029b15f2c987ecc0e9989daf3aec71e",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "740c76294e79c3de0f9e512c5980267067d2c6332a130c6e18d9be8ed3174256",
-        "run_record_sha256": "ed4d05ba6282b3f1dc125ffe60ddb9142ab4a54921ef045263ddbec74cdced45",
-        "score_sha256": "46ad870b0615f8b2a5b4a93463a65faba029b15f2c987ecc0e9989daf3aec71e"
+        "run_record_sha256": "28392affa48390354abe1ef1169211f180d2ec6454bf6d0c1bab47dd81cc4555"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -1429,6 +1562,9 @@
         ],
         "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -1453,6 +1589,11 @@
           "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "91786106a0e1c8a2b3d09e2c8b3e06a2663dc3404ba5064bdbde28f6b0366653",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "uncovered",
       "run_order": 1,
       "run_status": "incomplete",
@@ -1461,15 +1602,16 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "cfad031722452c4f5f307af9194b90da3dfe4a01594f773cddf186a8effe4ac2",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "144138f1a6af524c0b42f3d0ce5696ca4d3df45704a8252475568150d8a81abd",
-        "run_record_sha256": "95d8c275e418e6903826e250f56aa8f11e1b52361df3e451569cb0a50eb67e53",
-        "score_sha256": "333b0bc0041f56a9c9ac7def1e1fa6cfff6cdc2ed4a540b1f62c82d2b1315a2c"
+        "run_record_sha256": "026d0443b8531c74d8f93ae177b95ffec13c0f00a75418dc820caffc718b14c5"
       },
       "attempt": 2,
       "attempt_kind": "retry",
       "case_id": "case0001",
-      "concurrent": true,
+      "concurrent": null,
       "condition": "same_host_direct",
       "duration_seconds": 472.505368031,
       "duration_source": "host_duration_seconds",
@@ -1507,6 +1649,9 @@
         ],
         "snapshot_fingerprint": "ec443eb0a26397ea0ca159cab78d65d8f7a3a3da9963aef7a19d6a8ac346b625"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 2,
@@ -1531,23 +1676,29 @@
           "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "91786106a0e1c8a2b3d09e2c8b3e06a2663dc3404ba5064bdbde28f6b0366653",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 3,
+      "run_order": null,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "3f347fe1445bf146f034ffd079f75ea86dfcfc0487d9634239fc54bb28533b41",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "36f5c87f65b883426a6846899f4fa5ef3a35d5d98ad7ce95ca3d886c9375991d",
-        "run_record_sha256": "b6d23542dc99c7dc105c189b5f5a3fdb20dec2b9d73f893ab2a0f449cf43c308",
-        "score_sha256": "b9cafbb6c902bc7b611baf6e9e8afb1e71c5eb300d5f8ada40ffc545e325c738"
+        "run_record_sha256": "f028ed8066c38a887fb5aef27f709d89846521c04161d74a923920e39d2fc032"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0002",
-      "concurrent": true,
+      "concurrent": false,
       "condition": "current_skill",
       "duration_seconds": 90.0,
       "duration_source": "host_duration_seconds",
@@ -1574,6 +1725,9 @@
         ],
         "snapshot_fingerprint": "e8b96351cd96b9ff18dc288d5e125ff9a5a7bed19e17b761ff9c4f536e4162a8"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -1598,8 +1752,13 @@
           "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "f986129296b21aa4259ee7b9328bfaf57c1f32821915862c5d887719eb0a21cc",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 5,
+      "run_order": 4,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -1612,15 +1771,16 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "8c39349f8db33a1ffa4a81e680aa80ca6818ae131577c10334e69d3673320334",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "de1cda1b4330e2676cec58f7f7bdfc076050372d415398c7c18c30a99fab7d37",
-        "run_record_sha256": "15ccc990403fcbd0f0c134c9d88612f2216b5f520abadf7664ca4dd5472f9c44",
-        "score_sha256": "304a8128bf9e2593bd69765da8348bc3281416df8241c1c2865b618d130bd25f"
+        "run_record_sha256": "ab58de988e652d0ccf5eead932eaf4cb7ddd672ec1dca416b928969748baf64f"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0002",
-      "concurrent": true,
+      "concurrent": false,
       "condition": "same_host_direct",
       "duration_seconds": 105.0,
       "duration_source": "host_duration_seconds",
@@ -1647,6 +1807,9 @@
         ],
         "snapshot_fingerprint": "e8b96351cd96b9ff18dc288d5e125ff9a5a7bed19e17b761ff9c4f536e4162a8"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -1671,18 +1834,24 @@
           "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "f986129296b21aa4259ee7b9328bfaf57c1f32821915862c5d887719eb0a21cc",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 4,
+      "run_order": 3,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "6e090c48f349548e9aa2638fe48726ba170a7d29cc85bc100fb806e15ef6ccc5",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "fec417db4a2d7b18ddbea9d4ef3438ce424569ea0603b7043318bd0380f88a8f",
-        "run_record_sha256": "4f847ad8500f5c4d34a78eeb772899b6c76351a2296bdf9a74f9f012d91ff156",
-        "score_sha256": "e8f988789c57669652fb3de79101d03a2665fbcf5aa7e7577cf4ff34b9e29824"
+        "run_record_sha256": "6835963900dcc6878e80170a725e148289dab04c4282f35e29e0acd7e5c31761"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -1718,6 +1887,9 @@
         ],
         "snapshot_fingerprint": "40e8f9e8a13ec5e8f9597451d9b3d146897a1de9c6217e3649b48d0bd9d2d31c"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -1742,8 +1914,13 @@
           "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b552b92b16a9eac8cd3588555d01c85bf699e65e31643510cf90245212451168",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 7,
+      "run_order": 6,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -1756,10 +1933,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "15b29b126d0eb4e45d173043be61ed78eb3d7ea8e53066a9c51a5964073b61bb",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "028b475ac587d9e0e87b65614cdccad615d3b101f6a72d7b3b8dd44f6ce68c05",
-        "run_record_sha256": "2210b8eb513f53f6a5314de60eba4edb8f71b170bf6a01fba1adbdcda8b80292",
-        "score_sha256": "1f06ef461790f5a7049a1d12b268ac33b5ccf2e5bf0c26a3cb1e45ca4b4749fe"
+        "run_record_sha256": "8f6d6c26ea2a5a77587af63819215fc4afac74fc8bd348c3016a11044ac33cd3"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -1795,6 +1973,9 @@
         ],
         "snapshot_fingerprint": "40e8f9e8a13ec5e8f9597451d9b3d146897a1de9c6217e3649b48d0bd9d2d31c"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -1819,23 +2000,29 @@
           "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b552b92b16a9eac8cd3588555d01c85bf699e65e31643510cf90245212451168",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 6,
+      "run_order": 5,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "076dbe83d51d5d2e5867fb1a6ac92f5c2664e300e770dd7e65fce23b128bb6f0",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "96c1f27001ffbc4191f0cca153056ca2f7c9f85c57fb4c0e51be5f37c19ae006",
-        "run_record_sha256": "5ec1f84069bd4f9696a11f53889ce065156a0d04f6c9a3e2cba6a08e58519468",
-        "score_sha256": "eeb07c9673e662764d5bceed46f0214b06d226083cf60fb2cdf3fbac0c004d72"
+        "run_record_sha256": "b68746358f3d155bf401b1a8cfdfa972492be3403138ca1ceca231324034fb86"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0004",
-      "concurrent": true,
+      "concurrent": null,
       "condition": "current_skill",
       "duration_seconds": 695.747,
       "duration_source": "host_duration_seconds",
@@ -1870,6 +2057,9 @@
         ],
         "snapshot_fingerprint": "cce7556b86653108100248b6499060dd9544734f316a18a7b3b400bc9c33d209"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -1894,8 +2084,13 @@
           "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "6fb86d59d3e877a68306a1730e48fb3ba85cbf147205f25aa8c20321df14dcc0",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 8,
+      "run_order": 7,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -1908,15 +2103,16 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "ea218ea16fb1e86c1ed7450975034092c565b1dc65d64dde8a4a4b5e2706ae28",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "e832558ed57b191bdc5865798c5cd64d3fa9942d80a072956c1dff5e5b2cc2cc",
-        "run_record_sha256": "6d5a398d8f0021e57aae8f6a91a4e2d283fb4f4b8ba7fbda81541ec055f8283f",
-        "score_sha256": "b2ee4a68527a9c13b87aaee97d631d18dff5f85ef3e6d1e65065d7b917a2c2b7"
+        "run_record_sha256": "adea62fc634d97b5d58d27aa59f2ae31cff46ba8107881c18aed0fefa32def6e"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0004",
-      "concurrent": true,
+      "concurrent": null,
       "condition": "same_host_direct",
       "duration_seconds": 409.547,
       "duration_source": "host_duration_seconds",
@@ -1951,6 +2147,9 @@
         ],
         "snapshot_fingerprint": "cce7556b86653108100248b6499060dd9544734f316a18a7b3b400bc9c33d209"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -1975,18 +2174,24 @@
           "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "6fb86d59d3e877a68306a1730e48fb3ba85cbf147205f25aa8c20321df14dcc0",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 9,
+      "run_order": null,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "2090fc9f882576a812a5d68bfed9eddc2074fbc89bdc2acbffe441161d8640de",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "8f090bc48a49e14417102d53f0ffb74e52eb2ca92311cfd4e39c5a97716a68a6",
-        "run_record_sha256": "3ce937f802bff7abbc7c41aabb1a4f1093f5c40a428899d5a13b2c995301b981",
-        "score_sha256": "b00018d2502e1439ebb174d5ad6638ac25eebab04c13346a7636e8a691213d32"
+        "run_record_sha256": "86fbe0edd6d1c6714994bc3904aa4d096a76e7ce01efebd016dbe6b361452752"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2030,6 +2235,9 @@
         ],
         "snapshot_fingerprint": "1cf8a76578d989f84a2368ce30e1a7540affacc169d0b3c04f5ffd9e5296b0c7"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2054,8 +2262,13 @@
           "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "feedae00bb25a38c3831aa47484685a4099cb5f3811728602dc7f517cc8cd771",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 11,
+      "run_order": 9,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2068,15 +2281,16 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "acb0ba01d15703b77d54bb313d5e227cc80235dbd023c511ffdf3e27df37aaba",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "0a9bb8f0f28a6888ac0597af54a2986904faf875db67b3852d297187a80307d9",
-        "run_record_sha256": "a581244e176c9009530c9c8fcd80e1fbf99867e0666f94559beb9851e56be6d9",
-        "score_sha256": "e74307d23dc898e18b889d7b16800e1e1967989a3423390173bdb0f606d4e8ef"
+        "run_record_sha256": "50a2edf348e71c2fba3189181a1ed6dd0c042086f70415380a5187bcebb1964f"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0005",
-      "concurrent": true,
+      "concurrent": false,
       "condition": "same_host_direct",
       "duration_seconds": 209.0,
       "duration_source": "host_duration_seconds",
@@ -2115,6 +2329,9 @@
         ],
         "snapshot_fingerprint": "1cf8a76578d989f84a2368ce30e1a7540affacc169d0b3c04f5ffd9e5296b0c7"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2139,23 +2356,29 @@
           "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "feedae00bb25a38c3831aa47484685a4099cb5f3811728602dc7f517cc8cd771",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 10,
+      "run_order": 8,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "b40313b8387baeba5c8a360abe4d574a1e2d5b3538a367ac0e01fa143d0b63ea",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "91455c3c9524adbe0bdf8aa606efa04178898adabd0056ff65803dfd8c36d11f",
-        "run_record_sha256": "b928224d66f4a7b9ed5a54d406fd6f6febc0e27aeea81e0246e6cc47cb0ef163",
-        "score_sha256": "cb065082cef1678e0123947322100e65b7253613c82cc564352d76080fb40118"
+        "run_record_sha256": "67c8a4f2fdede992226bc55860afc9f80d295f8ff044e2c1de28fe7542621d2e"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0006",
-      "concurrent": true,
+      "concurrent": null,
       "condition": "current_skill",
       "duration_seconds": 522.935,
       "duration_source": "host_duration_seconds",
@@ -2183,6 +2406,9 @@
         ],
         "snapshot_fingerprint": "daef045c67d881693555c8fa596c70199c3b40038509e05dff4f03b1bc11e51b"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2207,8 +2433,13 @@
           "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b90586b70eb793b7094b007666102b32a994dd11c2af3d31fd084ad8c6d1d4d5",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 12,
+      "run_order": null,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2221,10 +2452,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "d226dd1a0531218101dd22d3e57ecfef8bdba0cce06fbfb4e99b3bbeb86bbe17",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "ffa4c4f9a31244b1c8308c6077a0dd97767e02780ccd080fd90f8b447cf199e2",
-        "run_record_sha256": "9933462744cea3b98aad3549e9a741338eb173659dd13f78efba9b1c58eeaefb",
-        "score_sha256": "7609fde647c19bfd5c115be88b624160b0623a963f35f334e39272582796b528"
+        "run_record_sha256": "2453926430dad69710c2e577b7c1b7d27325f5688e495644cf201fe1aaaf7f73"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2257,6 +2489,9 @@
         ],
         "snapshot_fingerprint": "daef045c67d881693555c8fa596c70199c3b40038509e05dff4f03b1bc11e51b"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2281,18 +2516,24 @@
           "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b90586b70eb793b7094b007666102b32a994dd11c2af3d31fd084ad8c6d1d4d5",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 13,
+      "run_order": 10,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "a8ef11d5d219446f6453ec35653086878700e895020296ddd56aa67a2681c401",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "9bb09b081001a3039128184bfbd12f12fff787b2682b6372f1172e3f921daea1",
-        "run_record_sha256": "90ca9bacf9fa1c29f03a81135fe45c2316d793c803dfd43943369c92bb8535da",
-        "score_sha256": "926e25324d81998245e95f67322471ccd6f0b0a0716942bda503209420aafcfe"
+        "run_record_sha256": "943db71fc5f7ee762d62c8c6d0f466b3449f7d7ae247a6591a3a4924473d72a8"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2325,6 +2566,9 @@
         ],
         "snapshot_fingerprint": "d946c90477542f10c943ad90787a70fbc7e790b38c4b44405c19e882406bffd4"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2349,8 +2593,13 @@
           "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "e159f2f6086297f280b5f25c955644a4cf47faca83a4db6114959d9fb712ae46",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 16,
+      "run_order": 13,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2363,10 +2612,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "8b6238da237db894acb1fb777b6642eb73bd4acb6a6efe1817edcbb55a6efb81",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "077c4db94d031984c7af92b649b49c6675824e359f4d8bff4d3cf5cfb18dface",
-        "run_record_sha256": "74b787da70ebd13286a72891a80f8d834f0020e4d1cf4f1d7e22ce6586a77386",
-        "score_sha256": "537aef93f7d56cf66d569d5e72de75887495a323be455aeeac19d3146a6b5d1d"
+        "run_record_sha256": "4f5751a18e7c658e4a9636178af4e99be3d65c40adb299119dd81be5e476f7d1"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2399,6 +2649,9 @@
         ],
         "snapshot_fingerprint": "d946c90477542f10c943ad90787a70fbc7e790b38c4b44405c19e882406bffd4"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2423,18 +2676,24 @@
           "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "e159f2f6086297f280b5f25c955644a4cf47faca83a4db6114959d9fb712ae46",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 14,
+      "run_order": 11,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "b08b2473c577b73a7bc437e8f28c7c33b405f76d749d69794f54c4c255b1f834",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "fcfbe3938abc9dfe6ebeb3bbf1650111257da720fe5aba4cb4d2611ec521ada9",
-        "run_record_sha256": "6c30e7448bfc230f5945422297c3a457763cabfbbf36131a5da1e9fb55514757",
-        "score_sha256": "ba426fb3c698da0211e5167a86385bcbfb32284cc2f67f635e7e31efc139cda5"
+        "run_record_sha256": "e82cf3241b464b6b457c72077d6d29d301afa3463e8f33867b827adccc90e1e8"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2480,6 +2739,9 @@
         ],
         "snapshot_fingerprint": "aa7bd32d5346cbaf7c9223be8819970dc6b0aaa2765da771d1e7a6b456793d02"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -2504,8 +2766,13 @@
           "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "01e7fbb85b58df2efd4cdf30b10b04011c389ceafc509d6a84429087279535ac",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 17,
+      "run_order": 14,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2518,10 +2785,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "056b63f6f3ab24110e21edbb3ebea1f1807b3e09ade5858773325e7c97ab1d25",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "9f76dbaf27ed9b996f99d5c9ce29f78c6b46af9f61dc4e0c744e5326e9e3633b",
-        "run_record_sha256": "20d9644aae99d5374d4318759ed818565154f370749e595b7d86324393058328",
-        "score_sha256": "8d840c165ff30e938d4140b6f2d8ae3c40cb48e4c0f1df3fba24fccdd29f1d5c"
+        "run_record_sha256": "64f16f879986245b60577b900e9a7781a9d7c0446c036bab3591742681730ebe"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2567,6 +2835,9 @@
         ],
         "snapshot_fingerprint": "aa7bd32d5346cbaf7c9223be8819970dc6b0aaa2765da771d1e7a6b456793d02"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2591,18 +2862,24 @@
           "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "01e7fbb85b58df2efd4cdf30b10b04011c389ceafc509d6a84429087279535ac",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 15,
+      "run_order": 12,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "95dc0c8f27cfd775488876d39b6f15d30196dab160b4454f4f70514712328200",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "f1e789fab6bab2cb8bc0730e8f17825eccd474671f21fb5cb96c08fb28568b9f",
-        "run_record_sha256": "70dd980eac4909769789dd58495a1eac05ed0e27798f865b6da318bbf7ae480c",
-        "score_sha256": "c4a8fe0530b229a5fde339e00453522da093a77622aa7d1edd74056653cbfe8f"
+        "run_record_sha256": "44d4312e1621a80ee1dcd021df3773abb70b740f3fc849697d65c7bda4bb8376"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2634,6 +2911,9 @@
         ],
         "snapshot_fingerprint": "50cf7364124b5a68e767f344612d0d7fb25a87828197249b500f6aa7e01bfad0"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -2658,8 +2938,13 @@
           "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b36837d8dd72cc90d6351961c362afbadf8cf3750fbeab8efdf076126a809880",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 18,
+      "run_order": 15,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2672,10 +2957,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "573b7e3463a846503ece3099546dfb67e676516a13f3ca420b8271b6cd5c1758",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "aef773b811022e6fce13b30ff037a519ab0638d9b39d5cfdf5960cc95ceb3844",
-        "run_record_sha256": "ae14652a87c6b7231472341e8cc333379173e1926032b7899ddf3d45176d70cf",
-        "score_sha256": "573b7e3463a846503ece3099546dfb67e676516a13f3ca420b8271b6cd5c1758"
+        "run_record_sha256": "fdbeae98e561ae34dcbb37dd5555224d03c9c602d1a5790719f8a83e55b7a79c"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2683,7 +2969,7 @@
       "concurrent": null,
       "condition": "same_host_direct",
       "duration_seconds": null,
-      "duration_source": "unknown",
+      "duration_source": null,
       "host": {
         "configuration_fingerprint": null,
         "model": null,
@@ -2707,6 +2993,9 @@
         ],
         "snapshot_fingerprint": "50cf7364124b5a68e767f344612d0d7fb25a87828197249b500f6aa7e01bfad0"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -2731,6 +3020,11 @@
           "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "b36837d8dd72cc90d6351961c362afbadf8cf3750fbeab8efdf076126a809880",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
       "run_order": null,
       "run_status": "completed",
@@ -2739,10 +3033,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "e24d57de8f87200de7a59456760239818a35f711e7942e9355b49772079667da",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "8aa70a52d248878865680a7036435557dbe63dd3e59e64cf84ce8426e12dd3b2",
-        "run_record_sha256": "2bdeed982019a6acecaca898a67ead5aa519b5700f6cd8c13474d7d79c183d81",
-        "score_sha256": "6532321b830430ff60f0753e5c589143819a1135d2faba109043e73d3d13b181"
+        "run_record_sha256": "ff901696fc612d8018a558d18f0f4a92b36591c9f3cd3f33dd5acc6a15b08f93"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2773,6 +3068,9 @@
           "skills/review-changes/scripts/review_changes.py"
         ],
         "snapshot_fingerprint": "3cc4e0b691ef75e7128d4e16a98344048a828d0dd433eedc1be6a7daecef412f"
+      },
+      "model_usage": {
+        "cost": null
       },
       "protocol_incidents": [
         {
@@ -2810,8 +3108,13 @@
           "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "040fe913b3ca83c202ceb3d502ad642d0a434500a433e14dfd8e04ec9ac927e5",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 19,
+      "run_order": 16,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2824,10 +3127,11 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "2b615a6be76746cd1b357ef17fcec3bea27e02a59c8dde76c3ee363d91c542fd",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "79d3b6652f9c99c350359e22d8200934b802200d2828253e225e1c119772ab26",
-        "run_record_sha256": "8e855eeb5f8ac2db7f4eae5a98ce0f9edf04328652e7351ad89a36a522fe2909",
-        "score_sha256": "3edbfe09a3449eb19c0170c028a06f42fe4ce138a4e2096883d73a77eddeb303"
+        "run_record_sha256": "b78509d297ed46beab929583439afde09925b2f3bfcadbb29752cb0124a10e0e"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2859,6 +3163,9 @@
         ],
         "snapshot_fingerprint": "3cc4e0b691ef75e7128d4e16a98344048a828d0dd433eedc1be6a7daecef412f"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -2883,18 +3190,24 @@
           "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "040fe913b3ca83c202ceb3d502ad642d0a434500a433e14dfd8e04ec9ac927e5",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 20,
+      "run_order": 17,
       "run_status": "completed",
       "skill_provenance": null
     },
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "6531b2a6eea1221664eb24003dc63b44d56edcb1ec212b75af1225272dd1d1e8",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "4615589b8e967ea6894b95d650a91099df62f80e5293b13c4f25afcdf8d5fb10",
-        "run_record_sha256": "3b7966bc8b66a419d10d028988b1dd7f2d677573f554afa45dadd51199fad4ef",
-        "score_sha256": "d6aa1283930f518f0189f663bc83f65a8fa5f7a6299838810483dbb3708b21d3"
+        "run_record_sha256": "83e80e1e08473187bbe0476fb1b1b705e0ab93609c6f0dd615a6946153c70eaf"
       },
       "attempt": 1,
       "attempt_kind": "initial",
@@ -2926,6 +3239,9 @@
         ],
         "snapshot_fingerprint": "31825d16ffc0cf0edd9a0e81f88c12755ccf2cc63a52cb61f72dee32768c5f26"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 1,
@@ -2950,8 +3266,13 @@
           "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "805943c0ea8045a49603123e32662977cd6d68f2bab0d5dbf800076369a6f9c4",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 22,
+      "run_order": 18,
       "run_status": "completed",
       "skill_provenance": {
         "bundle_sha256": "6c5cc428054325be70f8e9718c357dda24a91a279715c504442cc6f27161d9c8",
@@ -2964,15 +3285,16 @@
     {
       "annotation_status": "pending",
       "artifacts": {
+        "original_score_sha256": "15455a4ad83e8ec58f67837f67240609a5fda9216e2ff60f385df235fd1f5283",
+        "original_score_status": "preserved_only_not_replayed",
         "raw_host_output_included": false,
         "raw_host_output_sha256": "f0c7f328c2b5f8c773693ae335598521483e428a1f26c0278a1dcd957d940028",
-        "run_record_sha256": "13b46d9aa6f98995e667f081692a0d5a52800578953fb725cb429175579a1e6c",
-        "score_sha256": "f64e0523d2bad7611109a629b8c8779909b496707fcf79844ddb939753b4266e"
+        "run_record_sha256": "e65d1b9053a5301ef79b172358f0626dc7dde9b31bb4f63049f8b699d0e402bc"
       },
       "attempt": 1,
       "attempt_kind": "initial",
       "case_id": "case0011",
-      "concurrent": true,
+      "concurrent": null,
       "condition": "same_host_direct",
       "duration_seconds": 145.584512571,
       "duration_source": "host_duration_seconds",
@@ -2999,6 +3321,9 @@
         ],
         "snapshot_fingerprint": "31825d16ffc0cf0edd9a0e81f88c12755ccf2cc63a52cb61f72dee32768c5f26"
       },
+      "model_usage": {
+        "cost": null
+      },
       "protocol_incidents": [],
       "replicate": 1,
       "reported_finding_count": 0,
@@ -3023,18 +3348,65 @@
           "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
         }
       },
+      "review_manifest_digest_audit": {
+        "current_audit_digest": "805943c0ea8045a49603123e32662977cd6d68f2bab0d5dbf800076369a6f9c4",
+        "historical_status": "historical_input_binding_unknown",
+        "scope": "current_copy_bytes_observed_at_export"
+      },
       "review_status": "completed",
-      "run_order": 21,
+      "run_order": null,
       "run_status": "completed",
       "skill_provenance": null
     }
   ],
   "schema_version": 1,
+  "source_digest_scopes": {
+    "ab_summary_sha256": {
+      "scope": "source_file_bytes",
+      "source": "review-benchmark-operator-20261009/ab-summary.json"
+    },
+    "adjudication_input_sha256": {
+      "scope": "source_file_bytes",
+      "source": "review-benchmark-operator-20261009/adjudication-input.json"
+    },
+    "agent_adjudication_v1_sha256": {
+      "scope": "source_file_bytes",
+      "source": "review-benchmark-operator-20261009/adjudication-result.json"
+    },
+    "agent_adjudication_v2_sha256": {
+      "scope": "source_file_bytes",
+      "source": "review-benchmark-operator-20261009/adjudication-result-v2.json"
+    },
+    "historical_original_scores_manifest_sha256": {
+      "scope": "canonical_json_of_relative_paths_and_exact_file_sha256_values; preserved_only_not_replayed",
+      "source": "review-benchmark-20261009/runs/**/score.json"
+    },
+    "historical_raw_outputs_manifest_sha256": {
+      "scope": "canonical_json_of_relative_paths_and_exact_file_sha256_values",
+      "source": "review-benchmark-20261009/runs/**/host-output.json"
+    },
+    "historical_replay_tool_sha256": {
+      "scope": "source_file_bytes",
+      "source": "eval/ab_eval.py"
+    },
+    "historical_run_records_manifest_sha256": {
+      "scope": "canonical_json_of_relative_paths_and_exact_file_sha256_values",
+      "source": "review-benchmark-20261009/runs/**/run.json"
+    },
+    "portable_summary_sha256": {
+      "scope": "portable_file_bytes",
+      "source": "eval/results/2026-10-09-ab-pilot-summary.json"
+    }
+  },
   "source_digests": {
     "ab_summary_sha256": "034c84faad5f1041505b14a4d86db4203aa282bbd5ef38d015181f925a5b475b",
     "adjudication_input_sha256": "5cddda038fd695db0d2809cdf83ca2de54fc3e60422b64446e8a10ce46f4bdc2",
     "agent_adjudication_v1_sha256": "ba4c28a13321d02884cb3e2f6a9b292fbcbb6caa0e2399a927b4d75d8455fe2c",
     "agent_adjudication_v2_sha256": "57d5306874541d2d7e466ae38d2fa1b6b8023365fbfedea67d978f1cb748fce9",
-    "portable_summary_sha256": "ade6783ba5062ad702fea139e8aeec8bb028aa092e718720d22871530a63e36b"
+    "historical_original_scores_manifest_sha256": "d0ec5e69d8ab2d261d6050d612057d58005b656ead343ee6c13d57a5997c027a",
+    "historical_raw_outputs_manifest_sha256": "cb3e5fa2dedf78eb65f0742c19227c40368f250a66df6d12e27f7db65c3b2284",
+    "historical_replay_tool_sha256": "83e7f84ecc1898085df573827f89894e8ed5af08142d736183c3c026aee9824b",
+    "historical_run_records_manifest_sha256": "fad1db94b0457bb978ef42474d6cc7633d2b2e6a9abf236b4c4edcbac4679702",
+    "portable_summary_sha256": "8467257dd03fb87683b7cc7f27b3af4a2ff1e8171ba224df419112c149877d7f"
   }
 }

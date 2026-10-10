@@ -9,6 +9,7 @@
       "human_precision_mean": null,
       "known_defect_recall_case_count": 0,
       "known_defect_recall_mean": null,
+      "reported_findings_all_attempts": 5,
       "runs_completed": 11,
       "runs_observed": 11,
       "unknown_cost_count": 11,
@@ -21,6 +22,7 @@
       "human_precision_mean": null,
       "known_defect_recall_case_count": 0,
       "known_defect_recall_mean": null,
+      "reported_findings_all_attempts": 5,
       "runs_completed": 11,
       "runs_observed": 12,
       "unknown_cost_count": 12,
@@ -31,6 +33,16 @@
   "case_source_counts": {
     "lonelydoll42/CodeReview-Agent": 10,
     "pallets/click": 1
+  },
+  "historical_recalculation": {
+    "descriptive_replay_status": "completed",
+    "human_adjudication_status": "pending",
+    "raw_host_output_status": "raw_bound_verified",
+    "status": "retained_historical_descriptive",
+    "strict_replay_status": "blocked",
+    "strict_rescore_status": "blocked",
+    "strict_summary_replay_status": "blocked",
+    "strict_summary_status": "blocked"
   },
   "independent_case_groups": [
     "case0001",
@@ -54,7 +66,10 @@
     "A verified protocol violation makes the pair inconclusive, even when both saved outputs are available.",
     "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
     "Unknown time, intervention, token, and cost measurements remain null or are summarized only with a known-count.",
-    "When cases are concentrated in one source repository, results have limited external generalization."
+    "When cases are concentrated in one source repository, results have limited external generalization.",
+    "Historical workflow counts were recalculated from original run-record metadata and raw host-output bytes whose SHA-256 matched the original records.",
+    "Strict score and summary replay is blocked because the original records do not bind reviewer-input bytes; hashes of current copies are audit-only and were not backfilled.",
+    "Original score files were preserved by hash but were not used as a replay cache; no new score files were produced."
   ],
   "missing_expected_runs": [],
   "not_included_conditions": [
@@ -137,12 +152,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -232,12 +251,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -327,12 +350,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -422,12 +449,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -517,12 +548,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -612,12 +647,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -707,12 +746,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -802,12 +845,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -897,12 +944,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -1004,12 +1055,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {
@@ -1099,12 +1154,16 @@
         "current_skill": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         },
         "same_host_direct": {
           "build": "verified",
           "input_fingerprints": "verified",
-          "scoring": "verified"
+          "original_summary_reported_scoring": "verified",
+          "scoring": "not_replayed",
+          "strict_rescore": "blocked"
         }
       },
       "selected_attempts": {

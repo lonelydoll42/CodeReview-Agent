@@ -8,7 +8,7 @@
 
 默认产品入口改为 `review-changes`：使用宿主模型完成变更范围固定、上下文阅读、可选静态检查、语义审查、证据核实和报告生成。共享底座不依赖模型 SDK 或服务组件，现有服务继续提供可选自动化部署。第一轮实现与安装验收见 [Skill-first 说明](skill-first.md)。
 
-本地工作区、暂存区、分支审查和修改后复查已经形成第一版闭环；PR2 的 Codex 新会话恢复验收也已通过。PR1 本地 fixture 和包 smoke 通过；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。2026-10-09 已完成 11 个真实案例、23 次保存运行的 A/B pilot；它提供流程结果和暂定 agent 证据，但 host/model 身份与 Skill 加载尚未验证，且没有人工标注或独立覆盖审计，因此仍不能得出严格 A/B 质量比较。下一步先完成人工标注、元数据补齐和覆盖审计，再决定是否按相同快照重复 A/B；上下文选择器 C 组等待 PR4 和 context-omission 证据。WorkBuddy 可连接后另做真实宿主验收。脚本与隔离测试不计作宿主通过。
+本地工作区、暂存区、分支审查和修改后复查已经形成第一版闭环；PR2 的 Codex 新会话恢复验收也已通过。PR1 本地 fixture 和包 smoke 通过；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。2026-10-09 已完成 11 个真实案例、23 次保存运行的 A/B pilot；23/23 原始输出与 run record hash 一致，但同期 reviewer-input SHA 缺失，因此严格重放 blocked，旧 score 仅保留 hash。Pilot 仍提供流程结果和暂定 agent 证据；host/model 身份与 Skill 加载尚未验证，且没有人工标注或独立覆盖审计，因此不能得出严格 A/B 质量比较。下一步先完成人工标注、元数据补齐和覆盖审计，再决定是否按相同快照重复 A/B；上下文选择器 C 组等待 PR4 和 context-omission 证据。WorkBuddy 可连接后另做真实宿主验收。脚本与隔离测试不计作宿主通过。
 
 ## 已完成：可靠性基础
 

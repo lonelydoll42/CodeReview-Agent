@@ -36,6 +36,18 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _file_sha256(path: Path) -> str:
+    return _sha256(path.read_bytes())
+
+
+def _scorer_identity() -> dict[str, str]:
+    return {
+        "name": "eval.ab_eval",
+        "version": VERSION,
+        "implementation_sha256": _file_sha256(Path(__file__).resolve()),
+    }
+
+
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -561,6 +573,16 @@ def _usage(output: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ensure_unrecorded_attempt(run_dir: Path) -> None:
+    record_path = run_dir / "run.json"
+    if record_path.exists() or record_path.is_symlink():
+        raise ValueError(
+            f"Attempt is already recorded: {record_path}. Use `score` to rescore complete, "
+            "digest-bound data; use a new attempt for a new review. Historical attempts "
+            "without complete bindings are descriptive replay only."
+        )
+
+
 def build_run_record(
     index: dict[str, Any],
     case: dict[str, Any],
@@ -579,6 +601,7 @@ def build_run_record(
     skill_bundle_sha256: str | None,
     skill_bundle_path: Path | None,
 ) -> dict[str, Any]:
+    _ensure_unrecorded_attempt(run_dir)
     host_path = run_dir / "host-output.json"
     output_bytes = host_path.read_bytes()
     output = json.loads(output_bytes.decode("utf-8"))
@@ -703,9 +726,11 @@ def build_run_record(
 
     artifacts = {
         "raw_transcript": None,
+        "raw_transcript_sha256": None,
         "raw_host_output": "host-output.json",
         "raw_host_output_sha256": _sha256(output_bytes),
         "validated_result": _candidate_artifact(run_dir, ("validated-result.json", "validated_result.json")),
+        "validated_result_sha256": None,
         "markdown_report": _candidate_artifact(run_dir, ("report.md", "review.md")),
         "recheck_json": _candidate_artifact(run_dir, ("recheck.json", "recheck-result.json")),
         "recheck_markdown": _candidate_artifact(run_dir, ("recheck.md", "recheck-report.md")),
@@ -715,6 +740,10 @@ def build_run_record(
         "run_metadata": _candidate_artifact(run_dir, ("run-metadata.json",)),
         "coverage_audit": _candidate_artifact(run_dir, ("coverage-audit.json",)),
     }
+    if artifacts["validated_result"]:
+        validated_path = _resolve_reference(run_dir, artifacts["validated_result"])
+        if validated_path is not None and validated_path.is_file():
+            artifacts["validated_result_sha256"] = _file_sha256(validated_path)
     run_metadata_path = artifacts["run_metadata"]
     host_interventions = output.get("manual_interventions")
     host_interventions = (
@@ -773,11 +802,14 @@ def build_run_record(
         "input": {
             "repository_id": case.get("source_repository"),
             "review_manifest": _relative(copied_input, run_dir),
+            "review_manifest_sha256": _file_sha256(copied_input),
             "snapshot_fingerprint": _fingerprint_snapshot(case, reviewer_input),
             "review_scope_fingerprint": _fingerprint_scope(case, reviewer_input),
             "scope_paths": sorted(reviewer_input.get("scope_paths", case.get("scope_paths", []))),
             "prior_result": None,
+            "prior_result_sha256": None,
             "current_manifest": artifacts["validated_result"],
+            "current_manifest_sha256": artifacts["validated_result_sha256"],
         },
         "artifacts": artifacts,
         "annotation": annotation_record,
@@ -1073,10 +1105,9 @@ def _human_metrics(
     }
 
 
-def score_record(run_path: Path, case: dict[str, Any] | None = None) -> dict[str, Any]:
-    run_path = run_path.resolve()
-    run_dir = run_path.parent
-    record = _read_json(run_path)
+def _score_record_data(
+    record: dict[str, Any], run_dir: Path, case: dict[str, Any] | None = None
+) -> dict[str, Any]:
     findings, finding_source = _predictions(record, run_dir)
     execution = record.get("execution", {})
     status = record.get("run_status")
@@ -1181,7 +1212,7 @@ def score_record(run_path: Path, case: dict[str, Any] | None = None) -> dict[str
     usage = record.get("model_usage", {})
     score = {
         "schema_version": 1,
-        "scorer": {"name": "eval.ab_eval", "version": VERSION},
+        "scorer": _scorer_identity(),
         "run": {
             "benchmark_id": record.get("benchmark_id"),
             "case_id": record.get("case_id"),
@@ -1248,8 +1279,96 @@ def score_record(run_path: Path, case: dict[str, Any] | None = None) -> dict[str
     return score
 
 
+def _score_dependency_manifest(
+    record: dict[str, Any],
+    run_dir: Path,
+    score: dict[str, Any],
+) -> dict[str, Any]:
+    file_dependencies: list[dict[str, str]] = []
+    reference_fields = {
+        "artifacts": (
+            "raw_transcript", "raw_host_output", "validated_result", "markdown_report",
+            "recheck_json", "recheck_markdown", "review_prompt", "skill_inventory",
+            "skill_bundle", "run_metadata", "coverage_audit",
+        ),
+        "input": ("review_manifest", "prior_result", "current_manifest"),
+        "annotation": ("oracle", "human_labels", "provisional_labels"),
+        "execution": ("manual_intervention_log",),
+    }
+    for group, names in reference_fields.items():
+        values = record.get(group)
+        if not isinstance(values, dict):
+            continue
+        for name in names:
+            reference = values.get(name)
+            if not isinstance(reference, str):
+                continue
+            path = _resolve_reference(run_dir, reference)
+            if path is not None and path.is_file():
+                file_dependencies.append({
+                    "field": f"{group}.{name}",
+                    "reference": reference,
+                    "sha256": _file_sha256(path),
+                })
+    manifest = {
+        "schema_version": 1,
+        "run_record": {key: value for key, value in record.items() if key != "scoring"},
+        "effective_inputs": {
+            "repository": score["workflow"]["repository_snapshot_check"]["expected"],
+            "snapshot_fingerprint": record.get("input", {}).get("snapshot_fingerprint"),
+            "review_scope_fingerprint": record.get("input", {}).get("review_scope_fingerprint"),
+            "scope_paths": record.get("input", {}).get("scope_paths"),
+        },
+        "files": file_dependencies,
+        "repository_state": score["workflow"]["repository_snapshot_check"],
+        "scorer": _scorer_identity(),
+    }
+    return manifest
+
+
+def _score_run_record(
+    record: dict[str, Any], run_dir: Path, case: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    errors = validate_record(record, run_dir)
+    if errors:
+        raise ValueError(f"Cannot score run record: {'; '.join(errors)}")
+    scoring_record = _scoring_record_snapshot(record)
+    if isinstance(scoring_record["artifacts"].get("coverage_audit"), str):
+        _coverage_ref, current_audit = _verified_coverage_audit(run_dir)
+        scoring_record["execution"]["coverage_audit"] = current_audit
+    score = _score_record_data(scoring_record, run_dir, case)
+    manifest = _score_dependency_manifest(scoring_record, run_dir, score)
+    score["dependencies"] = {
+        "manifest": manifest,
+        "fingerprint": _sha256(_canonical_bytes(manifest)),
+    }
+    return score
+
+
+def _scoring_record_snapshot(record: dict[str, Any]) -> dict[str, Any]:
+    snapshot = dict(record)
+    snapshot["artifacts"] = dict(record.get("artifacts", {}))
+    snapshot["input"] = dict(record.get("input", {}))
+    snapshot["execution"] = dict(record.get("execution", {}))
+    return snapshot
+
+
+def score_record(run_path: Path, case: dict[str, Any] | None = None) -> dict[str, Any]:
+    run_path = run_path.resolve()
+    run_dir = run_path.parent
+    record = _read_json(run_path)
+    if not isinstance(record, dict):
+        raise ValueError(f"Cannot score {run_path}: run record must be a JSON object")
+    try:
+        return _score_run_record(record, run_dir, case)
+    except ValueError as exc:
+        raise ValueError(f"Cannot score {run_path}: {exc}") from exc
+
+
 def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
     errors: list[str] = []
+    if not isinstance(record, dict):
+        return ["run record must be a JSON object"]
     required = {
         "schema_version", "benchmark_id", "case_id", "case_origin", "condition",
         "run_status", "host", "environment", "input", "artifacts", "annotation",
@@ -1285,6 +1404,8 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
         missing_keys = keys - value.keys()
         if missing_keys:
             errors.append(f"{key} missing fields: {', '.join(sorted(missing_keys))}")
+    if any(not isinstance(record.get(key), dict) for key in nested_required):
+        return errors
     repository_snapshot = record.get("repository_snapshot")
     if not isinstance(repository_snapshot, dict):
         errors.append("repository_snapshot must be an object")
@@ -1309,6 +1430,18 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
         errors.append("annotation.status is invalid")
     if record.get("scoring", {}).get("status") not in {"not_run", "completed", "failed", "incomplete"}:
         errors.append("scoring.status is invalid")
+    scoring = record.get("scoring", {})
+    dependency_version = scoring.get("dependency_manifest_version")
+    dependency_fingerprint = scoring.get("dependency_fingerprint")
+    if dependency_version is not None and (dependency_version != 1 or isinstance(dependency_version, bool)):
+        errors.append("scoring.dependency_manifest_version is unsupported")
+    if dependency_fingerprint is not None and (
+        not isinstance(dependency_fingerprint, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dependency_fingerprint)
+    ):
+        errors.append("scoring.dependency_fingerprint must be a 64-character SHA-256 digest")
+    elif dependency_version == 1 and dependency_fingerprint is None:
+        errors.append("scoring.dependency_fingerprint must be a 64-character SHA-256 digest")
 
     refs: list[tuple[str, str | None]] = []
     for group in ("artifacts", "annotation", "input", "scoring", "execution"):
@@ -1324,7 +1457,87 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
         resolved = _resolve_reference(run_dir, reference)
         if resolved is None or not resolved.is_file():
             errors.append(f"{label} references a missing file: {reference}")
-    protocol_incidents = record.get("execution", {}).get("protocol_incidents", [])
+
+    immutable_artifacts = (
+        ("artifacts", "raw_transcript", "raw_transcript_sha256"),
+        ("artifacts", "raw_host_output", "raw_host_output_sha256"),
+        ("artifacts", "validated_result", "validated_result_sha256"),
+        ("input", "review_manifest", "review_manifest_sha256"),
+        ("input", "prior_result", "prior_result_sha256"),
+        ("input", "current_manifest", "current_manifest_sha256"),
+    )
+    for group, name, digest_name in immutable_artifacts:
+        values = record.get(group)
+        if not isinstance(values, dict):
+            continue
+        reference = values.get(name)
+        expected_digest = values.get(digest_name)
+        if reference is None:
+            if expected_digest is not None:
+                errors.append(f"{group}.{digest_name} is set without {name}")
+            continue
+        if not isinstance(reference, str):
+            errors.append(f"{group}.{name} must be a path or null")
+            continue
+        if expected_digest is None:
+            errors.append(f"{group}.{digest_name} is required for immutable artifact {reference}")
+            continue
+        if not isinstance(expected_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+            errors.append(f"{group}.{digest_name} must be a 64-character SHA-256 digest")
+            continue
+        resolved = _resolve_reference(run_dir, reference)
+        if resolved is not None and resolved.is_file() and _file_sha256(resolved) != expected_digest:
+            errors.append(f"{group}.{name} SHA-256 does not match the recorded digest: {reference}")
+
+    artifacts = record.get("artifacts", {})
+    input_record = record.get("input", {})
+    execution = record.get("execution", {})
+    raw_reference = artifacts.get("raw_host_output")
+    raw_path = _resolve_reference(run_dir, raw_reference) if isinstance(raw_reference, str) else None
+    if raw_path is not None and raw_path.is_file():
+        try:
+            raw_output = _read_json(raw_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            raw_output = None
+        if not isinstance(raw_output, dict):
+            errors.append(f"raw host output is not a valid JSON object: {raw_reference}")
+
+    validated_reference = artifacts.get("validated_result")
+    validated_path = (
+        _resolve_reference(run_dir, validated_reference)
+        if isinstance(validated_reference, str)
+        else None
+    )
+    if validated_path is not None and validated_path.is_file():
+        try:
+            validated_result = _read_json(validated_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            validated_result = None
+        if not isinstance(validated_result, dict) or not isinstance(validated_result.get("findings"), list):
+            errors.append(f"validated result must be a JSON object with a findings array: {validated_reference}")
+
+    manifest_reference = input_record.get("review_manifest")
+    manifest_path = (
+        _resolve_reference(run_dir, manifest_reference)
+        if isinstance(manifest_reference, str)
+        else None
+    )
+    if manifest_path is not None and manifest_path.is_file():
+        try:
+            review_manifest = _read_json(manifest_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            review_manifest = None
+        if not isinstance(review_manifest, dict):
+            errors.append(f"review manifest must be a JSON object: {manifest_reference}")
+
+    coverage_reference = artifacts.get("coverage_audit")
+    if isinstance(coverage_reference, str):
+        try:
+            _verified_coverage_audit(run_dir)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"coverage audit is invalid: {exc}")
+
+    protocol_incidents = execution.get("protocol_incidents", [])
     if not isinstance(protocol_incidents, list):
         errors.append("execution.protocol_incidents must be an array")
     else:
@@ -1337,8 +1550,8 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
                 errors.append(f"protocol incident references a missing file: {incident['artifact']}")
             elif isinstance(incident.get("sha256"), str) and _sha256(incident_path.read_bytes()) != incident["sha256"]:
                 errors.append(f"protocol incident SHA-256 does not match: {incident['artifact']}")
-    output_ref = record.get("artifacts", {}).get("raw_host_output")
-    expected_hash = record.get("artifacts", {}).get("raw_host_output_sha256")
+    output_ref = artifacts.get("raw_host_output")
+    expected_hash = artifacts.get("raw_host_output_sha256")
     output_path = _resolve_reference(run_dir, output_ref) if isinstance(output_ref, str) else None
     if output_path and output_path.is_file() and isinstance(expected_hash, str):
         actual_hash = _sha256(output_path.read_bytes())
@@ -1402,8 +1615,12 @@ def build_runs(
         raise ValueError("Case index must contain a cases array")
     blind_root = Path(index["blind_root"])
     operator_root = Path(index["operator_root"])
+    discovered = _discover_inputs(index, runs_root)
+    for _case, _condition, run_dir, _metadata in discovered:
+        _ensure_unrecorded_attempt(run_dir)
+
     result_paths: list[Path] = []
-    for case, condition, run_dir, metadata in _discover_inputs(index, runs_root):
+    for case, condition, run_dir, metadata in discovered:
         record = build_run_record(
             index,
             case,
@@ -1422,19 +1639,20 @@ def build_runs(
             skill_bundle_path=skill_bundle_path,
         )
         record_path = run_dir / "run.json"
-        _write_json(record_path, record)
         errors = validate_record(record, run_dir)
         if errors:
             raise ValueError(f"Generated invalid run record {record_path}: {'; '.join(errors)}")
-        score = score_record(record_path, case)
+        score = _score_run_record(record, run_dir, case)
         score_path = run_dir / "score.json"
-        _write_json(score_path, score)
         record["scoring"] = {
             "status": "completed",
             "script": "eval/ab_eval.py",
             "version": VERSION,
             "output": _relative(score_path, run_dir),
+            "dependency_manifest_version": 1,
+            "dependency_fingerprint": score["dependencies"]["fingerprint"],
         }
+        _write_json(score_path, score)
         _write_json(record_path, record)
         result_paths.append(record_path)
     return result_paths
@@ -1453,12 +1671,21 @@ def _same_known_value(left: Any, right: Any) -> bool | None:
 def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     scores: dict[Path, dict[str, Any]] = {}
+    invalid_runs: list[str] = []
     for path in run_paths:
         record = _read_json(path)
-        score_path = path.parent / "score.json"
-        score = _read_json(score_path) if score_path.is_file() else score_record(path)
+        if not isinstance(record, dict):
+            invalid_runs.append(f"{path}: run record must be a JSON object")
+            continue
+        errors = validate_record(record, path.parent)
+        if errors:
+            invalid_runs.append(f"{path}: {'; '.join(errors)}")
+            continue
         records.append(record)
-        scores[path] = score
+    if invalid_runs:
+        raise ValueError("Cannot summarize invalid run records:\n" + "\n".join(invalid_runs))
+    for path, record in zip(run_paths, records):
+        scores[path] = _score_run_record(record, path.parent)
 
     observed_conditions: dict[str, list[dict[str, Any]]] = {condition: [] for condition in CONDITIONS}
     for record in records:
@@ -1588,8 +1815,15 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                 for condition_checks in repository_checks.values()
                 for check in condition_checks.values()
             )
-            skill_provenance = skill_record.get("skill_provenance") or {}
+            raw_skill_provenance = skill_record.get("skill_provenance")
+            skill_provenance = raw_skill_provenance if isinstance(raw_skill_provenance, dict) else {}
             verified_loaded = skill_provenance.get("verified_loaded")
+            skill_evidence_status = (
+                "missing_provenance" if raw_skill_provenance is None
+                else "verified_loaded" if verified_loaded is True
+                else "digest_mismatch" if verified_loaded is False
+                else "missing_or_unverified"
+            )
             protocol_incidents = [
                 incident
                 for run_record in (direct_record, skill_record)
@@ -1642,6 +1876,7 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                 "repository_snapshot_checks": repository_checks,
                 "skill_load_check": {
                     "verified_loaded": verified_loaded,
+                    "evidence_status": skill_evidence_status,
                     "provided_bundle_sha256": skill_provenance.get("provided_bundle_sha256"),
                     "bundle_sha256": skill_provenance.get("bundle_sha256"),
                     "host_reported_bundle_sha256": skill_provenance.get("host_reported_bundle_sha256"),
@@ -1660,7 +1895,7 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                     "same_host_direct": direct_score["workflow"].get("reported_coverage_complete_unverified"),
                     "current_skill": skill_score["workflow"].get("reported_coverage_complete_unverified"),
                 },
-                "skill_bundle_loaded_verified": skill_record.get("skill_provenance", {}).get("verified_loaded"),
+                "skill_bundle_loaded_verified": verified_loaded,
                 "finding_count": {
                     "same_host_direct": direct_score["workflow"].get("finding_count"),
                     "current_skill": skill_score["workflow"].get("finding_count"),
@@ -1855,12 +2090,14 @@ def main(argv: list[str] | None = None) -> int:
             score = score_record(path)
             destination = path.parent / "score.json"
             _write_json(destination, score)
-            record = _read_json(path)
+            record = _scoring_record_snapshot(_read_json(path))
             record["scoring"] = {
                 "status": "completed",
                 "script": "eval/ab_eval.py",
                 "version": VERSION,
                 "output": _relative(destination, path.parent),
+                "dependency_manifest_version": 1,
+                "dependency_fingerprint": score["dependencies"]["fingerprint"],
             }
             _write_json(path, record)
             print(json.dumps(score, ensure_ascii=False, indent=2))

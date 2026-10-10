@@ -28,7 +28,15 @@
 
 这批运行中 A 完成 11/12 次，B 完成 11/11 次；这些是流程结果，不是质量分数。8 组输入匹配但宿主身份不完整且 Skill 加载未验证，2 组因宿主自报名称不一致而不比较，case 10 因 digest 匹配的协议违规事件而列为 inconclusive。该 incident 的通用 actor 为 `agent`；运行 agent 在 review 中覆盖模板，协调/finisher agent 在 review 结束后从验证过的运行前副本恢复模板。Agent grader v2 的 A 4 条 supported/1 条 unresolved、B 3 条 supported/2 条 unresolved 仅是暂定证据；两个冻结候选都有 agent prediction 覆盖，但不能当作 human recall。没有人工标注，因此人工 precision、recall、clean-case false alarms 和 wrong-resolution 仍为 null。案例集尚未认证为盲测，报告也不代表 WorkBuddy 验收。
 
-用标准库路径 `python -S` 从受控输入重建了 23 条 run record 与分组 summary，并逐条验证记录和输入指纹；23/23 records 通过 JSON Schema。全仓库回归为 239 passed、4 skipped；Ruff、`pip check` 和 `git diff --check` 通过。case 10 的恢复角色/阶段是附加说明，不增加 run event 或干预计数。
+**B0 历史检查（不是本轮严格重评分证据）：** 当时曾用标准库路径 `python -S` 从受控输入重建 23 条 run record 与分组 summary，并记录 23/23 records 通过 JSON Schema、239 passed/4 skipped。那些历史 `score_record`/`summarize` 成功结果走过当前副本 hash 兼容路径，不能视为严格历史重评分；23 条记录缺少同期 `input.review_manifest_sha256`，新的 strict scorer 会拒绝这些旧 runs。本轮仅做离线历史导出与盲审准备，没有调用模型、没有重跑 A/B，也没有为 23 条历史运行创建新的有效评分；人工盲审仍 pending。case 10 的恢复角色/阶段是附加说明，不增加 run event 或干预计数。
+
+B0 evidence 中 `runs[].artifacts.run_record_sha256` 与 `score_sha256` 没有可查的生成或规范化定义。将这些投影与本轮归档的 23 个 run-record、23 个 score 文件原始字节逐项比较，分别匹配 0/23 和 3/23；此结果不支持推断差异何时、由谁或因何产生。独立核对的 b0 raw-output expected hashes 与 23 条原始 run records 的 `raw_host_output_sha256` 字段全部匹配。23/23 旧记录缺少 `input.review_manifest_sha256`，当前 reviewer-input hash 只能作为导出时审计值，不能回填为历史绑定；strict scoring 对 23 条旧运行全部 blocked。旧 score 仅保留，不作质量证据、replay cache 或有效重评分。历史 summary 中的 scoring-time `verified` 标为 source summary 的旧状态，当前严格重算为 `not_replayed`；`validated_result` 在 23 条记录中均为 null。
+
+B0 导出中的 raw-output expected 独立匹配 23/23 原始 run records。外部 `run-score-original.tar`（SHA-256 `3562c789dfdcffd7a9abb9395cd41704ec5ce105c051db5b880038a5fed2a0e5`）及 46 条 source manifest 用于核验本轮保存的归档快照；它们证明的是该快照此后的完整性，不能证明这些字节就是 b0 发布时的原始字节。未来重建前仍须核验仓库外归档；导出 CI 不携带私有 run/score 文件，也不能独立证明外部来源完整性。CI 结论只覆盖公开 summary/evidence 的字节和内部一致性。
+
+本轮补丁回归为 258 passed、4 skipped；另有导出定向测试 8 passed，合计 266 passed、4 skipped。独立 core 检查 32 项、exporter 检查 8 项、`python -S` 导出 `check` 和 4 个 tamper probes 均通过；Ruff、`pip check`、`git diff --check` 通过。4 个 skip 分别为 1 个 PostgreSQL 依赖测试和 3 个 Semgrep 依赖测试。本轮没有调用模型或重跑 A/B；strict scoring 对 23 条旧运行全部 blocked，人工盲审仍 pending，也没有为这 23 条历史运行创建新的有效评分。
+
+后续人工盲审的输入、冻结来源索引、空白模板和操作步骤见[盲审准备指南](results/2026-10-09-ab-pilot-blind-review.md)。这批材料只提供十条 condition-blind prediction 和 source entry；它们不含 agent verdict、oracle mapping 或 human labels，尚未执行人工盲审。覆盖审计仍需保留真实文件读取和工具调用轨迹；Skill bundle digest 只说明包身份，不能证明宿主实际读取或使用了它。
 
 ## 记录和产物
 

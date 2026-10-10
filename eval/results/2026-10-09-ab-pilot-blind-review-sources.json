@@ -1,0 +1,213 @@
+{
+  "benchmark_id": "review-changes-real-history-v1",
+  "cases": [
+    {
+      "base": "ce99a9fbf77f64093ba5920082648b6221d4f2dd",
+      "case_key": "g-c766f758",
+      "head": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+      "head_checkout": "grader-sources/g-c766f758/head",
+      "head_tree": "baeb8c0c8d2aac18379169e4e4c69bdf22330538",
+      "patch_file": "grader-sources/g-c766f758/base-head.patch",
+      "patch_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "scoped_diff_sha256": "1fe60de84123bcabd0881234307682314b1be50e576c3592fe11fe64ee85e1c6"
+    },
+    {
+      "base": "59ddba937ea45b95f79dc8d0c77d955c67e3b812",
+      "case_key": "g-84ea9fff",
+      "head": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+      "head_checkout": "grader-sources/g-84ea9fff/head",
+      "head_tree": "d51f82e4be13600563f21c3cc95b4fcb96b1faf2",
+      "patch_file": "grader-sources/g-84ea9fff/base-head.patch",
+      "patch_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f",
+      "scope": "branch",
+      "scope_paths": [
+        "README.md",
+        "docs/optimization-roadmap.md",
+        "docs/skill-first.md",
+        "review_core/__init__.py",
+        "review_core/recheck.py",
+        "review_core/validation.py",
+        "skills/review-changes/SKILL.md",
+        "skills/review-changes/VERSION",
+        "skills/review-changes/references/output.md",
+        "skills/review-changes/scripts/recheck_review.py",
+        "tests/test_recheck.py",
+        "tests/test_review_skill_runtime.py"
+      ],
+      "scoped_diff_sha256": "52cae2df5f0d69aaac7ffe8e2d071cc6a6ad753f8ccd9f6fe849f5fb920d8c4f"
+    },
+    {
+      "base": "e8d0788fc58fc2be18d7b1f65410654d6a5f5233",
+      "case_key": "g-8d50f374",
+      "head": "0a1a8756546ee15801180b06b3d9c6ac3558d481",
+      "head_checkout": "grader-sources/g-8d50f374/head",
+      "head_tree": "77ca50aaec21aae5bb5405f17bfff78c27af91a1",
+      "patch_file": "grader-sources/g-8d50f374/base-head.patch",
+      "patch_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69",
+      "scope": "branch",
+      "scope_paths": [
+        "README.md",
+        "docs/optimization-roadmap.md",
+        "docs/skill-first.md",
+        "review_core/recheck.py",
+        "skills/review-changes/SKILL.md",
+        "skills/review-changes/VERSION",
+        "skills/review-changes/references/output.md",
+        "tests/test_recheck.py",
+        "tests/test_review_skill_runtime.py"
+      ],
+      "scoped_diff_sha256": "698e261417bc4fc3359f8161134ecd912afe9549a399d117d7dcfe4161042e69"
+    },
+    {
+      "base": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+      "case_key": "g-d0ad861d",
+      "head": "66d9834d48ab04f6a2c381168c4f92718b19af79",
+      "head_checkout": "grader-sources/g-d0ad861d/head",
+      "head_tree": "46ba68dc6eee414958ba5c908c5fe11faabe3464",
+      "patch_file": "grader-sources/g-d0ad861d/base-head.patch",
+      "patch_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "scoped_diff_sha256": "3b5248988357c9219881d0b26e7b830cbeaf38ab1997372d674b7122c2227de2"
+    },
+    {
+      "base": "6749ffffe674a23cc57edda7f47d489b5bf9b257",
+      "case_key": "g-9d41b995",
+      "head": "9c1d43a8abd2fd9f22a1248ab9bb0e670a414f00",
+      "head_checkout": "grader-sources/g-9d41b995/head",
+      "head_tree": "bd1fd6b6199a4d153ad054745fa478aceacde2c1",
+      "patch_file": "grader-sources/g-9d41b995/base-head.patch",
+      "patch_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c",
+      "scope": "branch",
+      "scope_paths": [
+        "ui/app.py"
+      ],
+      "scoped_diff_sha256": "7c4fe6ed5028f155ba3fe7c036ff87c464883bc1db7a5eecad917bde0e9f940c"
+    },
+    {
+      "base": "b5dc2e2ad96049e10af58ab6b7f9ba3cab04b86b",
+      "case_key": "g-eea972dc",
+      "head": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+      "head_checkout": "grader-sources/g-eea972dc/head",
+      "head_tree": "b8f6c7826bbf134e99c409400914e3b90a42cd78",
+      "patch_file": "grader-sources/g-eea972dc/base-head.patch",
+      "patch_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d",
+      "scope": "branch",
+      "scope_paths": [
+        ".env.example",
+        "agents/aggregator.py",
+        "agents/base.py",
+        "agents/logic_agent.py",
+        "agents/orchestrator.py",
+        "agents/performance_agent.py",
+        "agents/security_agent.py",
+        "config.py",
+        "graph/workflow.py",
+        "tests/test_full_source.py",
+        "tests/test_orchestrator.py",
+        "tests/test_review_cache_flow.py",
+        "tests/test_review_snapshot.py",
+        "tools/github_client.py",
+        "tools/review_version.py"
+      ],
+      "scoped_diff_sha256": "40f3877a77aebb6a2497690f9deab015d079ae0c07fa558b0003b1f38305da0d"
+    },
+    {
+      "base": "cfa6f4ad3e0078db43f866246b483544afa33ed3",
+      "case_key": "g-418d37af",
+      "head": "262bdf02288daf9a37b9e815b44acafd62b5c6fe",
+      "head_checkout": "grader-sources/g-418d37af/head",
+      "head_tree": "5fe50d6cdf649a4e64bc8e480ea3f14038d55488",
+      "patch_file": "grader-sources/g-418d37af/base-head.patch",
+      "patch_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4",
+      "scope": "branch",
+      "scope_paths": [
+        "CHANGES.rst",
+        "src/click/testing.py",
+        "tests/test_chain.py",
+        "tests/test_termui.py",
+        "tests/test_utils.py"
+      ],
+      "scoped_diff_sha256": "98ecb93ecaa1d2c9a967fe5008a88d16841cb42e7d7c74841cbb11b0566957f4"
+    },
+    {
+      "base": "e27be7374aef778120dd5e1acc9f45e8f627e136",
+      "case_key": "g-febf1513",
+      "head": "06bfc8a12644c7c2c68c3876f5f21751e8c1e862",
+      "head_checkout": "grader-sources/g-febf1513/head",
+      "head_tree": "5543572ec6e24ef780c235d467c66f33e4b42f5b",
+      "patch_file": "grader-sources/g-febf1513/base-head.patch",
+      "patch_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939",
+      "scope": "branch",
+      "scope_paths": [
+        "agents/aggregator.py",
+        "agents/change_context.py",
+        "agents/logic_agent.py",
+        "agents/orchestrator.py",
+        "agents/security_agent.py",
+        "tests/test_aggregator.py",
+        "tests/test_deletion_review.py",
+        "tests/test_local_review.py",
+        "tests/test_orchestrator_status_contract.py",
+        "tests/test_semgrep_runner.py",
+        "tools/__init__.py",
+        "tools/local_review.py",
+        "tools/semgrep_runner.py"
+      ],
+      "scoped_diff_sha256": "16b1e8967ad63174296041dbb194ed6cad9bb6aeff4f272d9897c1db47509939"
+    },
+    {
+      "base": "0af1f5d5acaa0427ad4cade08916c8fbea22acd1",
+      "case_key": "g-38aae3bb",
+      "head": "4a51528d5ea65a7d4095e3c3796e82df1b4b6f3c",
+      "head_checkout": "grader-sources/g-38aae3bb/head",
+      "head_tree": "509c8ea203a4075297c2fbf67deef62bfcffcde1",
+      "patch_file": "grader-sources/g-38aae3bb/base-head.patch",
+      "patch_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54",
+      "scope": "branch",
+      "scope_paths": [
+        "agents/aggregator.py",
+        "tests/test_aggregator.py"
+      ],
+      "scoped_diff_sha256": "1c1c711a71a2c6f103a34939e7e1da2ead31a25e7aed68783bb12c622118fd54"
+    },
+    {
+      "base": "06fc0ad27e060642b1be6dc1798b1d7fff25c77c",
+      "case_key": "g-4c7037d6",
+      "head": "f35b31e015d2585a2cbd29b9ad1ae3e146eaf0bb",
+      "head_checkout": "grader-sources/g-4c7037d6/head",
+      "head_tree": "2279081a2773ddb9122359db25c219e41ba931a2",
+      "patch_file": "grader-sources/g-4c7037d6/base-head.patch",
+      "patch_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd",
+      "scope": "branch",
+      "scope_paths": [
+        "skills/review-changes/scripts/review_changes.py"
+      ],
+      "scoped_diff_sha256": "0b62345272a6dc13e87a1b7df95d45fa2863b7a9b7c8bca964b3c1d750c876cd"
+    },
+    {
+      "base": "2fbad67f6c30200a3ff6f2b82d0cf489a0871c29",
+      "case_key": "g-0c935b0f",
+      "head": "3827bd6c5e0a38e09f06e00120c6ce435126fb33",
+      "head_checkout": "grader-sources/g-0c935b0f/head",
+      "head_tree": "7526126af111ca17858b137c29d00e234ece7aeb",
+      "patch_file": "grader-sources/g-0c935b0f/base-head.patch",
+      "patch_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f",
+      "scope": "branch",
+      "scope_paths": [
+        "storage/models.py",
+        "tests/test_database_integration.py"
+      ],
+      "scoped_diff_sha256": "080449bd5d8768e789fd92468043f523f8894db98c773c2d36758c7be732fa4f"
+    }
+  ],
+  "schema_version": 1,
+  "source_input": "review-benchmark-operator-20261009/adjudication-input.json",
+  "source_input_sha256": "5cddda038fd695db0d2809cdf83ca2de54fc3e60422b64446e8a10ce46f4bdc2"
+}

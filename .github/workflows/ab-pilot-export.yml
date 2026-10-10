@@ -1,0 +1,38 @@
+name: A/B Pilot Export Integrity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ab-pilot-export.yml'
+      - 'eval/**'
+      - 'tests/test_ab_eval.py'
+      - 'tests/test_ab_pilot_export.py'
+  push:
+    branches:
+      - main
+      - 'integration/**'
+      - 'codex/**'
+    paths:
+      - '.github/workflows/ab-pilot-export.yml'
+      - 'eval/**'
+      - 'tests/test_ab_eval.py'
+      - 'tests/test_ab_pilot_export.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest
+      - run: python -m pytest -q tests/test_ab_pilot_export.py
+      - run: >-
+          python eval/export_ab_pilot.py check
+          --summary eval/results/2026-10-09-ab-pilot-summary.json
+          --evidence eval/results/2026-10-09-ab-pilot-evidence.json
