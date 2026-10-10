@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 import eval.ab_eval as ab_eval
+from eval.run_ab_batch import build_runtime_evidence, build_supervisor_header
+from eval.runtime_evidence import verify_runtime_evidence
+from eval.runtime_trace import parse_raw_trace
 from eval.ab_eval import (
     _canonical_bytes,
     _protocol_incidents,
@@ -26,6 +29,7 @@ from eval.ab_eval import (
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.chmod(0o600)
 
 
 def _git(repository: Path, *args: str) -> bytes:
@@ -382,7 +386,8 @@ def test_pinned_skill_bundle_is_preserved_and_digest_checked(tmp_path: Path) -> 
     saved_bundle = run_dir / record["artifacts"]["skill_bundle"]
     assert hashlib.sha256(saved_bundle.read_bytes()).hexdigest() == digest
     assert record["skill_provenance"]["bundle_sha256"] == digest
-    assert record["skill_provenance"]["verified_loaded"] is True
+    assert record["skill_provenance"]["host_reported_bundle_sha256"] == digest
+    assert record["skill_provenance"]["verified_loaded"] is None
     assert record["skill_provenance"]["provided_bundle_sha256"] == digest
     assert record["skill_provenance"]["host_reported_bundle_sha256"] == digest
 
@@ -648,6 +653,88 @@ def _prepare_pair_summary_record(run_path: Path, *, condition: str, protocol_vio
     _write_json(run_path, record)
 
 
+def _attach_verified_common_runtime(
+    run_path: Path,
+    *,
+    common_prompt: bytes = b"common review prompt\n",
+    cli_exit_code: int = 0,
+) -> None:
+    run_dir = run_path.parent
+    run_dir.chmod(0o700)
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    artifact_dir = run_dir / "artifacts"
+    artifact_dir.mkdir(exist_ok=True)
+    artifact_dir.chmod(0o700)
+    binding_paths = {
+        "review_manifest": run_dir / record["input"]["review_manifest"],
+        "common_prompt": artifact_dir / "common-prompt.txt",
+        "output_schema": artifact_dir / "output-schema.json",
+        "runtime_config": artifact_dir / "runtime-config.json",
+    }
+    binding_paths["common_prompt"].write_bytes(common_prompt)
+    binding_paths["output_schema"].write_bytes(b'{"type":"object"}\n')
+    binding_paths["runtime_config"].write_bytes(b'{"requested_model":"test"}\n')
+    for path in binding_paths.values():
+        path.chmod(0o600)
+
+    runtime_dir = run_dir / "runtime"
+    runtime_dir.mkdir(exist_ok=True)
+    runtime_dir.chmod(0o700)
+    raw_trace = runtime_dir / "strace.log"
+    raw_trace.write_text(
+        '201 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0\n'
+        f"201 +++ exited with {cli_exit_code} +++\n",
+        encoding="utf-8",
+    )
+    raw_trace.chmod(0o600)
+    codex_events = runtime_dir / "codex-events.jsonl"
+    codex_events.write_text('{"event":"run_started"}\n', encoding="utf-8")
+    codex_events.chmod(0o600)
+    normalizer_source = run_dir / "normalizer.py"
+    normalizer_module = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
+    normalizer_source.write_bytes(normalizer_module.read_bytes())
+    normalizer_source.chmod(0o600)
+    supervisor_events = runtime_dir / "supervisor-events.jsonl"
+    raw_trace_bytes = raw_trace.read_bytes()
+    events = [build_supervisor_header(raw_trace_bytes, normalizer_source)]
+    events.extend(
+        {**event, "call_id": "cli"}
+        for event in parse_raw_trace(raw_trace_bytes)["events"]
+    )
+    supervisor_events.write_text(
+        "".join(json.dumps(event, sort_keys=True) + "\n" for event in events),
+        encoding="utf-8",
+    )
+    supervisor_events.chmod(0o600)
+    manifest = {
+        "schema_version": 1,
+        "files": [
+            {
+                "path": path.relative_to(run_dir).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in binding_paths.values()
+        ],
+    }
+    manifest_path = artifact_dir / "source-bundle-manifest.json"
+    _write_json(manifest_path, manifest)
+    sidecar = build_runtime_evidence(
+        run_dir,
+        codex_events,
+        supervisor_events,
+        raw_trace,
+        manifest_path,
+        normalizer_source,
+        common_bindings=binding_paths,
+    )
+    _write_json(run_dir / "runtime-evidence.json", sidecar)
+    record["artifacts"]["runtime_evidence"] = "runtime-evidence.json"
+    record["execution"]["runtime_evidence"] = verify_runtime_evidence(
+        run_dir, "runtime-evidence.json", record
+    )
+    _write_json(run_path, record)
+
+
 def test_summary_limits_pair_status_when_skill_load_is_unverified(tmp_path: Path) -> None:
     direct = _score_fixture(
         tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01",
@@ -661,10 +748,148 @@ def test_summary_limits_pair_status_when_skill_load_is_unverified(tmp_path: Path
 
     pair = summarize([direct, skill], ["case0001"])["paired_cases"][0]
 
-    assert pair["status"] == "paired_inputs_and_host_identity_verified_skill_load_unverified"
+    assert pair["status"] == "not_comparable_common_runtime_bindings_incomplete"
     assert pair["skill_load_check"]["verified_loaded"] is None
     assert pair["skill_load_check"]["provided_bundle_sha256"] == "a" * 64
     assert pair["skill_load_check"]["host_reported_bundle_sha256"] is None
+
+
+def test_summary_requires_equal_common_runtime_bindings_and_separates_completion_sources(
+    tmp_path: Path,
+) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01",
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    _attach_verified_common_runtime(direct)
+    _attach_verified_common_runtime(skill)
+
+    pair = summarize([direct, skill], ["case0001"])["paired_cases"][0]
+
+    assert pair["status"] == "paired_inputs_and_host_identity_verified_skill_load_unverified"
+    assert pair["input_checks"]["review_manifest_sha256"] is True
+    assert pair["common_runtime_binding_checks"] == {
+        "review_manifest": True,
+        "common_prompt": True,
+        "output_schema": True,
+        "runtime_config": True,
+    }
+    assert pair["runtime_evidence_checks"] == {
+        "same_host_direct": True,
+        "current_skill": True,
+    }
+    assert pair["supervisor_trace_checks"] == {
+        "same_host_direct": True,
+        "current_skill": True,
+    }
+    assert pair["completion_evidence"]["same_host_direct"] == {
+        "host_reported_completed": True,
+        "supervisor_trace_status": "success",
+        "runtime_evidence_status": "verified",
+    }
+    assert pair["service_identity"]["verified"] is None
+    assert pair["service_identity"]["evidence_status"] == "host_reported_unverified"
+
+
+def test_summary_requires_verified_runtime_evidence_for_both_conditions(tmp_path: Path) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01",
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    _attach_verified_common_runtime(direct)
+    _attach_verified_common_runtime(skill)
+
+    sidecar_path = direct.parent / "runtime-evidence.json"
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    supervisor_path = direct.parent / sidecar["supervisor_events"]["path"]
+    events = [json.loads(line) for line in supervisor_path.read_text().splitlines()]
+    events[1].pop("call_id")
+    supervisor_bytes = "".join(json.dumps(event, sort_keys=True) + "\n" for event in events).encode()
+    supervisor_path.write_bytes(supervisor_bytes)
+    sidecar["supervisor_events"]["sha256"] = hashlib.sha256(supervisor_bytes).hexdigest()
+    _write_json(sidecar_path, sidecar)
+
+    record = json.loads(direct.read_text(encoding="utf-8"))
+    record["execution"]["runtime_evidence"] = ab_eval.verify_runtime_evidence(
+        direct.parent, "runtime-evidence.json", record
+    )
+    _write_json(direct, record)
+
+    pair = summarize([direct, skill], ["case0001"])["paired_cases"][0]
+
+    assert pair["runtime_evidence_checks"] == {
+        "same_host_direct": False,
+        "current_skill": True,
+    }
+    assert pair["status"] == "not_comparable_runtime_evidence_incomplete"
+
+
+def test_summary_requires_successful_supervisor_traces_for_both_conditions(
+    tmp_path: Path,
+) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01",
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    _attach_verified_common_runtime(direct, cli_exit_code=7)
+    _attach_verified_common_runtime(skill)
+
+    pair = summarize([direct, skill], ["case0001"])["paired_cases"][0]
+
+    assert pair["runtime_evidence_checks"] == {
+        "same_host_direct": True,
+        "current_skill": True,
+    }
+    assert pair["supervisor_trace_checks"] == {
+        "same_host_direct": False,
+        "current_skill": True,
+    }
+    assert pair["status"] == "not_comparable_supervisor_trace_not_successful"
+
+
+def test_summary_rejects_pair_with_different_common_prompt_binding(tmp_path: Path) -> None:
+    direct = _score_fixture(
+        tmp_path / "runs" / "case0001" / "same_host_direct" / "repeat01",
+    )
+    skill = _score_fixture(
+        tmp_path / "runs" / "case0001" / "current_skill" / "repeat01",
+        condition="current_skill",
+    )
+    _prepare_pair_summary_record(direct, condition="same_host_direct")
+    _prepare_pair_summary_record(skill, condition="current_skill")
+    _attach_verified_common_runtime(direct)
+    _attach_verified_common_runtime(skill, common_prompt=b"different prompt\n")
+
+    pair = summarize([direct, skill], ["case0001"])["paired_cases"][0]
+
+    assert pair["status"] == "not_comparable_common_runtime_bindings_mismatch"
+    assert pair["common_runtime_binding_checks"]["common_prompt"] is False
+
+
+def test_runtime_sidecar_digest_mismatch_rejects_scoring(tmp_path: Path) -> None:
+    run_path = _score_fixture(tmp_path / "run" / "repeat01")
+    _prepare_pair_summary_record(run_path, condition="same_host_direct")
+    _attach_verified_common_runtime(run_path)
+    with (run_path.parent / "runtime" / "strace.log").open("ab") as trace:
+        trace.write(b"tampered\n")
+
+    with pytest.raises(ValueError, match="raw_trace SHA-256 does not match"):
+        score_record(run_path)
 
 
 def test_summary_marks_digest_matched_protocol_incident_inconclusive(tmp_path: Path) -> None:
@@ -844,15 +1069,23 @@ def test_summary_keeps_null_skill_provenance_as_missing_load_evidence(tmp_path: 
 
     assert report["run_count"] == 2
     assert pair["skill_load_check"]["verified_loaded"] is None
-    assert pair["skill_load_check"]["evidence_status"] == "missing_provenance"
-    assert pair["status"] == "paired_inputs_and_host_identity_verified_skill_load_unverified"
+    assert pair["skill_load_check"]["evidence_status"] == "missing_runtime_evidence"
+    assert pair["status"] == "not_comparable_common_runtime_bindings_incomplete"
 
 
 def test_coverage_audit_changes_invalidate_score_dependencies(tmp_path: Path) -> None:
     run_path = _score_fixture(tmp_path / "run" / "repeat01", read_paths=["src/app.py"])
     audit_path = run_path.parent / "coverage-audit.json"
+    trace_path = run_path.parent / "runtime-trace.log"
+    trace_path.write_text("independent trace\n", encoding="utf-8")
     audit = {
         "verified": True,
+        "source": "independent-supervisor-trace",
+        "auditor": "synthetic-auditor",
+        "trace": {
+            "path": "runtime-trace.log",
+            "sha256": hashlib.sha256(trace_path.read_bytes()).hexdigest(),
+        },
         "read_paths": ["src/app.py"],
         "uncovered_paths": [],
         "context_omissions": [],

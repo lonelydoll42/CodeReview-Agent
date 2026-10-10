@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A/B workflow host output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "run_status",
+    "review_status",
+    "scope",
+    "read_paths",
+    "uncovered_paths",
+    "context_omissions",
+    "failure_reason",
+    "findings",
+    "host",
+    "environment",
+    "model_usage",
+    "manual_interventions",
+    "duration_seconds",
+    "started_at",
+    "finished_at",
+    "tool_runs"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "case_id": {"type": "string", "minLength": 1},
+    "run_status": {"enum": ["completed", "failed", "incomplete"]},
+    "review_status": {"enum": ["completed", "partial", "uncovered", "failed", null]},
+    "scope": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["base", "head", "paths"],
+      "properties": {
+        "base": {"type": ["string", "null"]},
+        "head": {"type": ["string", "null"]},
+        "paths": {"type": ["array", "null"], "items": {"type": "string"}}
+      }
+    },
+    "read_paths": {"type": ["array", "null"], "items": {"type": "string"}},
+    "uncovered_paths": {"type": ["array", "null"], "items": {"type": "string"}},
+    "context_omissions": {"type": ["array", "null"], "items": {"type": "string"}},
+    "failure_reason": {"type": ["string", "null"]},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "model", "configuration_fingerprint"],
+      "properties": {
+        "name": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "model": {"type": ["string", "null"]},
+        "configuration_fingerprint": {"type": ["string", "null"]}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {
+        "os": {"type": ["string", "null"]},
+        "architecture": {"type": ["string", "null"]}
+      }
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "cost", "currency"],
+      "properties": {
+        "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cost": {"type": ["number", "null"], "minimum": 0},
+        "currency": {"type": ["string", "null"]}
+      }
+    },
+    "manual_interventions": {"type": ["integer", "null"], "minimum": 0},
+    "duration_seconds": {"type": ["number", "null"], "minimum": 0},
+    "started_at": {"type": ["string", "null"]},
+    "finished_at": {"type": ["string", "null"]},
+    "tool_runs": {"type": "array", "items": {"type": "object"}}
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "category",
+        "root_cause",
+        "trigger",
+        "impact",
+        "introduced_by_change",
+        "change_reason",
+        "evidence"
+      ],
+      "properties": {
+        "finding_id": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "root_cause": {"type": "string"},
+        "trigger": {"type": "string"},
+        "impact": {"type": "string"},
+        "introduced_by_change": {"type": ["boolean", "null"]},
+        "change_reason": {"type": ["string", "null"]},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "side", "line_start", "line_end", "basis"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "side": {"enum": ["before", "after"]},
+        "line_start": {"type": ["integer", "null"], "minimum": 1},
+        "line_end": {"type": ["integer", "null"], "minimum": 1},
+        "basis": {"type": "string"}
+      }
+    }
+  }
+}

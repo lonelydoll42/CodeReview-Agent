@@ -16,6 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .runtime_evidence import RuntimeEvidenceError, verify_runtime_evidence
+else:
+    from runtime_evidence import RuntimeEvidenceError, verify_runtime_evidence
+
 
 VERSION = "0.2.0"
 CONDITIONS = ("same_host_direct", "current_skill")
@@ -40,11 +45,21 @@ def _file_sha256(path: Path) -> str:
     return _sha256(path.read_bytes())
 
 
-def _scorer_identity() -> dict[str, str]:
+def _scorer_identity() -> dict[str, Any]:
+    implementation_files = {
+        "eval/ab_eval.py": Path(__file__).resolve(),
+        "eval/runtime_evidence.py": Path(__file__).with_name("runtime_evidence.py").resolve(),
+        "eval/runtime_trace.py": Path(__file__).with_name("runtime_trace.py").resolve(),
+        "eval/schemas/run-record.schema.json": ROOT / "eval" / "schemas" / "run-record.schema.json",
+    }
+    file_digests = {
+        name: _file_sha256(path) for name, path in implementation_files.items()
+    }
     return {
         "name": "eval.ab_eval",
         "version": VERSION,
-        "implementation_sha256": _file_sha256(Path(__file__).resolve()),
+        "implementation_sha256": _sha256(_canonical_bytes(file_digests)),
+        "implementation_files": file_digests,
     }
 
 
@@ -283,19 +298,42 @@ def _verified_coverage_audit(run_dir: Path) -> tuple[str | None, dict[str, Any] 
     context_omissions = _safe_list(audit.get("context_omissions"))
     review_status = audit.get("review_status")
     scope_verified = audit.get("scope_verified")
+    source = audit.get("source")
+    auditor = audit.get("auditor")
+    trace = audit.get("trace")
+    trace_valid = False
+    if (
+        isinstance(trace, dict)
+        and set(trace) == {"path", "sha256"}
+        and isinstance(trace.get("path"), str)
+        and isinstance(trace.get("sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", trace["sha256"])
+    ):
+        trace_path = _resolve_reference(run_dir, trace["path"])
+        trace_valid = (
+            trace_path is not None
+            and trace_path.is_file()
+            and _file_sha256(trace_path) == trace["sha256"]
+        )
     if (
         read_paths is None
         or uncovered_paths is None
         or context_omissions is None
         or review_status not in REVIEW_STATUSES
         or not isinstance(scope_verified, bool)
+        or not isinstance(source, str)
+        or not source.strip()
+        or not isinstance(auditor, str)
+        or not auditor.strip()
+        or not trace_valid
     ):
         return ref, {"status": "invalid", "artifact": ref}
     return ref, {
         "status": "verified",
         "artifact": ref,
-        "source": audit.get("source") if isinstance(audit.get("source"), str) else None,
-        "auditor": audit.get("auditor") if isinstance(audit.get("auditor"), str) else None,
+        "source": source,
+        "auditor": auditor,
+        "trace": trace,
         "read_paths": read_paths,
         "uncovered_paths": uncovered_paths,
         "context_omissions": context_omissions,
@@ -676,11 +714,7 @@ def build_run_record(
             "inventory_sha256": inventory["inventory_sha256"],
             "host_reported_bundle_sha256": host_bundle_hash,
             "host_reported_bundle_digest_status": host_digest_status,
-            "verified_loaded": (
-                host_bundle_hash == expected_bundle_hash
-                if host_digest_status == "valid" and expected_bundle_hash
-                else None
-            ),
+            "verified_loaded": None,
         }
     else:
         skill_bundle_artifact_path = None
@@ -739,6 +773,7 @@ def build_run_record(
         "skill_bundle": skill_bundle_artifact_path,
         "run_metadata": _candidate_artifact(run_dir, ("run-metadata.json",)),
         "coverage_audit": _candidate_artifact(run_dir, ("coverage-audit.json",)),
+        "runtime_evidence": _candidate_artifact(run_dir, ("runtime-evidence.json",)),
     }
     if artifacts["validated_result"]:
         validated_path = _resolve_reference(run_dir, artifacts["validated_result"])
@@ -824,6 +859,7 @@ def build_run_record(
             "scope_verified": _scope_verified(case, reviewer_input, output),
             "scope_verification_source": "host_reported" if isinstance(output.get("scope"), dict) else None,
             "coverage_audit": coverage_audit,
+            "runtime_evidence": None,
             "tool_permissions": output.get("tool_permissions")
             if isinstance(output.get("tool_permissions"), str)
             else None,
@@ -872,6 +908,12 @@ def build_run_record(
             "operator_annotation": str(Path(case.get("annotation", "")).resolve()),
         },
     }
+    runtime_evidence = verify_runtime_evidence(
+        run_dir, artifacts["runtime_evidence"], record
+    )
+    record["execution"]["runtime_evidence"] = runtime_evidence
+    if isinstance(skill_provenance, dict):
+        skill_provenance["verified_loaded"] = runtime_evidence["verified_loaded"]
     return record
 
 
@@ -1139,6 +1181,16 @@ def _score_record_data(
         )
 
     audit = execution.get("coverage_audit")
+    runtime = execution.get("runtime_evidence")
+    if not isinstance(runtime, dict):
+        runtime = {
+            "status": "missing",
+            "supervisor_trace_status": "unknown",
+            "verified_loaded": None,
+            "protocol_violation": False,
+            "common_binding_status": "incomplete",
+            "common_bindings": None,
+        }
     coverage_complete: bool | None = None
     if isinstance(audit, dict) and audit.get("status") == "verified":
         audited_paths = audit.get("read_paths")
@@ -1238,6 +1290,16 @@ def _score_record_data(
                 else "unknown"
             ),
             "coverage_audit_status": audit.get("status") if isinstance(audit, dict) else "not_audited",
+            "runtime_evidence_status": runtime.get("status", "missing"),
+            "supervisor_trace_status": runtime.get("supervisor_trace_status", "unknown"),
+            "host_reported_completed": status == "completed",
+            "host_reported_model": record.get("host", {}).get("model"),
+            "service_identity_verified": None,
+            "common_binding_status": runtime.get("common_binding_status", "incomplete"),
+            "common_bindings": runtime.get("common_bindings"),
+            "skill_load_status": runtime.get("skill_load_status", "unknown"),
+            "skill_load_verified": runtime.get("verified_loaded"),
+            "runtime_protocol_violation": runtime.get("protocol_violation", False),
             "scope_verified": execution.get("scope_verified"),
             "reported_scope_paths_read": reported_paths_read,
             "reported_unread_scope_paths": sorted(set(scope_paths) - set(read_paths))
@@ -1289,7 +1351,7 @@ def _score_dependency_manifest(
         "artifacts": (
             "raw_transcript", "raw_host_output", "validated_result", "markdown_report",
             "recheck_json", "recheck_markdown", "review_prompt", "skill_inventory",
-            "skill_bundle", "run_metadata", "coverage_audit",
+            "skill_bundle", "run_metadata", "coverage_audit", "runtime_evidence",
         ),
         "input": ("review_manifest", "prior_result", "current_manifest"),
         "annotation": ("oracle", "human_labels", "provisional_labels"),
@@ -1336,6 +1398,12 @@ def _score_run_record(
     if isinstance(scoring_record["artifacts"].get("coverage_audit"), str):
         _coverage_ref, current_audit = _verified_coverage_audit(run_dir)
         scoring_record["execution"]["coverage_audit"] = current_audit
+    runtime = verify_runtime_evidence(
+        run_dir,
+        scoring_record["artifacts"].get("runtime_evidence"),
+        scoring_record,
+    )
+    scoring_record["execution"]["runtime_evidence"] = runtime
     score = _score_record_data(scoring_record, run_dir, case)
     manifest = _score_dependency_manifest(scoring_record, run_dir, score)
     score["dependencies"] = {
@@ -1449,7 +1517,7 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
         if not isinstance(value, dict):
             continue
         for name, reference in value.items():
-            if name in {"raw_transcript", "raw_host_output", "validated_result", "markdown_report", "recheck_json", "recheck_markdown", "review_prompt", "skill_inventory", "run_metadata", "coverage_audit", "oracle", "human_labels", "provisional_labels", "review_manifest", "prior_result", "current_manifest", "output", "manual_intervention_log"}:
+            if name in {"raw_transcript", "raw_host_output", "validated_result", "markdown_report", "recheck_json", "recheck_markdown", "review_prompt", "skill_inventory", "run_metadata", "coverage_audit", "runtime_evidence", "oracle", "human_labels", "provisional_labels", "review_manifest", "prior_result", "current_manifest", "output", "manual_intervention_log"}:
                 refs.append((f"{group}.{name}", reference if isinstance(reference, str) else None))
     for label, reference in refs:
         if reference is None:
@@ -1536,6 +1604,23 @@ def validate_record(record: dict[str, Any], run_dir: Path) -> list[str]:
             _verified_coverage_audit(run_dir)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             errors.append(f"coverage audit is invalid: {exc}")
+
+    runtime_reference = artifacts.get("runtime_evidence")
+    try:
+        runtime_evidence = verify_runtime_evidence(
+            run_dir,
+            runtime_reference if isinstance(runtime_reference, str) else None,
+            record,
+        )
+    except (OSError, RuntimeEvidenceError, json.JSONDecodeError) as exc:
+        errors.append(f"runtime evidence is invalid: {exc}")
+    else:
+        recorded_runtime = execution.get("runtime_evidence")
+        if recorded_runtime is not None and recorded_runtime != runtime_evidence:
+            errors.append("execution.runtime_evidence does not match recomputed runtime evidence")
+        provenance = record.get("skill_provenance")
+        if isinstance(provenance, dict) and provenance.get("verified_loaded") != runtime_evidence.get("verified_loaded"):
+            errors.append("skill_provenance.verified_loaded does not match runtime evidence")
 
     protocol_incidents = execution.get("protocol_incidents", [])
     if not isinstance(protocol_incidents, list):
@@ -1715,6 +1800,20 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
             "runs_observed": len(condition_records),
             "runs_completed": len(completed),
             "workflow_completion_rate_observed": len(completed) / len(condition_records) if condition_records else None,
+            "host_reported_completed_count": len(completed),
+            "supervisor_trace_success_count": sum(
+                score["workflow"].get("supervisor_trace_status") == "success"
+                for score in condition_scores
+            ),
+            "supervisor_trace_failed_count": sum(
+                score["workflow"].get("supervisor_trace_status") == "failed"
+                for score in condition_scores
+            ),
+            "supervisor_trace_unknown_count": sum(
+                score["workflow"].get("supervisor_trace_status") == "unknown"
+                for score in condition_scores
+            ),
+            "service_identity_evidence": "host_reported_unverified",
             "duration_seconds_mean_known_only": _mean([float(value) for value in durations]),
             "duration_known_count": len(durations),
             "human_precision_mean": _mean([float(value) for value in precisions]),
@@ -1781,7 +1880,10 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
             skill_input = skill_record.get("input", {})
             input_checks = {
                 key: _same_known_value(direct_input.get(key), skill_input.get(key))
-                for key in ("repository_id", "snapshot_fingerprint", "review_scope_fingerprint")
+                for key in (
+                    "repository_id", "snapshot_fingerprint", "review_scope_fingerprint",
+                    "review_manifest_sha256",
+                )
             }
             host_fields = ("name", "version", "model", "configuration_fingerprint")
             host_checks = {
@@ -1792,6 +1894,33 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
             host_mismatch = any(value is False for value in host_checks.values())
             input_complete = all(value is True for value in input_checks.values())
             host_complete = all(value is True for value in host_checks.values())
+            direct_runtime = direct_score["workflow"]
+            skill_runtime = skill_score["workflow"]
+            common_bindings = {
+                name: _same_known_value(
+                    (direct_runtime.get("common_bindings") or {}).get(name),
+                    (skill_runtime.get("common_bindings") or {}).get(name),
+                )
+                for name in (
+                    "review_manifest", "common_prompt", "output_schema", "runtime_config"
+                )
+            }
+            common_binding_mismatch = any(value is False for value in common_bindings.values())
+            common_bindings_complete = (
+                all(value is True for value in common_bindings.values())
+                and direct_runtime.get("common_binding_status") == "verified"
+                and skill_runtime.get("common_binding_status") == "verified"
+            )
+            runtime_evidence_checks = {
+                "same_host_direct": direct_runtime.get("runtime_evidence_status") == "verified",
+                "current_skill": skill_runtime.get("runtime_evidence_status") == "verified",
+            }
+            supervisor_trace_checks = {
+                "same_host_direct": direct_runtime.get("supervisor_trace_status") == "success",
+                "current_skill": skill_runtime.get("supervisor_trace_status") == "success",
+            }
+            runtime_evidence_complete = all(runtime_evidence_checks.values())
+            supervisor_traces_successful = all(supervisor_trace_checks.values())
             direct_build_check = direct_record.get("repository_snapshot", {}).get("build_check", {})
             skill_build_check = skill_record.get("repository_snapshot", {}).get("build_check", {})
             direct_score_check = direct_score["workflow"].get("repository_snapshot_check", {})
@@ -1817,13 +1946,20 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
             )
             raw_skill_provenance = skill_record.get("skill_provenance")
             skill_provenance = raw_skill_provenance if isinstance(raw_skill_provenance, dict) else {}
-            verified_loaded = skill_provenance.get("verified_loaded")
+            verified_loaded = skill_runtime.get("skill_load_verified")
             skill_evidence_status = (
-                "missing_provenance" if raw_skill_provenance is None
+                "missing_runtime_evidence" if skill_runtime.get("runtime_evidence_status") == "missing"
                 else "verified_loaded" if verified_loaded is True
-                else "digest_mismatch" if verified_loaded is False
-                else "missing_or_unverified"
+                else "digest_mismatch" if skill_runtime.get("skill_load_status") == "digest_mismatch"
+                else "missing_or_incomplete"
             )
+            runtime_protocol_violations = [
+                condition
+                for condition, workflow in (
+                    ("same_host_direct", direct_runtime), ("current_skill", skill_runtime)
+                )
+                if workflow.get("runtime_protocol_violation") is True
+            ]
             protocol_incidents = [
                 incident
                 for run_record in (direct_record, skill_record)
@@ -1834,10 +1970,18 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                 incident for incident in protocol_incidents
                 if incident.get("raw_host_output_sha256_matches") is True
             ]
-            if confirmed_protocol_incidents:
+            if confirmed_protocol_incidents or runtime_protocol_violations:
                 pair_status = "inconclusive_protocol_violation"
             elif input_mismatch or host_mismatch or not input_complete or not repository_complete:
                 pair_status = "not_comparable"
+            elif common_binding_mismatch:
+                pair_status = "not_comparable_common_runtime_bindings_mismatch"
+            elif not common_bindings_complete:
+                pair_status = "not_comparable_common_runtime_bindings_incomplete"
+            elif not runtime_evidence_complete:
+                pair_status = "not_comparable_runtime_evidence_incomplete"
+            elif not supervisor_traces_successful:
+                pair_status = "not_comparable_supervisor_trace_not_successful"
             elif verified_loaded is False:
                 pair_status = "not_comparable_skill_bundle_digest_mismatch"
             elif verified_loaded is None:
@@ -1872,7 +2016,15 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                     for key, value in condition_runs.items()
                 },
                 "input_checks": input_checks,
+                "common_runtime_binding_checks": common_bindings,
+                "runtime_evidence_checks": runtime_evidence_checks,
+                "supervisor_trace_checks": supervisor_trace_checks,
                 "host_checks": host_checks,
+                "service_identity": {
+                    "verified": None,
+                    "evidence_status": "host_reported_unverified",
+                    "host_reported_model": skill_record.get("host", {}).get("model"),
+                },
                 "repository_snapshot_checks": repository_checks,
                 "skill_load_check": {
                     "verified_loaded": verified_loaded,
@@ -1881,11 +2033,27 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                     "bundle_sha256": skill_provenance.get("bundle_sha256"),
                     "host_reported_bundle_sha256": skill_provenance.get("host_reported_bundle_sha256"),
                     "host_reported_bundle_digest_status": skill_provenance.get("host_reported_bundle_digest_status"),
+                    "runtime_evidence_status": skill_runtime.get("runtime_evidence_status"),
+                    "supervisor_trace_status": skill_runtime.get("supervisor_trace_status"),
+                    "skill_load_status": skill_runtime.get("skill_load_status"),
                 },
                 "protocol_incidents": protocol_incidents,
+                "runtime_protocol_violations": runtime_protocol_violations,
                 "workflow_completed": {
                     "same_host_direct": direct_score["workflow"].get("execution_completed"),
                     "current_skill": skill_score["workflow"].get("execution_completed"),
+                },
+                "completion_evidence": {
+                    "same_host_direct": {
+                        "host_reported_completed": direct_runtime.get("host_reported_completed"),
+                        "supervisor_trace_status": direct_runtime.get("supervisor_trace_status"),
+                        "runtime_evidence_status": direct_runtime.get("runtime_evidence_status"),
+                    },
+                    "current_skill": {
+                        "host_reported_completed": skill_runtime.get("host_reported_completed"),
+                        "supervisor_trace_status": skill_runtime.get("supervisor_trace_status"),
+                        "runtime_evidence_status": skill_runtime.get("runtime_evidence_status"),
+                    },
                 },
                 "coverage_complete": {
                     "same_host_direct": direct_score["workflow"].get("coverage_complete"),
@@ -1915,10 +2083,12 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                 "limitations": [
                     "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
                     "Unknown host or model configuration is retained as unknown.",
+                    "Host-reported model/version do not verify the remote service identity.",
                     "Host-reported read paths do not independently verify review coverage.",
                     "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
                 ] if not host_complete else [
                     "Selected result is the latest completed attempt within this replicate; all attempts remain in history.",
+                    "Host-reported model/version do not verify the remote service identity.",
                     "Host-reported read paths do not independently verify review coverage.",
                     "Build/scoring snapshot checks cannot establish that the repository remained unchanged during review.",
                 ],

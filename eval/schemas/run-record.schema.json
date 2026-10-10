@@ -95,7 +95,8 @@
         "skill_inventory": {"type": ["string", "null"]},
         "skill_bundle": {"type": ["string", "null"]},
         "run_metadata": {"type": ["string", "null"]},
-        "coverage_audit": {"type": ["string", "null"]}
+        "coverage_audit": {"type": ["string", "null"]},
+        "runtime_evidence": {"type": ["string", "null"]}
       }
     },
     "annotation": {
@@ -152,12 +153,46 @@
             "artifact": {"type": "string"},
             "source": {"type": ["string", "null"]},
             "auditor": {"type": ["string", "null"]},
+            "trace": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "sha256"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            },
             "read_paths": {"type": "array", "items": {"type": "string"}},
             "uncovered_paths": {"type": "array", "items": {"type": "string"}},
             "context_omissions": {"type": "array", "items": {"type": "string"}},
             "review_status": {"type": "string"},
             "scope_verified": {"type": "boolean"},
             "notes": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "runtime_evidence": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "status", "supervisor_trace_status", "supervisor_exit_code",
+            "host_reported_completed", "skill_load_status", "verified_loaded",
+            "protocol_violation", "common_binding_status", "common_bindings", "limitations"
+          ],
+          "properties": {
+            "status": {"enum": ["missing", "incomplete", "verified"]},
+            "supervisor_trace_status": {"enum": ["unknown", "success", "failed"]},
+            "supervisor_exit_code": {"type": ["integer", "null"]},
+            "host_reported_completed": {"type": "boolean"},
+            "skill_load_status": {"enum": ["unknown", "verified_loaded", "digest_mismatch", "protocol_violation"]},
+            "verified_loaded": {"type": ["boolean", "null"]},
+            "protocol_violation": {"type": "boolean"},
+            "common_binding_status": {"enum": ["incomplete", "verified"]},
+            "common_bindings": {
+              "type": ["object", "null"],
+              "propertyNames": {"enum": ["review_manifest", "common_prompt", "output_schema", "runtime_config"]},
+              "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            },
+            "limitations": {"type": "array", "items": {"type": "string"}}
           }
         },
         "review_status": {
