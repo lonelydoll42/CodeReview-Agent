@@ -1,0 +1,24 @@
+{
+  "checks": {
+    "closure_bindings": "verified",
+    "evidence_bindings": "verified",
+    "source_hashes": "verified",
+    "summary_file_bytes": "verified",
+    "summary_projection": "verified"
+  },
+  "evidence_sha256": "c27f808b9c2491efe328811223dade78053ea3e9f746eadaa41afdda1612fe14",
+  "export_id": "2026-10-12-ab-workflow-validation-v4",
+  "schema_version": 1,
+  "source_hashes": {
+    "ab_summary_sha256": "c46ab67fb9f5090ab58d979fc998d444f9a53e6c567010fd889e4528b16f0a94",
+    "closure_report_sha256": "e14c0564bbec0b6abe5c913e410dc46063c2b24a00eac0d52d5bb8d163ee27c1",
+    "partial_workflow_report_sha256": "bd4841ed587645934dc3f340a4c8cbb200710052354d621fbff059dc1c8a0538",
+    "plan_sha256": "9ab5d465fa058c4984e9cac4ff8cb28c70e54bc8a256a4fed7d469fd6d7116b3",
+    "post_execution_snapshot_sha256": "b5f33bdc5fb7ee59075a589b396dd45356464037355e28b82b4a1e2288d46aad",
+    "pre_execution_snapshot_sha256": "7b7e8ec04c88147c1e1ecbec17cc5de2b0caf3a1f2083fb3e872a3d25c7f8729",
+    "runtime_config_sha256": "6488d53483e83ec9b9ce7b6688063c3f66d3e3e7730ca1f7ba028270468b8f22"
+  },
+  "status": "passed",
+  "summary_sha256": "a01af725b67b7116c8731954c98536d0a169037c86bad103ef6a66e7ced69732",
+  "type": "workflow_batch_export_check"
+}

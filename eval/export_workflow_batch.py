@@ -10,7 +10,7 @@ import re
 import sys
 import tempfile
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -19,7 +19,8 @@ EXPORT_ID = "2026-10-12-ab-workflow-v2"
 V3_EXPORT_ID = "2026-10-12-ab-workflow-validation-v3"
 V3_BENCHMARK_ID = "2026-10-12-ab-workflow-validation-v3"
 V3_EXPORTER_VERSION = "2.0.0"
-CLOSURE_EXPORTER_VERSION = "2.1.0"
+V3_CLOSURE_EXPORTER_VERSION = "2.1.0"
+CLOSURE_EXPORTER_VERSION = "2.2.0"
 EXPECTED_SOURCE_SHA256 = {
     "seal_report": "d4b906458da7d58b52472beed0b4eca53bb4d45bcb6965eac26580e8523faba3",
     "ab_summary": "27fff54bb1527104c043ad00b99c0c2eebadef4b2dc1e3d7a22b14ea444b6654",
@@ -190,13 +191,76 @@ def _artifact_reference(value: Any, label: str) -> bool:
     if value is None:
         return False
     _require(isinstance(value, dict), f"v3 {label} artifact reference is invalid")
+    path = value.get("source", value.get("path"))
     _require(
-        isinstance(value.get("path"), str) and value["path"] and "\x00" not in value["path"],
+        isinstance(path, str) and path and "\x00" not in path,
         f"v3 {label} artifact path is missing or invalid",
     )
+    if "source" in value and "path" in value:
+        _require(value["source"] == value["path"], f"v3 {label} artifact source and path differ")
     _require(_is_sha256(value.get("sha256")), f"v3 {label} artifact hash is invalid")
     _require(_is_count(value.get("bytes")), f"v3 {label} artifact byte count is invalid")
     return True
+
+
+def _record_identity(benchmark_id: str, slot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "benchmark_id": benchmark_id,
+        "case_id": slot["case_id"],
+        "condition": slot["condition"],
+        "replicate": slot["replicate"],
+        "slot_id": slot["slot_id"],
+    }
+
+
+def _validate_closure_record_reference(
+    reference: Any,
+    *,
+    label: str,
+    expected_identity: dict[str, Any],
+    used_sources: set[str],
+    used_identities: set[str],
+) -> str:
+    _require(isinstance(reference, dict), f"{label} reference is invalid")
+    _require(set(reference) == {"identity", "source", "sha256", "bytes"},
+        f"{label} reference fields are invalid")
+    identity = reference.get("identity")
+    _require(isinstance(identity, dict) and set(identity) == set(expected_identity),
+        f"{label} identity fields are invalid")
+    _require(_is_count(identity.get("replicate")) and identity["replicate"] > 0,
+        f"{label} identity replicate is invalid")
+    _require(identity == expected_identity, f"{label} identity does not match its planned slot")
+
+    source = reference.get("source")
+    _require(isinstance(source, str) and source and "\\" not in source and "\x00" not in source,
+        f"{label} source is missing or invalid")
+    source_path = PurePosixPath(source)
+    _require(
+        not source_path.is_absolute()
+        and source_path.as_posix() == source
+        and all(part not in {"", ".", ".."} for part in source_path.parts)
+        and not (len(source) > 1 and source[1] == ":"),
+        f"{label} source must be a normalized relative path",
+    )
+    _require(source not in used_sources, f"{label} source is referenced more than once")
+    identity_key = expected_identity["slot_id"]
+    _require(identity_key not in used_identities, f"{label} identity is referenced more than once")
+    _require(_is_sha256(reference.get("sha256")), f"{label} hash is invalid")
+    _require(_is_count(reference.get("bytes")) and reference["bytes"] > 0,
+        f"{label} byte count must be positive")
+    used_sources.add(source)
+    used_identities.add(identity_key)
+    return reference["sha256"]
+
+
+def _postprocessing_stage_passed(stage: Any) -> bool:
+    return (
+        stage == "passed"
+        or isinstance(stage, dict)
+        and isinstance(stage.get("exit_code"), int)
+        and not isinstance(stage["exit_code"], bool)
+        and stage["exit_code"] == 0
+    )
 
 
 def _validate_v3_eval_summary(
@@ -205,6 +269,8 @@ def _validate_v3_eval_summary(
     run_record_count: int,
     run_record_case_ids: set[str],
     benchmark_id: str = V3_BENCHMARK_ID,
+    postprocessed_summary: bool = False,
+    run_record_identities: set[tuple[str, str, int]] | None = None,
 ) -> dict[str, Any]:
     human = report.get("human_quality")
     _require(isinstance(human, dict), "v3 human quality state is missing")
@@ -215,6 +281,13 @@ def _validate_v3_eval_summary(
     )), "v3 seal human quality metrics must remain null")
 
     by_condition = ab_summary.get("by_condition") if ab_summary is not None else None
+    if by_condition is not None:
+        _require(isinstance(by_condition, dict), "v3 ab_eval condition summary is invalid")
+        for values in by_condition.values():
+            if isinstance(values, dict):
+                for field, value in values.items():
+                    if field.endswith("_count"):
+                        _require(_is_count(value), f"v3 ab_eval {field} count is invalid")
     if run_record_count and ab_summary is not None:
         _require(isinstance(by_condition, dict), "v3 ab_eval condition summary is missing")
         for condition in CONDITION_NAMES.values():
@@ -230,7 +303,8 @@ def _validate_v3_eval_summary(
 
     ab_eval = report.get("ab_eval")
     _require(isinstance(ab_eval, dict), "v3 seal strict ab_eval state is missing")
-    status = ab_eval.get("status")
+    reported_status = ab_eval.get("status")
+    status = "validated" if postprocessed_summary and reported_status == "not_generated" else reported_status
     _require(status in {
         "not_generated", "validated", "invalid_run_record",
         "blocked_label_reference_present", "invalid",
@@ -245,12 +319,14 @@ def _validate_v3_eval_summary(
             "adjudicated_case_count": 0,
             "pending_annotation_case_count": 0,
             "pairs": [],
+            "missing_expected_runs": [],
         }
 
     _require(ab_summary.get("schema_version") == 1, "v3 ab_eval summary schema is unsupported")
+    for field, value in ab_summary.items():
+        if field.endswith("_count"):
+            _require(_is_count(value), f"v3 ab_eval {field} count is invalid")
     _require(ab_summary.get("run_count") == run_record_count, "v3 ab_eval run count disagrees with sealed run records")
-    _require(_is_count(ab_summary.get("adjudicated_case_count")), "v3 adjudicated case count is invalid")
-    _require(_is_count(ab_summary.get("pending_annotation_case_count")), "v3 pending annotation count is invalid")
     _require(ab_summary["adjudicated_case_count"] == 0, "v3 export requires human labels to remain pending")
     _require(
         ab_summary["pending_annotation_case_count"] == len(run_record_case_ids),
@@ -265,12 +341,29 @@ def _validate_v3_eval_summary(
         )
         _require(ab_summary.get("paired_cases", []) == [], "v3 empty ab_eval summary must not contain pairs")
         raw_pairs: list[Any] = []
+        missing_expected_runs: list[dict[str, Any]] = []
     elif status == "validated":
         _require(run_record_count > 0, "v3 seal cannot validate strict ab_eval without run records")
         _require(ab_summary.get("benchmark_id") == benchmark_id, "v3 ab_eval summary benchmark id is invalid")
+        observed_run_identities = run_record_identities or set()
+        _require(len(observed_run_identities) == run_record_count,
+            "v3 observed run identities disagree with sealed run record count")
+        observed_case_ids = {case_id for case_id, _condition, _replicate in observed_run_identities}
+        _require(observed_case_ids == run_record_case_ids,
+            "v3 observed run identities disagree with sealed run record cases")
+        attempts_by_pair: dict[tuple[str, int], Counter[str]] = {}
+        for case_id, condition, replicate in observed_run_identities:
+            _require(condition in CONDITION_NAMES.values(),
+                "v3 observed run condition is unsupported")
+            attempts_by_pair.setdefault((case_id, replicate), Counter())[condition] += 1
+        expected_pair_ids: set[tuple[str, int | None]] = set(attempts_by_pair)
+        expected_pair_ids.update(
+            (case_id, None)
+            for case_id in ("case0002", "case0003", "case0006")
+            if case_id not in observed_case_ids
+        )
         raw_pairs = ab_summary.get("paired_cases")
         _require(isinstance(raw_pairs, list), "v3 ab_eval paired cases are missing")
-        projected_pairs = []
         seen_pairs: set[tuple[str, int | None]] = set()
         for pair in raw_pairs:
             _require(isinstance(pair, dict), "v3 ab_eval pair must be an object")
@@ -281,13 +374,104 @@ def _validate_v3_eval_summary(
                 isinstance(case_id, str) and case_id in {"case0002", "case0003", "case0006"},
                 "v3 ab_eval pair case is unknown",
             )
-            _require(replicate is None or (_is_count(replicate) and replicate > 0), "v3 ab_eval pair replicate is invalid")
+            _require(
+                replicate is None or (_is_count(replicate) and replicate > 0),
+                "v3 ab_eval pair replicate is invalid",
+            )
+            _require(
+                replicate is not None or case_id not in run_record_case_ids,
+                "v3 case-level pair placeholder has an observed run record",
+            )
             _require(isinstance(pair_status, str) and pair_status, "v3 ab_eval pair status is missing")
             identity = (case_id, replicate)
             _require(identity not in seen_pairs, "v3 ab_eval pair is duplicated")
             seen_pairs.add(identity)
+
+        _require(seen_pairs == expected_pair_ids,
+            "v3 strict pair identities disagree with observed sealed runs")
+
+        projected_pairs = []
+        for pair in raw_pairs:
+            case_id = pair["case_id"]
+            replicate = pair["replicate"]
+            pair_status = pair["status"]
+            identity = (case_id, replicate)
+            recorded_attempts = attempts_by_pair.get(identity, Counter())
+            expected_attempts = {
+                condition: recorded_attempts[condition]
+                for condition in CONDITION_NAMES.values()
+            }
+            expected_conditions = [
+                condition for condition in CONDITION_NAMES.values()
+                if expected_attempts[condition] > 0
+            ]
+            if postprocessed_summary:
+                _require("conditions_present" in pair and "attempts" in pair,
+                    "postprocessed pair is missing observed-run details")
+            if "conditions_present" in pair:
+                _require(pair["conditions_present"] == expected_conditions,
+                    "v3 pair conditions disagree with sealed run identities")
+            if "attempts" in pair:
+                attempts = pair["attempts"]
+                _require(isinstance(attempts, dict)
+                    and set(attempts) == set(CONDITION_NAMES.values()),
+                    "v3 pair attempt conditions are invalid")
+                _require(all(
+                    _is_count(attempts[condition])
+                    and attempts[condition] == expected_attempts[condition]
+                    for condition in CONDITION_NAMES.values()
+                ), "v3 pair attempts disagree with sealed run identities")
+            if set(expected_conditions) != set(CONDITION_NAMES.values()):
+                _require(pair_status == "pair_incomplete",
+                    "v3 pair with a missing condition is not marked pair_incomplete")
             projected_pairs.append({"case_id": case_id, "replicate": replicate, "status": pair_status})
-        _require(ab_eval.get("pairs") == projected_pairs, "v3 seal pair projection differs from strict ab_eval summary")
+        if reported_status == "validated":
+            _require(ab_eval.get("pairs") == projected_pairs,
+                "v3 seal pair projection differs from strict ab_eval summary")
+        else:
+            _require(ab_eval.get("pairs") == [],
+                "pre-postprocessing seal unexpectedly contains strict ab_eval pairs")
+
+        raw_missing = ab_summary.get("missing_expected_runs", [])
+        if postprocessed_summary:
+            _require("missing_expected_runs" in ab_summary,
+                "postprocessed summary is missing expected-run records")
+        _require(isinstance(raw_missing, list), "v3 missing expected runs must be a list")
+        missing_expected_runs = []
+        missing_ids: set[tuple[str, str]] = set()
+        for missing in raw_missing:
+            _require(isinstance(missing, dict), "v3 missing expected run must be an object")
+            case_id = missing.get("case_id")
+            condition = missing.get("condition")
+            missing_status = missing.get("status")
+            _require(case_id in {"case0002", "case0003", "case0006"},
+                "v3 missing expected run case is unknown")
+            _require(condition in CONDITION_NAMES.values(),
+                "v3 missing expected run condition is unsupported")
+            _require(isinstance(missing_status, str) and missing_status,
+                "v3 missing expected run status is missing")
+            identity = (case_id, condition)
+            _require(identity not in missing_ids, "v3 missing expected run is duplicated")
+            missing_ids.add(identity)
+            missing_expected_runs.append({
+                "case_id": case_id,
+                "condition": condition,
+                "status": missing_status,
+            })
+        expected_missing_ids = {
+            (case_id, condition)
+            for case_id in ("case0002", "case0003", "case0006")
+            for condition in CONDITION_NAMES.values()
+            if not any(
+                observed_case == case_id and observed_condition == condition
+                for observed_case, observed_condition, _replicate in observed_run_identities
+            )
+        }
+        actual_missing_ids = {(item["case_id"], item["condition"]) for item in missing_expected_runs}
+        _require(actual_missing_ids == expected_missing_ids,
+            "v3 missing expected runs disagree with sealed run identities")
+        _require(all(item["status"] == "no_run_record" for item in missing_expected_runs),
+            "v3 missing expected run status is not no_run_record")
 
         for pair in raw_pairs:
             precision = pair.get("human_precision")
@@ -303,6 +487,7 @@ def _validate_v3_eval_summary(
         _require(ab_eval.get("pairs") == [], "v3 blocked or invalid strict ab_eval must not contain pairs")
         _require(ab_summary.get("paired_cases", []) == [], "v3 blocked or invalid summary must not contain pairs")
         raw_pairs = []
+        missing_expected_runs = []
 
     return {
         "status": status,
@@ -310,6 +495,7 @@ def _validate_v3_eval_summary(
         "adjudicated_case_count": 0,
         "pending_annotation_case_count": ab_summary["pending_annotation_case_count"],
         "pairs": raw_pairs,
+        "missing_expected_runs": missing_expected_runs,
     }
 
 
@@ -515,6 +701,7 @@ def _validate_v3_source_objects(
     plan: Any,
     hashes: dict[str, str],
     benchmark_id: str = V3_BENCHMARK_ID,
+    postprocessed_summary: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     _require(isinstance(report, dict), "v3 seal report must be an object")
     _require(ab_summary is None or isinstance(ab_summary, dict), "v3 ab_eval summary must be an object")
@@ -597,6 +784,7 @@ def _validate_v3_source_objects(
     reference_count = 0
     unavailable_count = 0
     run_record_case_ids: set[str] = set()
+    run_record_identities: set[tuple[str, str, int]] = set()
     run_record_count = 0
     for expected, raw in zip(expected_slots, raw_slots, strict=True):
         _require(isinstance(raw, dict), "v3 seal report slot must be an object")
@@ -646,13 +834,18 @@ def _validate_v3_source_objects(
 
         for name, reference in artifacts.items():
             if _artifact_reference(reference, name):
-                path = reference["path"]
+                path = reference.get("source", reference.get("path"))
                 _require("\\" not in path and not Path(path).is_absolute() and ".." not in Path(path).parts
                     and not (len(path) > 1 and path[1] == ":"),
                     f"v3 {name} artifact path is unsafe")
             if name == "run_record" and reference is not None:
                 run_record_count += 1
                 run_record_case_ids.add(raw["case_id"])
+                run_record_identities.add((
+                    raw["case_id"],
+                    CONDITION_NAMES[raw["condition"]],
+                    raw["replicate"],
+                ))
         manifest_ref = artifacts["source_bundle_manifest"]
         _require(manifest_ref is not None, "v3 prepared source bundle manifest reference is missing")
         _require(manifest_ref["sha256"] == snapshot_slot["source_bundle_manifest_sha256"],
@@ -685,9 +878,21 @@ def _validate_v3_source_objects(
 
     _require(reference_count == aggregate_references, "v3 aggregate artifact count disagrees with per-slot checks")
     _require(unavailable_count == unavailable_results, "v3 unavailable slot result count disagrees with per-slot checks")
-    strict_eval = _validate_v3_eval_summary(report, ab_summary, run_record_count, run_record_case_ids, benchmark_id)
+    strict_eval = _validate_v3_eval_summary(
+        report,
+        ab_summary,
+        run_record_count,
+        run_record_case_ids,
+        benchmark_id,
+        postprocessed_summary=postprocessed_summary,
+        run_record_identities=run_record_identities,
+    )
 
     strict_pair_status: dict[tuple[str, int], str] = {}
+    strict_case_status: dict[str, str] = {}
+    missing_run_cases = {
+        item["case_id"] for item in strict_eval["missing_expected_runs"]
+    }
     for pair in strict_eval["pairs"]:
         _require(
             isinstance(pair.get("case_id"), str)
@@ -695,7 +900,11 @@ def _validate_v3_source_objects(
             "v3 strict pair case is unknown",
         )
         _require(pair.get("replicate") is None or pair.get("replicate") in {1, 2}, "v3 strict pair replicate is invalid")
-        if pair.get("replicate") is not None:
+        if pair.get("replicate") is None:
+            case_id = pair["case_id"]
+            _require(case_id not in strict_case_status, "v3 strict case-level pair is duplicated")
+            strict_case_status[case_id] = pair["status"]
+        else:
             strict_pair_status[(pair["case_id"], pair["replicate"])] = pair["status"]
     report_pairs = report.get("pairs")
     _require(isinstance(report_pairs, list) and len(report_pairs) == 6, "v3 seal report must retain all six planned pairs")
@@ -706,13 +915,31 @@ def _validate_v3_source_objects(
         case_id, replicate = expected_identity
         _require((raw_pair.get("case_id"), raw_pair.get("replicate")) == expected_identity,
             "v3 seal pair identity or order differs from frozen plan")
-        expected_status = strict_pair_status.get(expected_identity, "pair_incomplete_missing_run_record")
-        _require(raw_pair.get("ab_eval_status") == expected_status, "v3 seal pair status disagrees with strict summary")
+        summary_status = strict_pair_status.get(
+            expected_identity,
+            strict_case_status.get(case_id),
+        )
+        expected_status = raw_pair.get("ab_eval_status")
+        _require(isinstance(expected_status, str) and expected_status,
+            "v3 seal pair status is missing")
+        if summary_status is not None:
+            statuses_agree = (
+                summary_status == expected_status
+                or summary_status.startswith("pair_incomplete")
+                and expected_status.startswith("pair_incomplete")
+            )
+            _require(statuses_agree, "v3 seal pair status disagrees with strict summary")
+        if expected_status == V3_ELIGIBLE_PAIR_STATUS:
+            _require(summary_status == V3_ELIGIBLE_PAIR_STATUS,
+                "eligible sealed pair is missing an eligible strict summary row")
+            _require(case_id not in missing_run_cases,
+                "eligible sealed pair has a missing expected strict run")
         slot_ids = [f"{case_id}:A:replicate-{replicate}", f"{case_id}:B:replicate-{replicate}"]
         _require(raw_pair.get("slots") == slot_ids, "v3 seal pair slot references differ from frozen plan")
         eligible = (
             strict_eval["status"] == "validated"
             and expected_status == V3_ELIGIBLE_PAIR_STATUS
+            and summary_status == V3_ELIGIBLE_PAIR_STATUS
             and all(slot_by_id[slot_id]["host_completed"] and slot_by_id[slot_id]["evidence_valid"] for slot_id in slot_ids)
             and dependencies["status"] == "unchanged"
         )
@@ -773,6 +1000,7 @@ def _validate_v3_source_objects(
         "unavailable_slot_results": unavailable_results,
         "seal_completeness": artifact_completeness,
         "strict_eval": strict_eval,
+        "missing_expected_runs": strict_eval["missing_expected_runs"],
         "run_record_case_ids": sorted(run_record_case_ids),
         "run_record_count": run_record_count,
         "seal_tool_hash": seal_tool_hash,
@@ -793,8 +1021,16 @@ def _validate_closure_sources(
     _require(isinstance(closure, dict), "workflow closure report must be an object")
     _require(isinstance(post_snapshot, dict), "post-execution snapshot must be an object")
     _require(closure.get("schema_version") == 1, "workflow closure schema is unsupported")
-    _require(closure.get("type") == "independent_final_failure_report", "workflow closure type is unsupported")
-    _require(closure.get("execution_state") == "closed_incomplete", "workflow closure is not closed incomplete")
+    closure_type = closure.get("type")
+    legacy_failure = closure_type == "independent_final_failure_report"
+    general_closure = closure_type == "independent_final_closure_report"
+    _require(legacy_failure or general_closure, "workflow closure type is unsupported")
+    execution_state = closure.get("execution_state")
+    _require(
+        (legacy_failure and execution_state == "closed_incomplete")
+        or (general_closure and execution_state in {"completed", "closed_incomplete"}),
+        "workflow closure execution state is unsupported",
+    )
     _require(closure.get("plan_state") == "go" and closure.get("execution_authorized") is True,
         "workflow closure plan authorization is invalid")
     benchmark_id = closure.get("benchmark_id")
@@ -857,20 +1093,56 @@ def _validate_closure_sources(
         "seal_report_sha256": hashes["partial_workflow_report_sha256"],
         "dependency_snapshot_file_sha256": hashes["pre_execution_snapshot_sha256"],
     }
+    strict_postprocessing = closure.get("strict_postprocessing")
+    summarize_record = (
+        strict_postprocessing.get("summarize")
+        if isinstance(strict_postprocessing, dict)
+        else None
+    )
+    postprocessed_summary = (
+        general_closure
+        and ab_summary is not None
+        and isinstance(partial_report.get("ab_eval"), dict)
+        and partial_report["ab_eval"].get("status") == "not_generated"
+        and isinstance(strict_postprocessing, dict)
+        and isinstance(strict_postprocessing.get("build"), dict)
+        and strict_postprocessing["build"].get("exit_code") == 0
+        and all(_postprocessing_stage_passed(strict_postprocessing.get(key))
+                for key in ("validate", "score", "summarize"))
+        and isinstance(summarize_record, dict)
+        and summarize_record.get("ab_summary_sha256") == hashes["ab_summary_sha256"]
+        and sealing.get("ab_summary_sha256") == hashes["ab_summary_sha256"]
+    )
     slots, pairs, audit = _validate_v3_source_objects(
-        partial_report, ab_summary, pre_snapshot, plan, projected_hashes, benchmark_id,
+        partial_report,
+        ab_summary,
+        pre_snapshot,
+        plan,
+        projected_hashes,
+        benchmark_id,
+        postprocessed_summary=postprocessed_summary,
     )
 
     raw_post_slots = post_snapshot.get("slots")
     _require(isinstance(raw_post_slots, list) and len(raw_post_slots) == len(slots),
         "post-execution snapshot must retain every planned slot")
     outcome_by_id = {slot["slot_id"]: slot for slot in slots}
-    started = failed = unstarted = 0
+    used_record_sources: set[str] = set()
+    used_run_identities: set[str] = set()
+    used_score_identities: set[str] = set()
+    post_slot_ids: set[str] = set()
+    started = failed = unstarted = score_record_count = 0
     for order, raw in enumerate(raw_post_slots, start=1):
         _require(isinstance(raw, dict), "post-execution slot must be an object")
         slot_id = raw.get("slot_id")
-        _require(slot_id in outcome_by_id and raw.get("run_order") == order,
+        expected_slot = slots[order - 1]
+        _require(
+            slot_id == expected_slot["slot_id"]
+            and slot_id in outcome_by_id
+            and slot_id not in post_slot_ids
+            and raw.get("run_order") == order,
             "post-execution slot identity or order differs from the plan")
+        post_slot_ids.add(slot_id)
         slot = outcome_by_id[slot_id]
         _require(raw.get("state") in {"started_failed", "unstarted", "started_completed"},
             "post-execution slot state is unsupported")
@@ -883,16 +1155,52 @@ def _validate_closure_sources(
         _require(state == expected_state, "post-execution slot state disagrees with partial workflow report")
         _require(raw.get("source_bundle_manifest_sha256") == partial_report["slots"][order - 1]["source_bundle_manifest_sha256"],
             "post-execution source bundle hash differs from partial workflow report")
-        slot_result = partial_report["slots"][order - 1]["artifacts"].get("slot_result")
+        report_slot = partial_report["slots"][order - 1]
+        slot_result = report_slot["artifacts"].get("slot_result")
         expected_result_hash = slot_result.get("sha256") if slot_result is not None else None
         _require(raw.get("slot_result_sha256") == expected_result_hash,
             "post-execution slot result hash differs from partial workflow report")
         _require(raw.get("failure_ledger_sha256") is None, "post-execution failure ledger is unsupported")
+        if general_closure:
+            run_record = report_slot["artifacts"].get("run_record")
+            expected_identity = _record_identity(benchmark_id, report_slot)
+            run_record_hash = (
+                _validate_closure_record_reference(
+                    run_record,
+                    label="sealed run record",
+                    expected_identity=expected_identity,
+                    used_sources=used_record_sources,
+                    used_identities=used_run_identities,
+                )
+                if run_record is not None else None
+            )
+            _require(
+                run_record is None or slot["host_completed"],
+                "sealed run record belongs to a slot that did not complete on the host",
+            )
+            _require(raw.get("run_record_sha256") == run_record_hash,
+                "post-execution run record hash differs from partial workflow report")
+            score_record = raw.get("score_record")
+            if score_record is None:
+                _require(run_record is None, "sealed run record is missing its strict score file")
+            else:
+                _require(run_record is not None, "strict score file has no sealed run record")
+                score_hash = _validate_closure_record_reference(
+                    score_record,
+                    label="strict score record",
+                    expected_identity=expected_identity,
+                    used_sources=used_record_sources,
+                    used_identities=used_score_identities,
+                )
+                _require(isinstance(score_hash, str), "strict score record hash is missing")
+                score_record_count += 1
         if state == "unstarted":
             unstarted += 1
         else:
             started += 1
             failed += state == "started_failed"
+
+    _require(post_slot_ids == set(outcome_by_id), "post-execution snapshot does not map each planned slot exactly once")
 
     post_counts = post_snapshot.get("counts")
     _require(isinstance(post_counts, dict), "post-execution snapshot counts are missing")
@@ -900,7 +1208,13 @@ def _validate_closure_sources(
         "planned_slots": len(slots), "started_slots": started,
         "failed_slots": failed, "unstarted_slots": unstarted,
     }.items():
-        _require(post_counts.get(key) == value, f"post-execution {key} count disagrees with slot states")
+        actual = post_counts.get(key)
+        _require(_is_count(actual) and actual == value,
+            f"post-execution {key} count disagrees with slot states")
+    if general_closure:
+        actual_score_records = post_counts.get("score_records")
+        _require(_is_count(actual_score_records) and actual_score_records == score_record_count,
+            "post-execution score record count disagrees with sealed score references")
 
     counts = closure.get("counts")
     _require(isinstance(counts, dict), "closure counts are missing")
@@ -915,32 +1229,83 @@ def _validate_closure_sources(
         "eligible_pairs": recomputed["eligible_pairs"],
         "planned_pairs": recomputed["planned_pairs"],
         "run_records": audit["run_record_count"],
+        "score_records": score_record_count if general_closure else 0,
     }
     for key, value in expected_closure_counts.items():
-        _require(counts.get(key) == value, f"closure {key} count disagrees with sealed source records")
-    _require(counts.get("score_records") == 0, "closure score record count must be zero")
+        actual = counts.get(key)
+        _require(_is_count(actual) and actual == value,
+            f"closure {key} count disagrees with sealed source records")
+    if general_closure:
+        _require(score_record_count == audit["run_record_count"],
+            "strict score file count does not match sealed run records")
+        if execution_state == "completed":
+            _require(
+                recomputed["failed_slots"] == 0
+                and recomputed["not_started_slots"] == 0
+                and recomputed["host_completed_slots"] == len(slots)
+                and recomputed["evidence_valid_slots"] == len(slots)
+                and audit["run_record_count"] == len(slots)
+                and score_record_count == len(slots)
+                and audit["strict_eval"]["status"] == "validated",
+                "completed closure does not contain 12 completed, evidenced, scored slots",
+            )
+            expected_pair_ids = {
+                (case_id, replicate)
+                for case_id in ("case0002", "case0003", "case0006")
+                for replicate in (1, 2)
+            }
+            strict_pairs = audit["strict_eval"]["pairs"]
+            _require(
+                len(pairs) == 6
+                and {(pair["case_id"], pair["replicate"]) for pair in pairs} == expected_pair_ids
+                and all(pair["eligible"] and pair["status"] == V3_ELIGIBLE_PAIR_STATUS for pair in pairs),
+                "completed closure does not contain six eligible planned pair results",
+            )
+            _require(
+                len(strict_pairs) == 6
+                and {(pair["case_id"], pair["replicate"]) for pair in strict_pairs} == expected_pair_ids
+                and all(pair["status"] == V3_ELIGIBLE_PAIR_STATUS for pair in strict_pairs),
+                "completed closure strict summary does not contain six eligible planned pairs",
+            )
 
     attempted = closure.get("attempted_slot")
     failed_slots = [slot for slot in partial_report["slots"] if slot["status"] == "failed"]
-    _require(isinstance(attempted, dict) and len(failed_slots) == 1,
-        "closure attempted slot does not match the sealed failure")
-    _require(attempted.get("slot_id") == failed_slots[0]["slot_id"]
-        and attempted.get("run_order") == failed_slots[0]["run_order"],
-        "closure attempted slot identity differs from the sealed failure")
-    _require(attempted.get("run_status") == "failed" and attempted.get("host_completed") is False
-        and attempted.get("evidence_valid") is False and attempted.get("retry_count") == 0,
-        "closure attempted slot state is invalid")
+    if legacy_failure:
+        _require(isinstance(attempted, dict) and len(failed_slots) == 1,
+            "closure attempted slot does not match the sealed failure")
+        _require(attempted.get("slot_id") == failed_slots[0]["slot_id"]
+            and attempted.get("run_order") == failed_slots[0]["run_order"],
+            "closure attempted slot identity differs from the sealed failure")
+        _require(attempted.get("run_status") == "failed" and attempted.get("host_completed") is False
+            and attempted.get("evidence_valid") is False and attempted.get("retry_count") == 0,
+            "closure attempted slot state is invalid")
+    elif attempted is not None:
+        _require(isinstance(attempted, dict), "closure attempted slot is invalid")
+        matching = next((slot for slot in failed_slots if slot["slot_id"] == attempted.get("slot_id")), None)
+        _require(matching is not None and attempted.get("run_order") == matching["run_order"],
+            "closure attempted slot identity differs from the sealed failures")
+        _require(attempted.get("run_status") == "failed" and attempted.get("retry_count") == 0,
+            "closure attempted slot state is invalid")
 
     strict = closure.get("strict_postprocessing")
     _require(isinstance(strict, dict), "closure strict postprocessing record is missing")
     build_record = strict.get("build")
-    _require(isinstance(build_record, dict) and build_record.get("exit_code") == 0,
+    _require(
+        isinstance(build_record, dict)
+        and isinstance(build_record.get("exit_code"), int)
+        and not isinstance(build_record["exit_code"], bool)
+        and build_record["exit_code"] == 0,
         "closure strict build did not exit successfully")
-    _require(build_record.get("created_run_records") == audit["run_record_count"],
+    created_run_records = build_record.get("created_run_records")
+    _require(_is_count(created_run_records) and created_run_records == audit["run_record_count"],
         "closure strict build count disagrees with sealed run records")
     if audit["run_record_count"] == 0:
-        _require(build_record.get("created_run_records") == 0,
+        _require(_is_count(created_run_records) and created_run_records == 0,
             "summary cannot be marked not generated when run records exist")
+        if general_closure:
+            created_score_records = build_record.get("created_score_records")
+            _require(_is_count(created_score_records) and created_score_records == 0,
+                "strict build score count disagrees with sealed score references")
         for key in ("validate", "score", "summarize"):
             _require(strict.get(key) == "not_applicable; build created zero run records",
                 f"closure {key} status is not applicable only for zero run records")
@@ -948,8 +1313,33 @@ def _validate_closure_sources(
             "closure attests that no ab_eval summary was generated; use --ab-summary-not-generated")
     else:
         _require(ab_summary is not None, "a real ab_eval summary is required when run records exist")
+        if general_closure:
+            created_score_records = build_record.get("created_score_records")
+            _require(_is_count(created_score_records) and created_score_records == score_record_count,
+                "strict build score count disagrees with sealed score references")
+            _require(sealing.get("ab_summary_sha256") == hashes["ab_summary_sha256"],
+                "real ab_eval summary bytes do not match the closure binding")
+            summarize_record = strict.get("summarize")
+            _require(isinstance(summarize_record, dict),
+                "strict summary command record is missing")
+            _require(summarize_record.get("ab_summary_sha256") == hashes["ab_summary_sha256"],
+                "strict summary command does not bind the supplied ab_eval summary")
+
+            if execution_state == "completed":
+                for key in ("validate", "score", "summarize"):
+                    stage = strict.get(key)
+                    passed = (
+                        stage == "passed"
+                        or isinstance(stage, dict)
+                        and isinstance(stage.get("exit_code"), int)
+                        and not isinstance(stage.get("exit_code"), bool)
+                        and stage["exit_code"] == 0
+                    )
+                    _require(passed, f"completed closure {key} command did not pass")
 
     audit["strict_postprocessing"] = strict
+    audit["score_record_count"] = score_record_count if general_closure else 0
+    audit["execution_state"] = execution_state
     return slots, pairs, audit
 
 
@@ -1053,6 +1443,15 @@ def _project_v3_summary(
     }[strict_status]
     scope = report["prepared_input_scope"]
     human = report["human_quality"]
+    strict_ab_eval = {
+        "run_records_created": audit["run_record_count"],
+        "status": strict_status,
+        "build_status": strict_projection[0],
+        "validate_status": strict_projection[1],
+        "score_status": strict_projection[2],
+    }
+    if exporter_version != V3_CLOSURE_EXPORTER_VERSION:
+        strict_ab_eval["score_files_created"] = audit.get("score_record_count", 0)
     return {
         "schema_version": 1,
         "export_id": export_id,
@@ -1083,13 +1482,7 @@ def _project_v3_summary(
             "slots": slots,
             "pairs": pairs,
         },
-        "strict_ab_eval": {
-            "run_records_created": audit["run_record_count"],
-            "status": strict_status,
-            "build_status": strict_projection[0],
-            "validate_status": strict_projection[1],
-            "score_status": strict_projection[2],
-        },
+        "strict_ab_eval": strict_ab_eval,
         "human_adjudication": {
             "status": human["annotation_status"],
             "labels_read": False,
@@ -1380,6 +1773,12 @@ def _validate_batch_id(batch_id: str) -> str:
     return batch_id
 
 
+def _closure_exporter_version(batch_id: str) -> str:
+    if batch_id == V3_EXPORT_ID:
+        return V3_CLOSURE_EXPORTER_VERSION
+    return CLOSURE_EXPORTER_VERSION
+
+
 def _closure_input_hashes(
     values: dict[str, bytes],
     *,
@@ -1443,6 +1842,7 @@ def _closure_projection(
     slots, pairs, audit = _validate_closure_sources(
         closure, post_snapshot, partial_report, pre_snapshot, plan, ab_summary, hashes,
     )
+    exporter_version = _closure_exporter_version(batch_id)
     summary = _project_v3_summary(
         partial_report,
         ab_summary,
@@ -1450,7 +1850,7 @@ def _closure_projection(
         pairs,
         audit,
         export_id=batch_id,
-        exporter_version=CLOSURE_EXPORTER_VERSION,
+        exporter_version=exporter_version,
     )
     summary["execution_state"] = closure["execution_state"]
     summary_bytes = _json_bytes(summary)
@@ -1467,7 +1867,7 @@ def _closure_projection(
         "schema_version": 1,
         "type": "workflow_batch_export_evidence",
         "export_id": batch_id,
-        "exporter": {"name": "eval.export_workflow_batch", "version": CLOSURE_EXPORTER_VERSION},
+        "exporter": {"name": "eval.export_workflow_batch", "version": exporter_version},
         "source_names": source_names,
         "source_status": {"ab_summary": "provided" if ab_summary_present else "not_generated"},
         "source_hashes": hashes,
@@ -1476,7 +1876,7 @@ def _closure_projection(
             "projection_sha256": _sha256(_json_bytes(summary)),
         },
         "tool_versions": {
-            "exporter": CLOSURE_EXPORTER_VERSION,
+            "exporter": exporter_version,
             "ab_eval": consumers.get("ab_eval"),
             "runtime_normalizer": consumers.get("runtime_normalizer"),
             "workflow_seal_schema_version": partial_report.get("schema_version"),
@@ -1658,7 +2058,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--check-output", type=Path, required=True)
 
     build_closure = commands.add_parser(
-        "build-closure", help="Build an export from a hash-pinned closed workflow failure report",
+        "build-closure", help="Build an export from a hash-pinned final workflow closure report",
     )
     _closure_source_arguments(build_closure)
     build_closure.add_argument("--summary-output", type=Path, required=True)
@@ -1666,7 +2066,7 @@ def main(argv: list[str] | None = None) -> int:
     build_closure.add_argument("--check-output", type=Path, required=True)
 
     check_closure = commands.add_parser(
-        "check-closure", help="Recompute a hash-pinned closure export",
+        "check-closure", help="Recompute a hash-pinned final workflow closure export",
     )
     _closure_source_arguments(check_closure)
     check_closure.add_argument("--summary", type=Path, required=True)
