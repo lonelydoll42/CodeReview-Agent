@@ -25,6 +25,7 @@ COMMON_BINDING_NAMES = (
     "runtime_config",
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PINNED_SKILL_PATH = "/slot/input/pinned-skill/review-changes/SKILL.md"
 
 
 class RuntimeEvidenceError(ValueError):
@@ -208,6 +209,8 @@ def _bundle_manifest(data: bytes) -> dict[str, Any] | None:
         raise RuntimeEvidenceError("source bundle manifest is not valid JSON")
     if not isinstance(value, dict):
         raise RuntimeEvidenceError("source bundle manifest must be an object")
+    if value.get("schema_version") not in {1, 2}:
+        raise RuntimeEvidenceError("source bundle manifest has an unsupported schema version")
     entries = value.get("files")
     if entries is not None:
         if not isinstance(entries, list):
@@ -222,20 +225,32 @@ def _bundle_manifest(data: bytes) -> dict[str, Any] | None:
             ):
                 raise RuntimeEvidenceError(f"source bundle manifest files[{number}] is invalid")
     skill_resource = value.get("skill_resource")
+    if value["schema_version"] == 2 and skill_resource is None:
+        raise RuntimeEvidenceError("source bundle manifest schema version 2 requires skill_resource")
     if skill_resource is not None:
-        required = {"host_path", "zip_path", "zip_sha256", "zip_member", "member_sha256"}
+        common = {"path", "mounted"}
+        mounted = skill_resource.get("mounted") is True if isinstance(skill_resource, dict) else False
+        expected = common | (
+            {"host_path", "zip_path", "zip_sha256", "zip_member", "member_sha256"}
+            if mounted else set()
+        )
         if (
-            not isinstance(skill_resource, dict)
-            or set(skill_resource) != required
-            or not isinstance(skill_resource.get("host_path"), str)
-            or not skill_resource["host_path"].startswith("/")
-            or not isinstance(skill_resource.get("zip_path"), str)
-            or not isinstance(skill_resource.get("zip_member"), str)
-            or any(
-                not isinstance(skill_resource.get(name), str)
-                or not _HEX_SHA256.fullmatch(skill_resource[name])
-                for name in ("zip_sha256", "member_sha256")
-            )
+            value.get("schema_version") != 2
+            or not isinstance(skill_resource, dict)
+            or set(skill_resource) != expected
+            or skill_resource.get("path") != _PINNED_SKILL_PATH
+            or not isinstance(skill_resource.get("mounted"), bool)
+            or (mounted and (
+                not isinstance(skill_resource.get("host_path"), str)
+                or not skill_resource["host_path"].startswith("/")
+                or not isinstance(skill_resource.get("zip_path"), str)
+                or not isinstance(skill_resource.get("zip_member"), str)
+                or any(
+                    not isinstance(skill_resource.get(name), str)
+                    or not _HEX_SHA256.fullmatch(skill_resource[name])
+                    for name in ("zip_sha256", "member_sha256")
+                )
+            ))
         ):
             raise RuntimeEvidenceError("source bundle manifest skill_resource is invalid")
     return value
@@ -249,6 +264,8 @@ def _bundle_members(
     provenance = record.get("skill_provenance")
     reference = artifacts.get("skill_bundle") if isinstance(artifacts, dict) else None
     if not isinstance(resource, dict) or not isinstance(reference, str) or not isinstance(provenance, dict):
+        return None
+    if resource.get("mounted") is not True:
         return None
     if resource["zip_path"] != reference:
         raise RuntimeEvidenceError("source manifest Skill ZIP path does not match the run artifact")
@@ -284,7 +301,18 @@ def _bundle_members(
         raise RuntimeEvidenceError("pinned Skill ZIP member is missing or invalid") from exc
     if sha256_bytes(member) != resource["member_sha256"]:
         raise RuntimeEvidenceError("pinned Skill ZIP member digest does not match its manifest")
-    return member, resource["host_path"]
+
+    host_path = Path(resource["host_path"])
+    try:
+        host_path = host_path.resolve(strict=True)
+        host_relative = host_path.relative_to(run_dir.resolve())
+    except (OSError, ValueError) as exc:
+        raise RuntimeEvidenceError("pinned Skill host path escapes the run directory or is missing") from exc
+    _assert_private_path(run_dir.resolve(), host_path, "pinned Skill host source")
+    source_digest = manifest_files.get(host_relative.as_posix())
+    if source_digest != resource["member_sha256"] or sha256_bytes(host_path.read_bytes()) != source_digest:
+        raise RuntimeEvidenceError("pinned Skill host source does not match its ZIP member digest")
+    return member, resource["path"]
 
 
 def verify_runtime_evidence(
@@ -414,6 +442,11 @@ def verify_runtime_evidence(
         has_association_gap = True
 
     manifest = _bundle_manifest(manifest_bytes)
+    resource = manifest.get("skill_resource") if manifest else None
+    if manifest and manifest.get("schema_version") == 2 and isinstance(resource, dict):
+        expected_mounted = record.get("condition") == "current_skill"
+        if resource["mounted"] is not expected_mounted:
+            raise RuntimeEvidenceError("source manifest Skill mount status does not match the run condition")
     common_bindings: dict[str, str] | None = None
     binding_status = "incomplete"
     binding_refs = sidecar.get("common_bindings")
@@ -447,21 +480,22 @@ def verify_runtime_evidence(
     skill_loaded: bool | None = None
     protocol_violation = False
     skill_status = "unknown"
-    resource = manifest.get("skill_resource") if manifest else None
     skill_bundle = _bundle_members(run_dir, record, manifest) if manifest else None
     host_skill_path = sidecar.get("pinned_skill_host_path")
-    if isinstance(resource, dict) and host_skill_path is not None and resource["host_path"] != host_skill_path:
-        raise RuntimeEvidenceError("pinned Skill host path differs from the source bundle manifest")
-    if host_skill_path is None and isinstance(resource, dict):
-        host_skill_path = resource["host_path"]
+    if isinstance(resource, dict) and resource.get("mounted") is True:
+        if host_skill_path != resource["host_path"]:
+            raise RuntimeEvidenceError("pinned Skill host path differs from the source bundle manifest")
+    elif host_skill_path is not None:
+        raise RuntimeEvidenceError("unmounted pinned Skill must not have a host source path")
+    skill_path = resource.get("path") if isinstance(resource, dict) else None
     matching_cats: list[tuple[dict[str, Any], str]] = []
     for item in command_items:
         cat_path = _cat_path(item["command"])
-        if cat_path is not None and host_skill_path is not None and cat_path == host_skill_path:
+        if cat_path is not None and skill_path is not None and cat_path == skill_path:
             matching_cats.append((item, cat_path))
     pinned_resource_accesses = [
         event for event in parsed_events
-        if event.get("path") == host_skill_path and (
+        if event.get("path") == skill_path and (
             (
                 _event_name(event) == "open"
                 and event.get("success") is True
@@ -478,8 +512,11 @@ def verify_runtime_evidence(
                 and event["bytes_read"] > 0
             )
         )
-    ] if host_skill_path is not None else []
-    if record.get("condition") == "same_host_direct" and pinned_resource_accesses:
+    ] if skill_path is not None else []
+    if record.get("condition") == "same_host_direct" and (
+        pinned_resource_accesses
+        or (isinstance(resource, dict) and resource.get("mounted") is True)
+    ):
         protocol_violation = True
         skill_status = "protocol_violation"
 

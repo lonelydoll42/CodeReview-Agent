@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
-import subprocess
 import zipfile
 from pathlib import Path
 
@@ -15,7 +12,7 @@ from eval.runtime_evidence import RuntimeEvidenceError, verify_runtime_evidence
 from eval.runtime_trace import parse_raw_trace
 
 
-SKILL_HOST_PATH = "/workspace/skills/review-changes/SKILL.md"
+SKILL_PATH = "/slot/input/pinned-skill/review-changes/SKILL.md"
 SKILL_TEXT = "Pinned synthetic skill\n"
 
 
@@ -44,7 +41,6 @@ def _refresh_trace_artifacts(
     raw: bytes,
     *,
     reader_call_id: str = "cat-call",
-    skill_host_path: str = SKILL_HOST_PATH,
 ) -> dict:
     runtime = run_dir / "runtime"
     raw_trace = runtime / "strace.log"
@@ -80,6 +76,8 @@ def _refresh_trace_artifacts(
     supervisor_events.chmod(0o600)
 
     artifact_dir = run_dir / "artifacts"
+    manifest = json.loads((artifact_dir / "source-bundle-manifest.json").read_bytes())
+    skill_resource = manifest.get("skill_resource")
     binding_paths = {
         name: artifact_dir / filename
         for name, filename in (
@@ -97,7 +95,11 @@ def _refresh_trace_artifacts(
         artifact_dir / "source-bundle-manifest.json",
         normalizer_source,
         common_bindings=binding_paths,
-        pinned_skill_host_path=skill_host_path,
+        pinned_skill_host_path=(
+            skill_resource["host_path"]
+            if isinstance(skill_resource, dict) and isinstance(skill_resource.get("host_path"), str)
+            else None
+        ),
     )
     _write_json(run_dir / "runtime-evidence.json", sidecar)
     return parsed
@@ -107,7 +109,7 @@ def _runtime_fixture(
     tmp_path: Path,
     *,
     cli_exit_code: int = 0,
-    skill_host_path: str = SKILL_HOST_PATH,
+    condition: str = "current_skill",
     skill_text: str = SKILL_TEXT,
 ) -> tuple[Path, dict, dict]:
     run_dir = tmp_path / "run"
@@ -115,15 +117,11 @@ def _runtime_fixture(
     artifacts = run_dir / "artifacts"
     runtime.mkdir(parents=True)
     artifacts.mkdir()
+    run_dir.joinpath("input").mkdir(mode=0o700)
     run_dir.chmod(0o700)
     runtime.chmod(0o700)
     artifacts.chmod(0o700)
 
-    skill_bundle = artifacts / "skill-bundle.zip"
-    with zipfile.ZipFile(skill_bundle, "w") as archive:
-        archive.writestr("review-changes/SKILL.md", skill_text)
-    skill_bundle.chmod(0o600)
-    skill_bundle_digest = _sha(skill_bundle.read_bytes())
     member_digest = _sha(skill_text.encode("utf-8"))
 
     binding_paths = {
@@ -142,10 +140,44 @@ def _runtime_fixture(
         path.write_bytes(binding_payloads[name])
         path.chmod(0o600)
 
+    skill_resource: dict[str, object] = {
+        "path": SKILL_PATH,
+        "mounted": condition == "current_skill",
+    }
+    manifest_files = [
+        {"path": path.relative_to(run_dir).as_posix(), "sha256": _sha(path.read_bytes())}
+        for path in binding_paths.values()
+    ]
+    skill_bundle_digest: str | None = None
+    skill_host_source: Path | None = None
+    if condition == "current_skill":
+        skill_host_source = run_dir / "input/pinned-skill/review-changes/SKILL.md"
+        skill_host_source.parent.mkdir(parents=True, mode=0o700)
+        for directory in skill_host_source.parents[:3]:
+            directory.chmod(0o700)
+        skill_host_source.write_text(skill_text, encoding="utf-8")
+        skill_host_source.chmod(0o600)
+        skill_bundle = artifacts / "skill-bundle.zip"
+        with zipfile.ZipFile(skill_bundle, "w") as archive:
+            archive.writestr("review-changes/SKILL.md", skill_text)
+        skill_bundle.chmod(0o600)
+        skill_bundle_digest = _sha(skill_bundle.read_bytes())
+        skill_resource.update({
+            "host_path": str(skill_host_source.resolve()),
+            "zip_path": "artifacts/skill-bundle.zip",
+            "zip_sha256": skill_bundle_digest,
+            "zip_member": "review-changes/SKILL.md",
+            "member_sha256": member_digest,
+        })
+        manifest_files.extend([
+            {"path": skill_host_source.relative_to(run_dir).as_posix(), "sha256": member_digest},
+            {"path": "artifacts/skill-bundle.zip", "sha256": skill_bundle_digest},
+        ])
+
     raw_trace_lines = [
         '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
-        f'102 execve("/usr/bin/cat", ["cat", "--", "{skill_host_path}"], 0x0, 0x0) = 0',
-        f'102 openat(AT_FDCWD, "{skill_host_path}", O_RDONLY|O_CLOEXEC) = 3<{skill_host_path}>',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        f'102 openat(AT_FDCWD, "{SKILL_PATH}", O_RDONLY|O_CLOEXEC) = 3<{SKILL_PATH}>',
         f"102 read(0x3, 0x7fff0000, 0x{len(skill_text.encode('utf-8')):x}) = 0x{len(skill_text.encode('utf-8')):x}",
         "102 close(0x3) = 0",
         "102 +++ exited with 0 +++",
@@ -162,7 +194,7 @@ def _runtime_fixture(
             "item": {
                 "type": "command_execution",
                 "id": "cat-call",
-                "command": f"cat -- {skill_host_path}",
+                "command": f"cat -- {SKILL_PATH}",
                 "aggregated_output": skill_text,
             },
         }) + "\n",
@@ -172,31 +204,26 @@ def _runtime_fixture(
     normalizer_source = _normalizer_source(run_dir)
 
     manifest = {
-        "schema_version": 1,
-        "files": [
-            {"path": path.relative_to(run_dir).as_posix(), "sha256": _sha(path.read_bytes())}
-            for path in (*binding_paths.values(), skill_bundle)
-        ],
-        "skill_resource": {
-            "host_path": skill_host_path,
-            "zip_path": "artifacts/skill-bundle.zip",
-            "zip_sha256": skill_bundle_digest,
-            "zip_member": "review-changes/SKILL.md",
-            "member_sha256": member_digest,
-        },
+        "schema_version": 2,
+        "files": manifest_files,
+        "skill_resource": skill_resource,
     }
     manifest_path = artifacts / "source-bundle-manifest.json"
     _write_json(manifest_path, manifest)
-    _refresh_trace_artifacts(
-        run_dir, raw_trace.read_bytes(), skill_host_path=skill_host_path
-    )
+    _refresh_trace_artifacts(run_dir, raw_trace.read_bytes())
 
     record = {
-        "condition": "current_skill",
+        "condition": condition,
         "run_status": "completed",
         "input": {"review_manifest_sha256": _sha(binding_payloads["review_manifest"])},
-        "artifacts": {"skill_bundle": "artifacts/skill-bundle.zip"},
-        "skill_provenance": {"bundle_sha256": skill_bundle_digest},
+        "artifacts": (
+            {"skill_bundle": "artifacts/skill-bundle.zip"}
+            if skill_bundle_digest is not None else {}
+        ),
+        "skill_provenance": (
+            {"bundle_sha256": skill_bundle_digest}
+            if skill_bundle_digest is not None else None
+        ),
     }
     return run_dir, record, manifest
 
@@ -271,8 +298,7 @@ def test_host_completion_and_supervisor_exit_are_reported_separately(tmp_path: P
 
 
 def test_direct_condition_reading_skill_is_a_protocol_violation(tmp_path: Path) -> None:
-    run_dir, record, _manifest = _runtime_fixture(tmp_path)
-    record["condition"] = "same_host_direct"
+    run_dir, record, _manifest = _runtime_fixture(tmp_path, condition="same_host_direct")
 
     evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
 
@@ -282,8 +308,7 @@ def test_direct_condition_reading_skill_is_a_protocol_violation(tmp_path: Path) 
 
 
 def test_direct_non_cat_reading_pinned_skill_is_a_protocol_violation(tmp_path: Path) -> None:
-    run_dir, record, _manifest = _runtime_fixture(tmp_path)
-    record["condition"] = "same_host_direct"
+    run_dir, record, _manifest = _runtime_fixture(tmp_path, condition="same_host_direct")
     raw_trace = run_dir / "runtime/strace.log"
     raw = raw_trace.read_text(encoding="utf-8").replace(
         'execve("/usr/bin/cat", ["cat", "--",',
@@ -292,7 +317,7 @@ def test_direct_non_cat_reading_pinned_skill_is_a_protocol_violation(tmp_path: P
     codex_events = run_dir / "runtime/codex-events.jsonl"
     item = json.loads(codex_events.read_text(encoding="utf-8"))
     item["item"]["id"] = "head-call"
-    item["item"]["command"] = f"head -- {SKILL_HOST_PATH}"
+    item["item"]["command"] = f"head -- {SKILL_PATH}"
     _write_jsonl = json.dumps(item, sort_keys=True) + "\n"
     codex_events.write_text(_write_jsonl, encoding="utf-8")
     codex_events.chmod(0o600)
@@ -306,12 +331,11 @@ def test_direct_non_cat_reading_pinned_skill_is_a_protocol_violation(tmp_path: P
 
 
 def test_direct_readable_mmap_of_pinned_skill_is_a_protocol_violation(tmp_path: Path) -> None:
-    run_dir, record, _manifest = _runtime_fixture(tmp_path)
-    record["condition"] = "same_host_direct"
+    run_dir, record, _manifest = _runtime_fixture(tmp_path, condition="same_host_direct")
     raw = "\n".join([
         f'101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
-        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_HOST_PATH}"], 0x0, 0x0) = 0',
-        f'102 openat(AT_FDCWD, "{SKILL_HOST_PATH}", O_RDONLY|O_CLOEXEC) = 3',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        f'102 openat(AT_FDCWD, "{SKILL_PATH}", O_RDONLY|O_CLOEXEC) = 3',
         "102 mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f000000",
         "102 close(3) = 0",
         "102 +++ exited with 0 +++",
@@ -353,7 +377,7 @@ def test_unknown_inherited_fd_read_is_a_path_gap_not_a_skill_load_proof(tmp_path
     run_dir, record, _manifest = _runtime_fixture(tmp_path)
     raw = "\n".join([
         '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
-        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_HOST_PATH}"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
         "102 read(0x3, 0x7fff0000, 0x17) = 0x17",
         "102 +++ exited with 0 +++",
         "101 +++ exited with 0 +++",
@@ -391,7 +415,7 @@ def test_supervisor_event_list_must_exactly_match_trusted_parser(tmp_path: Path)
     sidecar = json.loads(sidecar_path.read_bytes())
     supervisor_path = run_dir / sidecar["supervisor_events"]["path"]
     events = [json.loads(line) for line in supervisor_path.read_text().splitlines()]
-    events.append({"event": "read", "pid": 102, "call_id": "cat-call", "path": SKILL_HOST_PATH})
+    events.append({"event": "read", "pid": 102, "call_id": "cat-call", "path": SKILL_PATH})
     supervisor_path.write_text(
         "".join(json.dumps(event, sort_keys=True) + "\n" for event in events),
         encoding="utf-8",
@@ -435,87 +459,3 @@ def test_normalizer_source_must_match_trusted_parser(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeEvidenceError, match="trusted runtime parser"):
         verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
-
-
-def test_real_strace_subprocess_capture_proves_exact_pinned_skill_load(tmp_path: Path) -> None:
-    strace = shutil.which("strace")
-    bash = shutil.which("bash")
-    if strace is None or bash is None:
-        pytest.skip("strace and bash are required for the raw-trace integration test")
-
-    skill_text = "strace-only-synthetic-payload"
-    skill_path = (tmp_path / "pinned-skill.md").resolve()
-    skill_path.write_text(skill_text, encoding="utf-8")
-    run_dir, record, _manifest = _runtime_fixture(
-        tmp_path,
-        skill_host_path=str(skill_path),
-        skill_text=skill_text,
-    )
-    runtime = run_dir / "runtime"
-    codex_events = runtime / "codex-events.jsonl"
-    raw_trace = runtime / "strace.log"
-    fake_cli = run_dir / "fake_cli.py"
-    fake_cli.write_text(
-        "import json, subprocess, sys\n"
-        "skill_path, output, events_path = sys.argv[1:]\n"
-        "completed = subprocess.run(['/bin/cat', '--', skill_path], capture_output=True, check=True)\n"
-        "item = {'type': 'item.completed', 'item': {\n"
-        "    'type': 'command_execution', 'id': 'cat-call',\n"
-        "    'command': f'cat -- {skill_path}', 'aggregated_output': completed.stdout.decode('utf-8'),\n"
-        "}}\n"
-        "with open(events_path, 'w', encoding='utf-8') as stream:\n"
-        "    stream.write(json.dumps(item) + '\\n')\n"
-        "sys.stdout.buffer.write(completed.stdout)\n",
-        encoding="utf-8",
-    )
-    fake_cli.chmod(0o600)
-    launcher = 'exec -a codex "$@"'
-    old_umask = os.umask(0o077)
-    try:
-        run = subprocess.run(
-            [
-                strace,
-                "-f",
-                "-yy",
-                "-s",
-                "4096",
-                "-e",
-                "raw=read,pread64,readv,preadv,preadv2",
-                "-o",
-                str(raw_trace),
-                "--",
-                bash,
-                "-c",
-                launcher,
-                "codex",
-                shutil.which("python3") or "/usr/bin/python3",
-                str(fake_cli),
-                str(skill_path),
-                skill_text,
-                str(codex_events),
-            ],
-            capture_output=True,
-            check=False,
-            timeout=20,
-        )
-    finally:
-        os.umask(old_umask)
-    assert run.returncode == 0, run.stderr.decode("utf-8", errors="replace")
-    assert run.stdout == skill_text.encode("utf-8")
-    raw_trace.chmod(0o600)
-    codex_events.chmod(0o600)
-    parsed = _refresh_trace_artifacts(
-        run_dir, raw_trace.read_bytes(), skill_host_path=str(skill_path)
-    )
-    assert parsed["complete"] is True, parsed["unknown"]
-    assert any(event["event"] == "pipe" for event in parsed["events"])
-    assert any(
-        event["event"] == "read" and event.get("fd_kind") == "pipe"
-        for event in parsed["events"]
-    )
-
-    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
-
-    assert evidence["status"] == "verified"
-    assert evidence["supervisor_trace_status"] == "success"
-    assert evidence["verified_loaded"] is True

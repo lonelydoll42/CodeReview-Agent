@@ -71,22 +71,25 @@ Both checks are local and make no model call. If the TOML omits reasoning
 effort, pass a supported choice explicitly.
 
 ```sh
-python3.11 eval/run_ab_batch.py --write-runtime-config --codex-config /root/.codex/config.toml --runtime-config-output /root/project/review-benchmark-20261010/runtime-config.json
+python3.11 eval/run_ab_batch.py --write-runtime-config --codex-config /root/.codex/config.toml --runtime-config-output /root/project/review-benchmark-20261010/runtime-config-v2.json
 ```
 
 The output is created once with mode 0600; the containing directory is mode
-0700. It never includes API keys, credential environment variables, or HTTP
-headers. The current local preflight accepts model `gpt-6.1-sol`, provider
+0700. It discovers the executable bwrap shipped beside the selected Codex
+Linux package; a system `bwrap` found on `PATH` is not used. It never includes
+API keys, credential environment variables, or HTTP headers. The current local
+preflight accepts model `gpt-6.1-sol`, provider
 `custom` at `http://127.0.0.1:8080/v1` using `responses` with auth required, and
 reasoning effort `max`.
 
-The runtime config is exact UTF-8 JSON with this shape:
+The v2 runtime config is exact UTF-8 JSON with this shape:
 
 ```json
 {
-  "schema_version": 1,
-  "codex_executable": "/usr/bin/codex",
+  "schema_version": 2,
+  "codex_executable": "/usr/lib/node_modules/@openai/codex/bin/codex.js",
   "strace_executable": "/usr/bin/strace",
+  "bwrap_executable": "/usr/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-resources/bwrap",
   "model": "gpt-6.1-sol",
   "provider_definition": {
     "name": "custom",
@@ -104,17 +107,29 @@ they do not authenticate the remote service's actual model identity.
 Credentials stay in the CLI's normal credential store and are never copied
 into runtime config or traced environment values.
 
-Preseal all slots without making model calls:
+The v1 `runs/` tree and `runtime-config.json` are retained as
+`runs-v1/` and `runtime-config-v1.json`. Prepare the isolated v2 input set in a
+new directory without making model calls:
 
 ```sh
 python3 eval/run_ab_batch.py \
   --plan /root/project/review-benchmark-20261010/batch-plan.json \
   --prepare \
-  --runs-root /root/project/review-benchmark-20261010/runs \
-  --runtime-config /root/project/review-benchmark-20261010/runtime-config.json
+  --runs-root /root/project/review-benchmark-20261010/runs-v2 \
+  --runtime-config /root/project/review-benchmark-20261010/runtime-config-v2.json
 ```
 
-Each execution is a fresh `codex exec` subprocess. The adapter runs slots in
+Each execution is a fresh `strace -> bwrap -> codex exec` process chain. For
+each slot, bwrap creates user, PID, mount, IPC, UTS, and cgroup namespaces and
+shares the host network namespace so the configured loopback endpoint remains
+reachable. It exposes `/usr`, `/lib`, and `/lib64` read-only, mounts only that
+slot's `input/` tree read-only, bind-mounts the raw output file and a private
+per-slot `CODEX_HOME` writable, and overlays the single host auth file at
+`CODEX_HOME/auth.json` read-only. The checkout, sibling slots, and operator
+directories are absent. The CLI environment is cleared and rebuilt from
+`PATH`, `HOME`, `CODEX_HOME`, `TMPDIR`, `LC_CTYPE`, and `PWD`.
+
+The adapter runs slots in
 the frozen order, keeps failures and continues without retrying, and refuses to
 start unless the plan has `plan_state=go` and `execution_authorized=true`.
 The GO fields may change after independent review; the immutable plan digest
@@ -125,8 +140,8 @@ waiting and execution is not authorized.
 python3 eval/run_ab_batch.py \
   --plan /root/project/review-benchmark-20261010/batch-plan.json \
   --execute \
-  --runs-root /root/project/review-benchmark-20261010/runs \
-  --runtime-config /root/project/review-benchmark-20261010/runtime-config.json
+  --runs-root /root/project/review-benchmark-20261010/runs-v2 \
+  --runtime-config /root/project/review-benchmark-20261010/runtime-config-v2.json
 ```
 
 Execution writes raw CLI JSONL, raw model output, strace stderr, raw strace,
@@ -142,11 +157,14 @@ For a completed run, preserve `runtime/codex-events.jsonl`, the normalized
 `runtime/supervisor-events.jsonl`, raw `runtime/strace.log`, and
 `artifacts/source-bundle-manifest.json`. Write `runtime-evidence.json` with
 `build_runtime_evidence`; bind the exact reviewer-input, common prompt, output
-schema, and runtime-config files under `common_bindings`. The source manifest
-must list each binding path and digest, plus a `skill_resource` object with the
-host-visible Skill path, ZIP path and digest, member path, and member digest.
-The sidecar also binds the normalized trace to the exact raw trace SHA and to
-the normalizer version/source hash.
+schema, and runtime-config files under `common_bindings`. The schema-version-2
+source manifest lists each binding path and digest. Its `skill_resource.path`
+is the sandbox-visible `/slot/input/pinned-skill/review-changes/SKILL.md` for
+both conditions; A records `mounted:false`, while B records `mounted:true` and
+also records the host copy path, ZIP path and digest, member path, and member
+digest. The verifier checks traced reads against `path` and checks the host
+copy and ZIP member independently. The sidecar also binds the normalized trace
+to the exact raw trace SHA and to the normalizer version/source hash.
 
 The first supervisor JSONL line is the exact normalizer header. Its normalizer
 version and source SHA must match the checked-in trusted `eval/runtime_trace.py`.

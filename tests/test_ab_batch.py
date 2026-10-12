@@ -6,12 +6,14 @@ import stat
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
 from eval.run_ab_batch import (
     BENCHMARK_ID,
     PLAN_STATE,
+    SANDBOX_SKILL_PATH,
     TRACE_NORMALIZER,
     build_runtime_evidence,
     build_slot_plan,
@@ -23,10 +25,12 @@ from eval.run_ab_batch import (
     sha256_file,
     validate_runtime_evidence,
     _codex_config_overrides,
+    _find_bundled_bwrap,
     _freeze_runtime_config,
     _preflight_codex_config,
     write_runtime_config,
 )
+from eval.runtime_trace import parse_raw_trace
 
 
 class AbBatchPlanTests(unittest.TestCase):
@@ -97,9 +101,10 @@ class AbBatchPlanTests(unittest.TestCase):
             plan_bytes = (json.dumps(plan, sort_keys=True) + "\n").encode()
             runtime_config = root / "runtime-config.json"
             config = {
-                "schema_version": 1,
-                "codex_executable": sys.executable,
+                "schema_version": 2,
+                "codex_executable": "/usr/bin/codex",
                 "strace_executable": "/usr/bin/strace",
+                "bwrap_executable": str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
                 "model": "gpt-6.1-sol",
                 "provider_definition": {
                     "name": "custom",
@@ -138,8 +143,28 @@ class AbBatchPlanTests(unittest.TestCase):
                 (case2_b / "input/prompt.txt").read_bytes(),
             )
             manifest = json.loads((case3_b / "artifacts/source-bundle-manifest.json").read_bytes())
+            manifest_a = json.loads((case2_a / "artifacts/source-bundle-manifest.json").read_bytes())
             self.assertEqual(manifest["skill_resource"]["member_sha256"], hashlib.sha256(b"Pinned test-only Skill.\n").hexdigest())
             self.assertEqual(manifest["skill_resource"]["zip_path"], "skill-bundle.zip")
+            self.assertEqual(manifest["skill_resource"]["path"], str(SANDBOX_SKILL_PATH))
+            self.assertTrue(manifest["skill_resource"]["mounted"])
+            self.assertNotEqual(
+                manifest["skill_resource"]["host_path"],
+                manifest["skill_resource"]["path"],
+            )
+            self.assertEqual(
+                Path(manifest["skill_resource"]["host_path"]).read_bytes(),
+                b"Pinned test-only Skill.\n",
+            )
+            self.assertEqual(manifest_a["skill_resource"], {
+                "path": str(SANDBOX_SKILL_PATH),
+                "mounted": False,
+            })
+            self.assertIn(
+                b"/slot/input/pinned-skill/review-changes/SKILL.md",
+                (case3_b / "input/prompt.txt").read_bytes(),
+            )
+            self.assertNotIn(str(case3_b).encode(), (case3_b / "input/prompt.txt").read_bytes())
             self.assertTrue((case3_b / manifest["skill_resource"]["zip_path"]).is_file())
             self.assertEqual(manifest["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertEqual(stat.S_IMODE(case3_b.stat().st_mode), 0o700)
@@ -174,8 +199,9 @@ class RuntimeConfigTests(unittest.TestCase):
             config_path = self._codex_toml(Path(temp_dir))
             config = _freeze_runtime_config(
                 config_path,
-                codex_executable=Path(sys.executable),
+                codex_executable=Path("/usr/bin/codex"),
                 strace_executable=Path("/usr/bin/strace"),
+                bwrap_executable=_find_bundled_bwrap(Path("/usr/bin/codex")),
             )
 
         self.assertEqual(config["provider_definition"], {
@@ -188,6 +214,8 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertNotIn("api_key_env", json.dumps(config))
         self.assertNotIn("MUST_NOT_BE_COPIED", json.dumps(config))
         self.assertNotIn("ignored.example", json.dumps(config))
+        self.assertEqual(config["schema_version"], 2)
+        self.assertTrue(Path(config["bwrap_executable"]).is_file())
 
     def test_missing_effort_requires_an_explicit_choice(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -195,16 +223,23 @@ class RuntimeConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "reasoning_effort is unsupported"):
                 _freeze_runtime_config(
                     config_path,
-                    codex_executable=Path(sys.executable),
+                    codex_executable=Path("/usr/bin/codex"),
                     strace_executable=Path("/usr/bin/strace"),
+                    bwrap_executable=_find_bundled_bwrap(Path("/usr/bin/codex")),
                 )
             config = _freeze_runtime_config(
                 config_path,
-                codex_executable=Path(sys.executable),
+                codex_executable=Path("/usr/bin/codex"),
                 strace_executable=Path("/usr/bin/strace"),
+                bwrap_executable=_find_bundled_bwrap(Path("/usr/bin/codex")),
                 reasoning_effort="high",
             )
         self.assertEqual(config["reasoning_effort"], "high")
+        self.assertEqual(config["schema_version"], 2)
+        self.assertEqual(
+            config["bwrap_executable"],
+            str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
+        )
 
     def test_overrides_are_explicit_and_preflight_is_non_model(self) -> None:
         config = {
@@ -261,8 +296,9 @@ def _private_write(path: Path, data: bytes, *, directory_mode: int = 0o700) -> N
     path.chmod(0o600)
 
 
-def _fake_cli_slot(tmp_path: Path) -> tuple[Path, dict]:
-    run_root = tmp_path / "case0002" / "same_host_direct" / "repeat01"
+def _fake_cli_slot(tmp_path: Path, *, condition: str = "A") -> tuple[Path, dict]:
+    condition_dir = "same_host_direct" if condition == "A" else "current_skill"
+    run_root = tmp_path / "case0002" / condition_dir / "repeat01"
     for relative in ("input/protocol", "artifacts", "runtime"):
         path = run_root / relative
         path.mkdir(parents=True, mode=0o700)
@@ -271,9 +307,13 @@ def _fake_cli_slot(tmp_path: Path) -> tuple[Path, dict]:
     (run_root / "input").chmod(0o700)
 
     reviewer = b'{"base":"abc","head":"def","scope_paths":["src.py"]}\n'
-    prompt = b"synthetic prompt\n"
+    prompt = (
+        b"synthetic prompt\n"
+        if condition == "A"
+        else f"synthetic prompt\nRead {SANDBOX_SKILL_PATH}\n".encode()
+    )
     schema = b'{"type":"object"}\n'
-    config_bytes = b'{"schema_version":1,"codex_executable":"/fake/codex","strace_executable":"/usr/bin/strace","model":"gpt-6.1-sol","provider_definition":{"name":"custom","base_url":"http://127.0.0.1:8080/v1","wire_api":"responses","requires_openai_auth":true},"reasoning_effort":"high","timeout_seconds":30}\n'
+    config_bytes = b'{"schema_version":2,"codex_executable":"/fake/codex","strace_executable":"/usr/bin/strace","bwrap_executable":"/fake/bwrap","model":"gpt-6.1-sol","provider_definition":{"name":"custom","base_url":"http://127.0.0.1:8080/v1","wire_api":"responses","requires_openai_auth":true},"reasoning_effort":"high","timeout_seconds":30}\n'
     binding_payloads = {
         "input/reviewer-input.json": reviewer,
         "input/common-prompt.md": prompt,
@@ -283,14 +323,47 @@ def _fake_cli_slot(tmp_path: Path) -> tuple[Path, dict]:
     for relative, payload in binding_payloads.items():
         _private_write(run_root / relative, payload)
     _private_write(run_root / "input/prompt.txt", prompt)
+    skill_text = b"Pinned test-only Skill.\n"
+    skill_resource = {
+        "path": str(SANDBOX_SKILL_PATH),
+        "mounted": condition == "B",
+    }
+    extra_files = [{"path": "input/prompt.txt", "sha256": hashlib.sha256(prompt).hexdigest()}]
+    if condition == "B":
+        skill_host_path = run_root / "input/pinned-skill/review-changes/SKILL.md"
+        _private_write(skill_host_path, skill_text)
+        for directory in skill_host_path.parents[:3]:
+            directory.chmod(0o700)
+        skill_bundle = run_root / "skill-bundle.zip"
+        with zipfile.ZipFile(skill_bundle, "w") as archive:
+            archive.writestr("review-changes/SKILL.md", skill_text)
+        skill_bundle.chmod(0o600)
+        skill_resource.update({
+            "host_path": str(skill_host_path.resolve()),
+            "zip_path": "skill-bundle.zip",
+            "zip_sha256": hashlib.sha256(skill_bundle.read_bytes()).hexdigest(),
+            "zip_member": "review-changes/SKILL.md",
+            "member_sha256": hashlib.sha256(skill_text).hexdigest(),
+        })
+        extra_files.extend([
+            {
+                "path": "input/pinned-skill/review-changes/SKILL.md",
+                "sha256": hashlib.sha256(skill_text).hexdigest(),
+            },
+            {
+                "path": "skill-bundle.zip",
+                "sha256": skill_resource["zip_sha256"],
+            },
+        ])
     normalizer = run_root / "artifacts/runtime_trace.py"
     _private_write(normalizer, TRACE_NORMALIZER.read_bytes())
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "files": [
             {"path": relative, "sha256": hashlib.sha256(payload).hexdigest()}
             for relative, payload in binding_payloads.items()
-        ],
+        ] + extra_files,
+        "skill_resource": skill_resource,
     }
     _private_write(
         run_root / "artifacts/source-bundle-manifest.json",
@@ -300,7 +373,7 @@ def _fake_cli_slot(tmp_path: Path) -> tuple[Path, dict]:
         "schema_version": 1,
         "benchmark_id": BENCHMARK_ID,
         "case_id": "case0002",
-        "condition": "A",
+        "condition": condition,
         "run_order": 1,
         "replicate": 1,
         "attempt": 1,
@@ -309,17 +382,60 @@ def _fake_cli_slot(tmp_path: Path) -> tuple[Path, dict]:
     }
     _private_write(run_root / "run-metadata.json", (json.dumps(metadata) + "\n").encode())
 
-    executable = tmp_path / "fake-bin" / "codex"
+    canaries = {
+        "sibling": tmp_path / "sibling-run" / "private.txt",
+        "operator": tmp_path / "operator" / "private.txt",
+        "checkout": Path(__file__).resolve().parents[1] / "eval" / "run_ab_batch.py",
+    }
+    for name in ("sibling", "operator"):
+        _private_write(canaries[name], b"not visible in the bwrap namespace\n")
     script = """#!/usr/bin/python3
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 args = sys.argv[1:]
 output_path = Path(args[args.index("--output-last-message") + 1])
+input_path = Path.cwd()
+auth_path = Path(os.environ["CODEX_HOME"]) / "auth.json"
+skill_path = Path(__SKILL_PATH__)
+skill_read = subprocess.run(["/usr/bin/cat", "--", str(skill_path)], capture_output=True)
+readonly = getattr(os, "ST_RDONLY", 1)
+checks = {{
+    "input_read_only": bool(os.statvfs(input_path).f_flag & readonly),
+    "auth_present": auth_path.is_file(),
+    "auth_read_only": bool(os.statvfs(auth_path).f_flag & readonly),
+    "output_writable": not bool(os.statvfs(output_path).f_flag & readonly),
+    "environment_cleared": set(os.environ) == {
+        "PATH", "HOME", "CODEX_HOME", "TMPDIR", "LC_CTYPE", "PWD",
+    },
+    "sibling_hidden": not Path(__SIBLING_CANARY__).exists(),
+    "operator_hidden": not Path(__OPERATOR_CANARY__).exists(),
+    "checkout_hidden": not Path(__CHECKOUT_CANARY__).exists(),
+    "skill_read_expected": __SKILL_READ_CHECK__,
+    "auth_write_denied": False,
+    "input_write_denied": False,
+}}
+try:
+    os.open(auth_path, os.O_WRONLY | os.O_APPEND)
+except OSError:
+    checks["auth_write_denied"] = True
+else:
+    raise AssertionError("auth mount accepted a write open")
+try:
+    os.open(input_path / "reviewer-input.json", os.O_WRONLY | os.O_APPEND)
+except OSError:
+    checks["input_write_denied"] = True
+else:
+    raise AssertionError("slot input accepted a write open")
+if not all(checks.values()):
+    raise AssertionError("sandbox mount checks failed: " + json.dumps(checks, sort_keys=True))
+(Path(os.environ["CODEX_HOME"]) / "sandbox-check.json").write_text(json.dumps(checks))
 output_path.write_text(json.dumps({
     "schema_version": 1,
     "case_id": "case0002",
-    "condition": "A",
+    "condition": "__CONDITION__",
     "run_status": "completed",
     "review_status": "completed",
     "scope": {"base": "abc", "head": "def", "paths": ["src.py"]},
@@ -338,15 +454,43 @@ output_path.write_text(json.dumps({
     "tool_runs": []
 }))
 print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}), flush=True)
+print(json.dumps({"type": "item.completed", "item": {
+    "type": "command_execution",
+    "id": "skill-cat-call",
+    "command": "cat -- " + str(skill_path),
+    "aggregated_output": skill_read.stdout.decode("utf-8"),
+}}), flush=True)
 print(json.dumps({"type": "turn.completed"}), flush=True)
 """
-    executable.parent.mkdir(mode=0o700)
+    script = (
+        script.replace("__SIBLING_CANARY__", repr(str(canaries["sibling"])))
+        .replace("__OPERATOR_CANARY__", repr(str(canaries["operator"])))
+        .replace("__CHECKOUT_CANARY__", repr(str(canaries["checkout"])))
+        .replace("__SKILL_PATH__", repr(str(SANDBOX_SKILL_PATH)))
+        .replace("__CONDITION__", condition)
+        .replace(
+            "__SKILL_READ_CHECK__",
+            "skill_read.returncode == 0" if condition == "B" else "skill_read.returncode != 0",
+        )
+        .replace("checks = {{", "checks = {")
+        .replace("\n}}\ntry:", "\n}\ntry:")
+    )
+    executable = run_root / "input" / "codex"
     executable.write_text(script, encoding="utf-8")
     executable.chmod(0o700)
+    manifest["files"].append({
+        "path": "input/codex",
+        "sha256": hashlib.sha256(script.encode()).hexdigest(),
+    })
+    _private_write(
+        run_root / "artifacts/source-bundle-manifest.json",
+        (json.dumps(manifest, sort_keys=True) + "\n").encode(),
+    )
     config = {
-        "schema_version": 1,
+        "schema_version": 2,
         "codex_executable": str(executable),
         "strace_executable": "/usr/bin/strace",
+        "bwrap_executable": str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
         "model": "gpt-6.1-sol",
         "provider_definition": {
             "name": "custom",
@@ -388,20 +532,39 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         self.assertEqual(events[2]["event"], "open")
         self.assertEqual(events[3]["path"], host_path)
 
-    @unittest.skipUnless(Path("/usr/bin/strace").is_file(), "strace is required for the adapter trace test")
     def test_fake_cli_is_wrapped_and_all_outputs_are_sealed(self) -> None:
+        if not Path("/usr/bin/strace").is_file():
+            self.skipTest("strace is required for the adapter trace test")
+        if not Path("/usr/bin/codex").exists():
+            self.skipTest("the Codex-bundled bwrap runtime is required for the adapter test")
         with tempfile.TemporaryDirectory() as temp_dir:
             run_root, config = _fake_cli_slot(Path(temp_dir))
+            fake_home = Path(temp_dir) / "host-home"
+            _private_write(fake_home / ".codex" / "auth.json", b"test-only auth placeholder\n")
             with self.assertRaisesRegex(ValueError, "GO authorization gate"):
                 execute_slot(run_root, config)
-            result = execute_slot(run_root, config, go_authorized=True)
+            with mock.patch("pathlib.Path.home", return_value=fake_home):
+                result = execute_slot(run_root, config, go_authorized=True)
 
             self.assertEqual(result["run_status"], "completed")
             self.assertTrue(result["host_output_json_object"])
-            self.assertEqual(result["runtime_evidence"]["status"], "verified")
+            self.assertEqual(
+                result["runtime_evidence"]["status"],
+                "verified",
+                result.get("runtime_evidence_verification_error"),
+            )
+            self.assertFalse(result["runtime_evidence"]["protocol_violation"])
+            self.assertIsNone(result["runtime_evidence"]["verified_loaded"])
             self.assertEqual(result["runtime_evidence"]["supervisor_exit_code"], 0)
             self.assertEqual(result["runtime_evidence"]["common_binding_status"], "verified")
-            argv = json.loads((run_root / "runtime/adapter-start.json").read_bytes())["argv"]
+            start = json.loads((run_root / "runtime/adapter-start.json").read_bytes())
+            argv = start["argv"]
+            self.assertEqual(argv[0], "/usr/bin/strace")
+            self.assertIn(config["bwrap_executable"], argv)
+            self.assertIn("--unshare-all", argv)
+            self.assertIn("--share-net", argv)
+            self.assertIn("--ro-bind", argv)
+            self.assertIn("--clearenv", argv)
             self.assertIn("--ignore-user-config", argv)
             self.assertIn("--ignore-rules", argv)
             self.assertIn('model_providers.custom.name="custom"', argv)
@@ -424,6 +587,65 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(
                 json.loads((run_root / "runtime/codex-events.jsonl").read_text().splitlines()[0])["thread_id"],
                 "fake-thread",
+            )
+            checks = json.loads((run_root / "runtime/codex-home/sandbox-check.json").read_bytes())
+            self.assertTrue(all(checks.values()))
+            trace_path = run_root / "runtime/strace.log"
+            parsed_trace = parse_raw_trace(trace_path.read_bytes())
+            self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
+            assert any(
+                event["event"] == "open"
+                and event.get("path") == str(SANDBOX_SKILL_PATH)
+                and event.get("success") is False
+                for event in parsed_trace["events"]
+            )
+            self.assertFalse(any(
+                event.get("path") == str(SANDBOX_SKILL_PATH)
+                and (
+                    (event["event"] == "open" and event.get("success") is True)
+                    or (event["event"] == "read" and event.get("bytes_read", 0) > 0)
+                )
+                for event in parsed_trace["events"]
+            ))
+            evidence = json.loads((run_root / "runtime-evidence.json").read_bytes())
+            self.assertEqual(evidence["raw_trace"]["sha256"], sha256_file(trace_path))
+            self.assertEqual(
+                evidence["supervisor_events"]["sha256"],
+                sha256_file(run_root / "runtime/supervisor-events.jsonl"),
+            )
+            self.assertEqual(
+                evidence["codex_events"]["sha256"],
+                sha256_file(run_root / "runtime/codex-events.jsonl"),
+            )
+
+    def test_bwrap_allows_b_to_read_and_verifies_the_pinned_skill(self) -> None:
+        if not Path("/usr/bin/strace").is_file():
+            self.skipTest("strace is required for the adapter trace test")
+        if not Path("/usr/bin/codex").exists():
+            self.skipTest("the Codex-bundled bwrap runtime is required for the adapter test")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_root, config = _fake_cli_slot(Path(temp_dir), condition="B")
+            fake_home = Path(temp_dir) / "host-home"
+            _private_write(fake_home / ".codex" / "auth.json", b"test-only auth placeholder\n")
+            with mock.patch("pathlib.Path.home", return_value=fake_home):
+                result = execute_slot(run_root, config, go_authorized=True)
+
+            self.assertEqual(result["run_status"], "completed")
+            self.assertEqual(
+                result["runtime_evidence"]["status"],
+                "verified",
+                result.get("runtime_evidence_verification_error"),
+            )
+            self.assertTrue(result["runtime_evidence"]["verified_loaded"])
+            self.assertEqual(result["runtime_evidence"]["skill_load_status"], "verified_loaded")
+            self.assertFalse(result["runtime_evidence"]["protocol_violation"])
+            parsed_trace = parse_raw_trace((run_root / "runtime/strace.log").read_bytes())
+            self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
+            assert any(
+                event["event"] == "read"
+                and event.get("path") == str(SANDBOX_SKILL_PATH)
+                and event.get("bytes_read", 0) > 0
+                for event in parsed_trace["events"]
             )
 
 

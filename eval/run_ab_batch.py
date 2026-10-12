@@ -58,6 +58,11 @@ TRACE_SYSCALLS = (
     "execve,execveat,open,openat,openat2,creat,close,read,pread64,readv,preadv,preadv2,"
     "mmap,mmap2,pipe,pipe2,dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork"
 )
+SANDBOX_INPUT = Path("/slot/input")
+SANDBOX_OUTPUT = Path("/slot/raw-model-output.txt")
+SANDBOX_CODEX_HOME = Path("/codex-home")
+SANDBOX_SKILL_PATH = SANDBOX_INPUT / "pinned-skill" / "review-changes" / "SKILL.md"
+SANDBOX_PATH = "/usr/bin:/bin"
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -290,12 +295,12 @@ def _runtime_config(data: bytes) -> dict[str, Any]:
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ValueError("runtime config must be UTF-8 JSON") from exc
     required = {
-        "schema_version", "codex_executable", "strace_executable",
+        "schema_version", "codex_executable", "strace_executable", "bwrap_executable",
         "model", "provider_definition", "reasoning_effort", "timeout_seconds",
     }
-    if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 1:
+    if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 2:
         raise ValueError("runtime config has an unsupported shape")
-    for name in ("codex_executable", "strace_executable"):
+    for name in ("codex_executable", "strace_executable", "bwrap_executable"):
         executable = value.get(name)
         if (
             not isinstance(executable, str)
@@ -303,6 +308,9 @@ def _runtime_config(data: bytes) -> dict[str, Any]:
             or not os.access(executable, os.X_OK)
         ):
             raise ValueError(f"runtime config {name} must name an executable absolute path")
+    expected_bwrap = _find_bundled_bwrap(Path(value["codex_executable"]))
+    if Path(value["bwrap_executable"]).resolve(strict=True) != expected_bwrap:
+        raise ValueError("runtime config bwrap_executable must use the selected Codex package's bundled binary")
     model = value.get("model")
     if not isinstance(model, str) or not model.strip() or model != model.strip():
         raise ValueError("runtime config model must be a non-empty string")
@@ -360,11 +368,28 @@ def _codex_config_overrides(config: dict[str, Any]) -> list[str]:
     return overrides
 
 
+def _find_bundled_bwrap(codex_executable: Path) -> Path:
+    codex_executable = codex_executable.resolve(strict=True)
+    candidates: set[Path] = set()
+    for parent in codex_executable.parents:
+        package_dir = parent / "node_modules" / "@openai"
+        if package_dir.is_dir():
+            candidates.update(
+                path.resolve(strict=True)
+                for path in package_dir.glob("codex-linux-*/vendor/*/codex-resources/bwrap")
+                if path.is_file() and os.access(path, os.X_OK)
+            )
+    if len(candidates) != 1:
+        raise ValueError("could not identify one executable Codex-bundled bwrap binary")
+    return candidates.pop()
+
+
 def _freeze_runtime_config(
     codex_config_path: Path,
     *,
     codex_executable: Path,
     strace_executable: Path,
+    bwrap_executable: Path | None = None,
     timeout_seconds: int = 3600,
     reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
@@ -391,9 +416,12 @@ def _freeze_runtime_config(
         "requires_openai_auth": provider_source.get("requires_openai_auth"),
     }
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
         "codex_executable": str(codex_executable.resolve(strict=True)),
         "strace_executable": str(strace_executable.resolve(strict=True)),
+        "bwrap_executable": str(
+            (bwrap_executable or _find_bundled_bwrap(codex_executable)).resolve(strict=True)
+        ),
         "model": source.get("model"),
         "provider_definition": provider_definition,
         "reasoning_effort": selected_effort,
@@ -406,8 +434,11 @@ def _preflight_codex_config(config: dict[str, Any]) -> None:
     executable = config["codex_executable"]
     overrides = _codex_config_overrides(config)
     with tempfile.TemporaryDirectory(prefix="ab-codex-config-check-") as isolated_codex_home:
-        environment = os.environ.copy()
-        environment["CODEX_HOME"] = isolated_codex_home
+        environment = {
+            "PATH": SANDBOX_PATH,
+            "HOME": isolated_codex_home,
+            "CODEX_HOME": isolated_codex_home,
+        }
         checks = (
             [executable, *overrides, "features", "list"],
             [executable, "exec", "--ignore-user-config", "--ignore-rules", *overrides, "--version"],
@@ -520,12 +551,12 @@ def _zip_tree(source: Path, target: Path) -> tuple[str, str]:
     return sha256_file(target), sha256_file(source / "SKILL.md")
 
 
-def _read_prompt(common_prompt: bytes, skill_host_path: str | None) -> bytes:
+def _read_prompt(common_prompt: bytes, skill_prompt_path: str | None) -> bytes:
     prompt = common_prompt.rstrip(b"\n")
-    if skill_host_path is not None:
+    if skill_prompt_path is not None:
         prompt += (
             b"\nFor condition B, read and follow the pinned Skill source at "
-            + skill_host_path.encode("utf-8")
+            + skill_prompt_path.encode("utf-8")
             + b" using cat -- <path>. The input is presealed and has no .git; "
             b"do not claim a Git-based Skill preparation workflow ran.\n"
         )
@@ -597,8 +628,10 @@ def preseal_plan(
                 manifest_files.append({"path": relative, "sha256": sha256_bytes(payload), "bytes": len(payload)})
 
             condition = slot["condition"]
-            skill_resource = None
-            skill_host_path = None
+            skill_resource = {
+                "path": str(SANDBOX_SKILL_PATH),
+                "mounted": condition == "B",
+            }
             if condition == "B":
                 skill_dest = input_root / "pinned-skill" / "review-changes"
                 skill_files = _copy_source_tree(skill_source, skill_dest, manifest_base=run_root)
@@ -611,15 +644,20 @@ def preseal_plan(
                     "sha256": bundle_sha256,
                     "bytes": skill_bundle.stat().st_size,
                 })
-                skill_resource = {
+                skill_resource.update({
                     "host_path": skill_host_path,
                     "zip_path": "skill-bundle.zip",
                     "zip_sha256": bundle_sha256,
                     "zip_member": "review-changes/SKILL.md",
                     "member_sha256": member_sha256,
-                }
+                })
 
-            prompt_bytes = _read_prompt(common_prompt, skill_host_path)
+            skill_prompt_path = (
+                skill_resource["path"]
+                if condition == "B"
+                else None
+            )
+            prompt_bytes = _read_prompt(common_prompt, skill_prompt_path)
             _write_private(input_root / "prompt.txt", prompt_bytes)
             manifest_files.append({
                 "path": "input/prompt.txt",
@@ -627,7 +665,7 @@ def preseal_plan(
                 "bytes": len(prompt_bytes),
             })
             manifest = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "benchmark_id": plan["benchmark_id"],
                 "case_id": slot["case_id"],
                 "condition": condition,
@@ -635,8 +673,7 @@ def preseal_plan(
                 "immutable_plan_sha256": immutable_plan_sha256(plan),
                 "files": sorted(manifest_files, key=lambda item: item["path"]),
             }
-            if skill_resource is not None:
-                manifest["skill_resource"] = skill_resource
+            manifest["skill_resource"] = skill_resource
             _write_json(artifacts / "source-bundle-manifest.json", manifest)
             _write_private(artifacts / "runtime_trace.py", normalizer_bytes)
             _write_private(artifacts / "batch-plan.json", plan_bytes)
@@ -817,6 +854,56 @@ def _empty_runtime_evidence(run_status: str, reason: str) -> dict[str, Any]:
     }
 
 
+def _sandbox_codex_executable(executable: str, input_root: Path) -> str:
+    resolved = Path(executable).resolve(strict=True)
+    try:
+        relative = resolved.relative_to(input_root.resolve(strict=True))
+    except ValueError:
+        try:
+            resolved.relative_to(Path("/usr"))
+        except ValueError as exc:
+            raise ValueError("Codex executable must be under /usr or the mounted slot input") from exc
+        return str(resolved)
+    return str(SANDBOX_INPUT / relative)
+
+
+def _bwrap_argv(
+    config: dict[str, Any],
+    *,
+    codex_argv: list[str],
+    input_root: Path,
+    raw_output: Path,
+    codex_home: Path,
+    auth_file: Path,
+) -> list[str]:
+    return [
+        config["bwrap_executable"],
+        "--unshare-all", "--share-net",
+        "--ro-bind", "/usr", "/usr",
+        "--ro-bind", "/lib", "/lib",
+        "--ro-bind", "/lib64", "/lib64",
+        "--dev", "/dev",
+        "--proc", "/proc",
+        "--tmpfs", "/tmp",
+        "--symlink", "/usr/bin", "/bin",
+        "--symlink", "/usr/sbin", "/sbin",
+        "--dir", "/slot",
+        "--ro-bind", str(input_root), str(SANDBOX_INPUT),
+        "--bind", str(raw_output), str(SANDBOX_OUTPUT),
+        "--dir", str(SANDBOX_CODEX_HOME),
+        "--bind", str(codex_home), str(SANDBOX_CODEX_HOME),
+        "--ro-bind", str(auth_file), str(SANDBOX_CODEX_HOME / "auth.json"),
+        "--clearenv",
+        "--setenv", "PATH", SANDBOX_PATH,
+        "--setenv", "HOME", str(SANDBOX_CODEX_HOME),
+        "--setenv", "CODEX_HOME", str(SANDBOX_CODEX_HOME),
+        "--setenv", "TMPDIR", "/tmp",
+        "--setenv", "LC_CTYPE", "C.UTF-8",
+        "--chdir", str(SANDBOX_INPUT),
+        "--", *codex_argv,
+    ]
+
+
 def execute_slot(
     run_root: Path,
     config: dict[str, Any],
@@ -839,22 +926,43 @@ def execute_slot(
     stdout_path = runtime / "codex-events.jsonl"
     stderr_path = runtime / "strace-stderr.log"
     trace_path = runtime / "strace.log"
+    input_root = run_root / "input"
+    codex_home = runtime / "codex-home"
+    auth_file = Path.home() / ".codex" / "auth.json"
+    try:
+        auth_stat = auth_file.lstat()
+    except OSError as exc:
+        raise ValueError("the Codex auth file is unavailable for the isolated runtime") from exc
+    if not stat.S_ISREG(auth_stat.st_mode) or stat.S_IMODE(auth_stat.st_mode) & 0o077:
+        raise ValueError("the Codex auth file must be a private regular file")
+    if codex_home.exists():
+        raise ValueError(f"isolated CODEX_HOME already exists: {codex_home}")
+    _mkdir_private(codex_home)
+    _write_private(codex_home / "auth.json", b"")
     for path in (raw_output, stdout_path, stderr_path, trace_path):
         _write_private(path, b"")
 
     codex_argv = [
-        config["codex_executable"], "exec", "--json", "--ephemeral",
+        _sandbox_codex_executable(config["codex_executable"], input_root), "exec", "--json", "--ephemeral",
         "--ignore-user-config", "--ignore-rules", *_codex_config_overrides(config),
         "--sandbox", "read-only", "--skip-git-repo-check",
-        "--output-schema", str((run_root / "input" / "protocol" / "host-output.schema.json").resolve()),
-        "--output-last-message", str(raw_output.resolve()),
-        "--cd", str((run_root / "input").resolve()),
+        "--output-schema", str(SANDBOX_INPUT / "protocol" / "host-output.schema.json"),
+        "--output-last-message", str(SANDBOX_OUTPUT),
+        "--cd", str(SANDBOX_INPUT),
     ]
     codex_argv.append("-")
+    bwrap_argv = _bwrap_argv(
+        config,
+        codex_argv=codex_argv,
+        input_root=input_root,
+        raw_output=raw_output,
+        codex_home=codex_home,
+        auth_file=auth_file,
+    )
     strace_argv = [
         config["strace_executable"], "-f", "-yy", "-s", "4096",
         "-e", "raw=read,pread64,readv,preadv,preadv2", "-e", f"trace={TRACE_SYSCALLS}",
-        "-o", str(trace_path.resolve()), "--", *codex_argv,
+        "-o", str(trace_path.resolve()), "--", *bwrap_argv,
     ]
 
     started_at = _utc_now()
@@ -865,7 +973,8 @@ def execute_slot(
     _write_json(runtime / "adapter-start.json", {
         "schema_version": 1,
         "started_at": started_at,
-        "argv": codex_argv,
+        "argv": strace_argv,
+        "codex_argv": codex_argv,
     })
     with _set_umask(0o077), stdout_path.open("wb") as stdout_stream, stderr_path.open("wb") as stderr_stream:
         try:
@@ -874,6 +983,7 @@ def execute_slot(
                 stdin=subprocess.PIPE,
                 stdout=stdout_stream,
                 stderr=stderr_stream,
+                env={"PATH": SANDBOX_PATH},
                 start_new_session=True,
                 close_fds=True,
             )
@@ -949,7 +1059,7 @@ def execute_slot(
         "host_reported_run_status": reported_status,
         "timed_out": timed_out,
         "failure_reason": failure_reason,
-        "argv": codex_argv,
+        "argv": strace_argv,
         "trace_complete": parsed_trace["complete"],
         "trace_reason": parsed_trace["reason"],
         "trace_unknown": parsed_trace["unknown"],
@@ -971,7 +1081,11 @@ def execute_slot(
         manifest_path,
         artifacts / "runtime_trace.py",
         common_bindings=common_bindings,
-        pinned_skill_host_path=skill_resource["host_path"] if isinstance(skill_resource, dict) else None,
+        pinned_skill_host_path=(
+            skill_resource["host_path"]
+            if isinstance(skill_resource, dict) and isinstance(skill_resource.get("host_path"), str)
+            else None
+        ),
     )
     _write_json(run_root / "runtime-evidence.json", evidence)
     preview_record: dict[str, Any] = {
@@ -980,7 +1094,7 @@ def execute_slot(
         "input": {"review_manifest_sha256": sha256_file(common_bindings["review_manifest"])},
         "artifacts": {},
     }
-    if isinstance(skill_resource, dict):
+    if isinstance(skill_resource, dict) and skill_resource.get("mounted") is True:
         preview_record["artifacts"]["skill_bundle"] = skill_resource["zip_path"]
         preview_record["skill_provenance"] = {"bundle_sha256": skill_resource["zip_sha256"]}
     try:
@@ -1029,7 +1143,7 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
         run_roots.append(run_root)
 
     results: list[dict[str, Any]] = []
-    for run_root in run_roots:
+    for slot, run_root in zip(plan["slots"], run_roots, strict=True):
         try:
             results.append(execute_slot(run_root, config, go_authorized=True))
         except Exception as exc:
@@ -1040,6 +1154,22 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
                 "failure_reason": f"adapter_failure:{exc.__class__.__name__}",
                 "detail": str(exc),
             })
+            ledger_path = run_root / "slot-failure-ledger.json"
+            _write_json(ledger_path, {
+                "schema_version": 1,
+                "case_id": slot["case_id"],
+                "condition": slot["condition"],
+                "run_order": slot["run_order"],
+                "replicate": slot["replicate"],
+                "attempt": slot["attempt"],
+                "run_status": "failed",
+                "failure_reason": f"adapter_failure:{exc.__class__.__name__}",
+                "artifacts": _artifact_refs(run_root),
+            })
+            _write_private(
+                ledger_path.with_suffix(ledger_path.suffix + ".sha256"),
+                f"{sha256_file(ledger_path)}  {ledger_path.name}\n".encode("ascii"),
+            )
             results.append({
                 "case_id": run_root.parts[-3],
                 "run_root": str(run_root),
