@@ -68,7 +68,7 @@ SANDBOX_PATH = "/usr/bin:/bin"
 
 def _build_trace_argv(strace_executable: str, trace_path: Path, command: list[str]) -> list[str]:
     return [
-        strace_executable, "-f", "-yy", "-s", str(STRACE_STRING_LIMIT),
+        strace_executable, "-f", "--decode-pids=pidns", "-yy", "-s", str(STRACE_STRING_LIMIT),
         "-e", "raw=read,pread64,readv,preadv,preadv2", "-e", f"trace={TRACE_SYSCALLS}",
         "-o", str(trace_path.resolve()), "--", *command,
     ]
@@ -666,6 +666,20 @@ def _preflight_codex_config(config: dict[str, Any]) -> None:
             "HOME": isolated_codex_home,
             "CODEX_HOME": isolated_codex_home,
         }
+        try:
+            strace_check = subprocess.run(
+                [config["strace_executable"], "--help"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=environment,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("strace PID namespace decoding preflight could not run") from exc
+        if strace_check.returncode != 0 or b"--decode-pids=pidns" not in strace_check.stdout:
+            raise ValueError("strace must support --decode-pids=pidns for runtime trace attribution")
         checks = (
             [executable, *overrides, "features", "list"],
             [executable, "exec", "--ignore-user-config", "--ignore-rules", *overrides, "--version"],

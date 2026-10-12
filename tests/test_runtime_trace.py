@@ -106,7 +106,7 @@ def test_repeated_close_ebadf_is_known_only_after_same_pid_close_without_reopen(
     ])
 
     closes = [event for event in parsed["events"] if event["event"] == "close"]
-    assert parsed["normalizer"]["version"] == "6"
+    assert parsed["normalizer"]["version"] == "9"
     assert closes[1]["known_closed"] is True
     assert closes[2]["known_closed"] is False
     assert closes[4]["known_closed"] is False
@@ -130,6 +130,66 @@ def test_fork_inherits_observed_descriptors_without_global_invalidation() -> Non
     assert parsed["complete"] is True
     assert parsed["unknown"] == []
     assert len(parsed["attribution_unknown"]) == 1
+
+
+def test_pid_namespace_clone_translation_preserves_shared_fd_table() -> None:
+    parsed = _parse([
+        '900 open("/synthetic/shared", O_RDONLY) = 3',
+        "900 clone3({flags=CLONE_VM|CLONE_FILES|CLONE_THREAD, set_tid=[2 /* 12002 in strace's PID NS */]}, 88) = 2 /* 12002 in strace's PID NS */",
+        "12002 read(0x3, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    assert parsed["complete"] is True
+    assert parsed["unknown"] == []
+    assert parsed["attribution_unknown"] == []
+    read = next(event for event in parsed["events"] if event["event"] == "read")
+    assert read["pid"] == 12002
+    assert read["path"] == "/synthetic/shared"
+
+
+def test_clone_without_pid_namespace_translation_rejects_unobserved_child_pid() -> None:
+    parsed = _parse([
+        '901 open("/synthetic/shared", O_RDONLY) = 3',
+        "901 clone3({flags=CLONE_VM|CLONE_FILES|CLONE_THREAD}, 88) = 2",
+        "12003 read(0x3, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 2,
+        "reason": "process_creation_child_pid_not_observed",
+        "pid": 901,
+        "operation": "clone3",
+    }]
+    assert parsed["attribution_unknown"] == [{
+        "trace_line": 3,
+        "reason": "fd_not_opened_absolutely_in_same_pid",
+        "pid": 12003,
+        "operation": "read",
+    }]
+    read = next(event for event in parsed["events"] if event["event"] == "read")
+    assert read["path"] is None
+
+
+def test_clone_without_pid_namespace_translation_rejects_live_pid_collision() -> None:
+    parsed = _parse([
+        '901 open("/synthetic/parent", O_RDONLY) = 3',
+        "901 clone(child_stack=NULL, flags=SIGCHLD) = 902",
+        '902 open("/synthetic/child", O_RDONLY) = 3',
+        "901 clone3({flags=CLONE_VM|CLONE_FILES|CLONE_THREAD}, 88) = 902",
+        "902 read(0x3, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 4,
+        "reason": "process_creation_child_pid_conflicts_with_live_trace_pid",
+        "pid": 901,
+        "operation": "clone3",
+    }]
+    read = next(event for event in parsed["events"] if event["event"] == "read")
+    assert read["path"] == "/synthetic/child"
+    assert read["path"] != "/synthetic/parent"
 
 
 def test_unrecognized_clone_preserves_inherited_paths_until_fd_table_changes() -> None:
@@ -345,6 +405,14 @@ def test_open_fd_annotation_does_not_erase_normalized_request_path() -> None:
         "/usr/lib/x86_64-linux-gnu/libc.so.6",
         "/usr/lib/x86_64-linux-gnu/libc.so.6.0.0",
     ),
+    (
+        "/lib/x86_64-linux-gnu/libcap.so.2",
+        "/usr/lib/x86_64-linux-gnu/libcap.so.2.44",
+    ),
+    (
+        "/lib/x86_64-linux-gnu/libpcre2-8.so.0",
+        "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.10.4",
+    ),
 ])
 def test_known_open_path_aliases_do_not_create_trace_conflicts(
     requested: str,
@@ -548,7 +616,7 @@ def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
     assert identity["name"] == "eval.runtime_trace"
-    assert identity["version"] == "6"
+    assert identity["version"] == "9"
     assert identity["source_sha256"] == hashlib.sha256(module_path.read_bytes()).hexdigest()
 
 

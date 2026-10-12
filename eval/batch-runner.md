@@ -156,7 +156,7 @@ result. Successful `slot-result.json` files bind every artifact digest; an
 adapter exception writes `slot-failure-ledger.json` and an adjacent SHA-256
 sidecar for the partial artifacts before any later slot may start. All
 evidence files are mode 0600 under mode 0700 run directories. The adapter uses
-`strace -f -yy` with raw `read`, `pread64`, `readv`,
+`strace -f --decode-pids=pidns -yy` with raw `read`, `pread64`, `readv`,
 `preadv`, and `preadv2` buffers and an explicit syscall list that includes
 process creation, pipes, descriptor operations, and file mappings. It does not
 trace environment values or network payload syscalls. Host-reported model/version values are not proof of remote
@@ -184,7 +184,7 @@ events leave the trace incomplete. Each event keeps the parser's observed PID
 and one-based `trace_line`. Bind `call_id` only from the matching CLI event; do
 not infer process IDs or descriptor paths in the adapter.
 
-Capture with `strace -f -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2`, including `eventfd` and `eventfd2`, without buffer dumping; set
+Capture with `strace -f --decode-pids=pidns -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2`, including `eventfd` and `eventfd2`, without buffer dumping; set
 `umask 077`, and verify all evidence files are mode 0600
 with run directories mode 0700. Raw read buffers must remain pointers. Never
 trace environment values, headers, or network payloads. The adapter records its

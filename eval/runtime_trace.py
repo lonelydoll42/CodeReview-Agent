@@ -1,13 +1,14 @@
 """Conservatively normalize syscall events from raw strace output.
 
-Capture with ``strace -f -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2``. Read
-buffers must remain raw pointers; decoded buffer text is rejected so the trace
-cannot carry file data.
+Capture with ``strace -f --decode-pids=pidns -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2``.
+Read buffers must remain raw pointers; decoded buffer text is rejected so the
+trace cannot carry file data.
 """
 
 from __future__ import annotations
 
 import ast
+from bisect import bisect_right
 import hashlib
 import posixpath
 import re
@@ -16,7 +17,7 @@ from typing import Any
 
 
 NORMALIZER_NAME = "eval.runtime_trace"
-NORMALIZER_VERSION = "6"
+NORMALIZER_VERSION = "9"
 STRACE_STRING_LIMIT = 65536
 NORMALIZER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -24,6 +25,7 @@ _PID_PREFIX = re.compile(r"^(?:\[pid\s+(?P<bracketed>\d+)\]|(?P<plain>\d+))\s+(?
 _CALL = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\((?P<args>.*)\)\s+=\s+(?P<result>.*)$")
 _NUMBER = r"-?(?:0x[0-9a-fA-F]+|\d+)"
 _RETURN = re.compile(rf"^\s*({_NUMBER})\b(?:\s+([A-Z][A-Z0-9_]+))?")
+_STRACE_NAMESPACE_PID = re.compile(r"/\*\s*(?P<pid>\d+)\s+in strace's PID NS\s*\*/")
 _UNAVAILABLE_RESULT = re.compile(
     r"^\s*\?(?:\s+(?P<restart_code>"
     r"ERESTART(?:SYS|NOHAND|NOINTR|_RESTARTBLOCK))\b"
@@ -87,6 +89,12 @@ def _split_args(value: str) -> list[str]:
     return args
 
 
+def _call_args(name: str, value: str) -> list[str]:
+    if name in {"clone", "clone3"}:
+        value = _STRACE_NAMESPACE_PID.sub("", value)
+    return _split_args(value)
+
+
 def _literal_string(value: str) -> str:
     parsed = ast.literal_eval(value.strip())
     if not isinstance(parsed, str) or not parsed.isascii():
@@ -106,6 +114,15 @@ def _return(result: str) -> tuple[int, str | None]:
     if match is None:
         raise ValueError("syscall result is not an integer")
     return _integer(match.group(1)), match.group(2)
+
+
+def _clone_child_trace_pid(result: str) -> tuple[int, str | None, bool]:
+    child_pid, error = _return(result)
+    translated = _STRACE_NAMESPACE_PID.search(result)
+    if error is None:
+        if translated is not None:
+            child_pid = int(translated.group("pid"))
+    return child_pid, error, translated is not None
 
 
 def _unavailable_syscall_result(result: str) -> tuple[bool, str | None]:
@@ -192,24 +209,27 @@ def _known_path_equivalent(requested: str, observed: str) -> bool:
     if requested == observed:
         return True
 
+    requested_candidates = [requested]
     for alias, target in (("/lib", "/usr/lib"), ("/lib64", "/usr/lib64")):
         if requested == alias or requested.startswith(alias + "/"):
             resolved = target + requested[len(alias):]
             if resolved == observed:
                 return True
+            requested_candidates.append(resolved)
 
-    requested_parent, requested_name = posixpath.split(requested)
     observed_parent, observed_name = posixpath.split(observed)
     library_roots = ("/lib/", "/lib64/", "/usr/lib/", "/usr/lib64/")
-    soname = re.fullmatch(r"lib[^/]+\.so(?:\.\d+)*", requested_name)
-    if (
-        requested_parent == observed_parent
-        and requested_parent.startswith(library_roots)
-        and soname is not None
-        and observed_name.startswith(requested_name + ".")
-        and re.fullmatch(r"(?:\d+\.)*\d+", observed_name[len(requested_name) + 1:])
-    ):
-        return True
+    for candidate in requested_candidates:
+        requested_parent, requested_name = posixpath.split(candidate)
+        soname = re.fullmatch(r"lib[^/]+\.so(?:\.\d+)*", requested_name)
+        if (
+            requested_parent == observed_parent
+            and requested_parent.startswith(library_roots)
+            and soname is not None
+            and observed_name.startswith(requested_name + ".")
+            and re.fullmatch(r"(?:\d+\.)*\d+", observed_name[len(requested_name) + 1:])
+        ):
+            return True
     return False
 
 
@@ -513,6 +533,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
         mark_unknown(max(1, len(text.splitlines())), "trace_ends_with_unterminated_line")
 
     records: list[dict[str, Any]] = []
+    record_indices_by_pid: dict[int, list[int]] = {}
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
@@ -522,6 +543,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             records.append({"line": line_number, "body": line, "pid": None})
             continue
         pid = int(prefix.group("bracketed") or prefix.group("plain"))
+        record_indices_by_pid.setdefault(pid, []).append(len(records))
         records.append({"line": line_number, "body": prefix.group("body"), "pid": pid})
 
     pending_calls: dict[int, dict[str, Any]] = {}
@@ -565,8 +587,8 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
         if call is None or call.group("name") not in {"clone", "clone3", "fork", "vfork"}:
             continue
         try:
-            call_args = _split_args(call.group("args"))
-            child_pid, error = _return(call.group("result"))
+            call_args = _call_args(call.group("name"), call.group("args"))
+            child_pid, error, namespace_pid = _clone_child_trace_pid(call.group("result"))
         except (SyntaxError, ValueError):
             continue
         if error is None and child_pid > 0:
@@ -574,6 +596,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             process_starts[start_index] = {
                 "parent_pid": pid,
                 "child_pid": child_pid,
+                "namespace_pid": namespace_pid,
                 "syscall": call.group("name"),
                 "shares_fds": _clone_shares_fds(call.group("name"), call_args),
                 "line": record.get("call_start_line", record["line"]),
@@ -584,6 +607,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             pid=pid, operation=pending["name"],
         )
 
+    live_trace_pids: set[int] = set()
     for index, record in enumerate(records):
         pid = record["pid"]
         line_number = record["line"]
@@ -594,20 +618,43 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                 mark_unknown(line_number, "missing_pid_prefix", operation=operation)
             continue
 
+        live_trace_pids.add(pid)
         relation = process_starts.get(index)
         if relation is not None:
+            child_pid = relation["child_pid"]
+            if child_pid in live_trace_pids:
+                mark_unknown(
+                    relation["line"],
+                    "process_creation_child_pid_conflicts_with_live_trace_pid",
+                    pid=pid,
+                    operation=relation["syscall"],
+                )
+                relation = None
+            elif not relation["namespace_pid"]:
+                child_records = record_indices_by_pid.get(child_pid, [])
+                if bisect_right(child_records, index) == len(child_records):
+                    mark_unknown(
+                        relation["line"],
+                        "process_creation_child_pid_not_observed",
+                        pid=pid,
+                        operation=relation["syscall"],
+                    )
+                    relation = None
+
+        if relation is not None:
+            child_pid = relation["child_pid"]
             parent_table = fd_tables.setdefault(pid, {})
             if relation["shares_fds"] is True:
-                fd_tables[relation["child_pid"]] = parent_table
+                fd_tables[child_pid] = parent_table
             elif relation["shares_fds"] is False:
-                fd_tables[relation["child_pid"]] = _copy_fd_table(parent_table)
+                fd_tables[child_pid] = _copy_fd_table(parent_table)
             else:
-                fd_tables[relation["child_pid"]] = _copy_fd_table(parent_table)
-                uncertain_fd_sharing[relation["child_pid"]] = parent_table
-            successfully_closed[relation["child_pid"]] = set()
+                fd_tables[child_pid] = _copy_fd_table(parent_table)
+                uncertain_fd_sharing[child_pid] = parent_table
+            successfully_closed[child_pid] = set()
             events.append(_event(
                 "process_create", pid, relation["line"],
-                child_pid=relation["child_pid"], syscall=relation["syscall"],
+                child_pid=child_pid, syscall=relation["syscall"],
             ))
 
         table = fd_tables.setdefault(pid, {})
@@ -619,6 +666,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             fd_tables.pop(pid, None)
             uncertain_fd_sharing.pop(pid, None)
             successfully_closed.pop(pid, None)
+            live_trace_pids.discard(pid)
             continue
         signaled = _SIGNALED.match(body)
         if signaled is not None:
@@ -628,6 +676,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             fd_tables.pop(pid, None)
             uncertain_fd_sharing.pop(pid, None)
             successfully_closed.pop(pid, None)
+            live_trace_pids.discard(pid)
             continue
 
         if record.get("pending_start") is not None:
@@ -650,7 +699,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
         }:
             continue
         try:
-            args = _split_args(call.group("args"))
+            args = _call_args(name, call.group("args"))
             unavailable, restart_code = _unavailable_syscall_result(call.group("result"))
             if unavailable:
                 mark_unknown(

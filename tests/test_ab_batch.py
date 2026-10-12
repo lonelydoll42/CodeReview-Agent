@@ -493,6 +493,7 @@ class RuntimeConfigTests(unittest.TestCase):
     def test_overrides_are_explicit_and_preflight_is_non_model(self) -> None:
         config = {
             "codex_executable": sys.executable,
+            "strace_executable": "/usr/bin/strace",
             "model": "gpt-6.1-sol",
             "provider_definition": {
                 "name": "custom",
@@ -508,13 +509,15 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertIn("model_providers.custom.requires_openai_auth=true", overrides)
         self.assertIn('model_reasoning_effort="max"', overrides)
 
-        completed = mock.Mock(returncode=0)
+        completed = mock.Mock(returncode=0, stdout=b"--decode-pids=pidns")
         with mock.patch("eval.run_ab_batch.subprocess.run", return_value=completed) as run:
             _preflight_codex_config(config)
 
-        self.assertEqual(run.call_count, 2)
-        features_argv = run.call_args_list[0].args[0]
-        execution_argv = run.call_args_list[1].args[0]
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_args_list[0].args[0], ["/usr/bin/strace", "--help"])
+        self.assertEqual(run.call_args_list[0].kwargs["stdout"], -1)
+        features_argv = run.call_args_list[1].args[0]
+        execution_argv = run.call_args_list[2].args[0]
         self.assertEqual(features_argv[-2:], ["features", "list"])
         self.assertEqual(execution_argv[1:4], ["exec", "--ignore-user-config", "--ignore-rules"])
         self.assertIn("--version", execution_argv)
@@ -522,7 +525,26 @@ class RuntimeConfigTests(unittest.TestCase):
             [item for item in features_argv if item == "-c"],
             [item for item in execution_argv if item == "-c"],
         )
-        self.assertEqual(run.call_args_list[0].kwargs["stdin"], -3)
+        self.assertEqual(run.call_args_list[1].kwargs["stdin"], -3)
+
+    def test_preflight_rejects_strace_without_pid_namespace_decoding(self) -> None:
+        config = {
+            "codex_executable": sys.executable,
+            "strace_executable": "/usr/bin/strace",
+            "model": "gpt-6.1-sol",
+            "provider_definition": {
+                "name": "custom",
+                "base_url": "http://127.0.0.1:8080/v1",
+                "wire_api": "responses",
+                "requires_openai_auth": True,
+            },
+            "reasoning_effort": "max",
+        }
+        unsupported = mock.Mock(returncode=0, stdout=b"usage: strace [options]")
+        with mock.patch("eval.run_ab_batch.subprocess.run", return_value=unsupported) as run:
+            with self.assertRaisesRegex(ValueError, "must support --decode-pids=pidns"):
+                _preflight_codex_config(config)
+        self.assertEqual(run.call_count, 1)
 
     def test_runtime_config_file_is_private_and_does_not_copy_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -812,6 +834,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual(argv[argv.index("-s") + 1], str(STRACE_STRING_LIMIT))
+        self.assertIn("--decode-pids=pidns", argv)
         self.assertNotIn("-v", argv)
         self.assertIn("raw=read,pread64,readv,preadv,preadv2", argv)
         self.assertEqual(argv[-2:], ["--", "/usr/bin/true"])
@@ -1147,6 +1170,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(start["immutable_plan_sha256"], result["immutable_plan_sha256"])
             argv = start["argv"]
             self.assertEqual(argv[0], "/usr/bin/strace")
+            self.assertIn("--decode-pids=pidns", argv)
             self.assertEqual(argv[argv.index("-s") + 1], str(STRACE_STRING_LIMIT))
             self.assertNotIn("-v", argv)
             self.assertIn(config["bwrap_executable"], argv)
@@ -1161,6 +1185,9 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertIn('model_providers.custom.wire_api="responses"', argv)
             self.assertIn("model_providers.custom.requires_openai_auth=true", argv)
             self.assertIn('model_reasoning_effort="high"', argv)
+            execution = json.loads((run_root / "runtime/execution.json").read_bytes())
+            self.assertEqual(execution["argv"], argv)
+            self.assertIn("--decode-pids=pidns", execution["argv"])
             for relative in (
                 "runtime/codex-events.jsonl",
                 "runtime/supervisor-events.jsonl",
@@ -1263,7 +1290,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
-    def test_v6_parser_keeps_v5_sidecar_untrusted(self) -> None:
+    def test_v9_parser_keeps_v7_sidecar_untrusted(self) -> None:
         raw_trace = (
             b'701 open("/synthetic/legacy", O_RDONLY) = 3\n'
             b"701 close(3) = 0\n"
@@ -1271,7 +1298,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
         )
         parsed = parse_raw_trace(raw_trace)
         closes = [event for event in parsed["events"] if event["event"] == "close"]
-        self.assertEqual(parsed["normalizer"]["version"], "6")
+        self.assertEqual(parsed["normalizer"]["version"], "9")
         self.assertTrue(closes[1]["known_closed"])
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1286,7 +1313,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
                     "sha256": "b" * 64,
                     "source_raw_trace": raw_ref,
                     "normalizer": {
-                        "version": "5",
+                        "version": "7",
                         "source": {"path": "artifacts/runtime_trace.py", "sha256": "c" * 64},
                     },
                 },
@@ -1298,7 +1325,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
             }
             batch._write_json(root / "runtime-evidence.json", sidecar)
 
-            with self.assertRaisesRegex(ValueError, "normalizer must bind version 6"):
+            with self.assertRaisesRegex(ValueError, "normalizer must bind version 9"):
                 batch.verify_runtime_evidence(root, "runtime-evidence.json", {"run_status": "completed"})
 
     def test_sidecar_hashes_raw_trace_and_binds_normalizer_source(self) -> None:
