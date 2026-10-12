@@ -274,9 +274,24 @@ allowed the Semgrep tests to pass separately (9 passed). Ruff, `pip check`,
 exporter checks passed. These results do not change v3's `closed_incomplete`
 state or produce a quality result.
 
-The older 23-run pilot and its pending human labels remain separate; WorkBuddy
-remains `not_run`, quality metrics remain null, and model identity/cost remain
-unknown. No v4 artifact or execution exists. Next, freeze and run a fresh
-12-slot workflow-only batch; it will validate the workflow, not quality lift.
-The fixed 0.2.1 fixtures remain the release baseline, and PR4/PR5 remain later
-work.
+The v4 closure export is now integrated in `eval/results/`; its
+[summary](results/2026-10-12-ab-workflow-validation-v4-summary.json),
+[evidence](results/2026-10-12-ab-workflow-validation-v4-evidence.json), and
+[check](results/2026-10-12-ab-workflow-validation-v4-check.json) retain
+`closed_incomplete`. Of 12 planned slots, one was launched and completed its
+host/wrapper output (exit 0), but its evidence was invalid; 11 were not
+started. There are zero evidence-valid slots and zero eligible A/B pairs.
+The accepted export bindings do not establish review quality. The sealed v4
+artifacts retain parser v3 and the `c80ab00` baseline; parser v6 applies to
+future runs.
+
+The older 23-run pilot and its ten pending human judgments remain separate;
+WorkBuddy remains `not_run`, quality metrics remain null, and historical
+model identity/cost remain unknown. Those ten judgments must come from human
+reviewers; model output cannot replace them. Next, verify real tracing
+permissions, fixed inputs, output format, and Skill loading evidence before
+running just one case with independent A and B sessions. Both runs must pass
+evidence validation and complete rescoring before the pair is eligible; only
+then should the batch expand. Human judgments require recorded reasons and
+may remain unresolved. The fixed 0.2.1 fixtures remain the release baseline,
+and PR4/PR5 remain later work.
