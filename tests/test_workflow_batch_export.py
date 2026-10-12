@@ -1347,6 +1347,58 @@ def test_closure_export_marks_missing_summary_and_checks_hash_pinned_projection(
     assert result["status"] == "passed"
 
 
+def test_closure_export_check_rejects_summary_and_evidence_tampering_without_mutation(
+    tmp_path: Path,
+) -> None:
+    sources = _closure_fixture(tmp_path)
+    summary_path, evidence_path, check_path = _build_closure(tmp_path, sources)
+    summary_bytes = summary_path.read_bytes()
+    evidence_bytes = evidence_path.read_bytes()
+    original_outputs = {
+        path: path.read_bytes() for path in (summary_path, evidence_path, check_path)
+    }
+    source_names = {
+        "closure_report": sources["closure_report"].name,
+        "post_execution_snapshot": sources["post_snapshot"].name,
+        "partial_workflow_report": sources["partial_report"].name,
+        "pre_execution_snapshot": sources["pre_snapshot"].name,
+        "plan": sources["plan"].name,
+        "runtime_config": sources["runtime_config"].name,
+        "ab_summary": None,
+    }
+
+    def check(summary: bytes, evidence: bytes):
+        return exporter.check_closure_export(
+            summary,
+            evidence,
+            closure_report_bytes=sources["closure_report"].read_bytes(),
+            post_execution_snapshot_bytes=sources["post_snapshot"].read_bytes(),
+            partial_workflow_report_bytes=sources["partial_report"].read_bytes(),
+            pre_execution_snapshot_bytes=sources["pre_snapshot"].read_bytes(),
+            plan_bytes=sources["plan"].read_bytes(),
+            runtime_config_bytes=sources["runtime_config"].read_bytes(),
+            ab_summary_not_generated=True,
+            expected_closure_sha256=_sha(sources["closure_report"].read_bytes()),
+            expected_post_snapshot_sha256=_sha(sources["post_snapshot"].read_bytes()),
+            batch_id="custom-batch-2026",
+            source_names=source_names,
+        )
+
+    assert check(summary_bytes, evidence_bytes)["status"] == "passed"
+
+    tampered_summary = json.loads(summary_bytes)
+    tampered_summary["workflow"]["not_started_slots"] = 10
+    with pytest.raises(exporter.ExportError, match="summary bytes differ"):
+        check(_json_bytes(tampered_summary), evidence_bytes)
+    assert {path: path.read_bytes() for path in original_outputs} == original_outputs
+
+    tampered_evidence = json.loads(evidence_bytes)
+    tampered_evidence["summary_binding"]["sha256"] = "0" * 64
+    with pytest.raises(exporter.ExportError, match="evidence bytes differ"):
+        check(summary_bytes, _json_bytes(tampered_evidence))
+    assert {path: path.read_bytes() for path in original_outputs} == original_outputs
+
+
 def test_closure_export_rejects_unknown_slot_status_without_publishing(tmp_path: Path) -> None:
     sources = _closure_fixture(tmp_path)
     partial = json.loads(sources["partial_report"].read_bytes())
