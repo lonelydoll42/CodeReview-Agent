@@ -721,7 +721,6 @@ installation_id.chmod(0o644)
 output_path.write_text(json.dumps({
     "schema_version": 1,
     "case_id": "case0002",
-    "condition": "__CONDITION__",
     "run_status": "completed",
     "review_status": "completed",
     "scope": {"base": "abc", "head": "def", "paths": ["src.py"]},
@@ -753,7 +752,6 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
         .replace("__OPERATOR_CANARY__", repr(str(canaries["operator"])))
         .replace("__CHECKOUT_CANARY__", repr(str(canaries["checkout"])))
         .replace("__SKILL_PATH__", repr(str(SANDBOX_SKILL_PATH)))
-        .replace("__CONDITION__", condition)
         .replace(
             "__SKILL_READ_CHECK__",
             "skill_read.returncode == 0" if condition == "B" else "skill_read.returncode != 0",
