@@ -84,6 +84,7 @@ def _refresh_trace_artifacts(
             ("review_manifest", "reviewer-input.json"),
             ("common_prompt", "common-prompt.txt"),
             ("output_schema", "output-schema.json"),
+            ("tool_run_projector", "project-tool-runs.py"),
             ("runtime_config", "runtime-config.json"),
         )
     }
@@ -128,12 +129,14 @@ def _runtime_fixture(
         "review_manifest": artifacts / "reviewer-input.json",
         "common_prompt": artifacts / "common-prompt.txt",
         "output_schema": artifacts / "output-schema.json",
+        "tool_run_projector": artifacts / "project-tool-runs.py",
         "runtime_config": artifacts / "runtime-config.json",
     }
     binding_payloads = {
         "review_manifest": b'{"review":"input"}\n',
         "common_prompt": b"Review the selected changes.\n",
         "output_schema": b'{"type":"object"}\n',
+        "tool_run_projector": b"projector source\n",
         "runtime_config": b'{"model":"requested-model"}\n',
     }
     for name, path in binding_paths.items():

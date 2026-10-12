@@ -78,9 +78,63 @@
     "duration_seconds": {"type": ["number", "null"], "minimum": 0},
     "started_at": {"type": ["string", "null"]},
     "finished_at": {"type": ["string", "null"]},
-    "tool_runs": {"type": "array", "items": {"type": "object"}}
+    "tool_runs": {"type": "array", "items": {"$ref": "#/$defs/tool_run"}}
   },
   "$defs": {
+    "tool_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "version",
+        "rules_version",
+        "status",
+        "duration_ms",
+        "files_scanned",
+        "covered_files",
+        "uncovered_files",
+        "findings",
+        "error_code",
+        "error",
+        "note"
+      ],
+      "properties": {
+        "tool": {"type": "string", "minLength": 1},
+        "version": {"type": ["string", "null"]},
+        "rules_version": {"type": ["string", "null"]},
+        "status": {"enum": ["missing", "failed", "completed"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "files_scanned": {"type": "array", "items": {"type": "string"}},
+        "covered_files": {"type": "array", "items": {"type": "string"}},
+        "uncovered_files": {"type": "array", "items": {"$ref": "#/$defs/uncovered_file"}},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/tool_finding"}},
+        "error_code": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]},
+        "note": {"type": ["string", "null"]}
+      }
+    },
+    "uncovered_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "reason"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "tool_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "rule_id", "severity", "message", "metadata_json"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "line": {"type": ["integer", "null"], "minimum": 1},
+        "rule_id": {"type": "string", "minLength": 1},
+        "severity": {"type": "string", "minLength": 1},
+        "message": {"type": "string"},
+        "metadata_json": {"type": "string"}
+      }
+    },
     "finding": {
       "type": "object",
       "additionalProperties": false,

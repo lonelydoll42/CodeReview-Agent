@@ -79,6 +79,7 @@ class AbBatchPlanTests(unittest.TestCase):
 
     def test_host_output_schema_constants_and_strict_objects_are_consistent(self) -> None:
         schema = json.loads((Path(__file__).parents[1] / "eval/schemas/host-output.schema.json").read_bytes())
+        batch.validate_host_output_schema(schema)
         object_nodes: list[tuple[str, dict]] = []
 
         def walk(value: object, path: str = "$") -> None:
@@ -117,8 +118,107 @@ class AbBatchPlanTests(unittest.TestCase):
             self.assertIs(node.get("additionalProperties"), False, path)
             self.assertEqual(set(node.get("required", [])), set(properties), path)
 
-        # tool_runs keeps its existing opaque-object protocol; every declared object is strict.
-        self.assertEqual(opaque_objects, ["$/properties/tool_runs/items"])
+        self.assertEqual(opaque_objects, [])
+        tool_run = schema["$defs"]["tool_run"]
+        self.assertEqual(
+            tool_run["properties"]["status"]["enum"],
+            ["missing", "failed", "completed"],
+        )
+        self.assertEqual(tool_run["properties"]["error"]["type"], ["string", "null"])
+        self.assertEqual(tool_run["properties"]["note"]["type"], ["string", "null"])
+        tool_finding = schema["$defs"]["tool_finding"]
+        self.assertEqual(tool_finding["properties"]["metadata_json"]["type"], "string")
+        self.assertNotIn("metadata", tool_finding["properties"])
+
+    def test_host_output_schema_rejects_open_objects_at_nested_schema_paths(self) -> None:
+        schema_path = Path(__file__).parents[1] / "eval/schemas/host-output.schema.json"
+        schema = json.loads(schema_path.read_bytes())
+        legacy_schema = json.loads(json.dumps(schema))
+        legacy_schema["properties"]["tool_runs"]["items"] = {"type": "object"}
+        with self.assertRaisesRegex(ValueError, r"\$/properties/tool_runs/items.*additionalProperties"):
+            batch.validate_host_output_schema(legacy_schema)
+
+        nested_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["entries"],
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {"anyOf": [{"type": "object"}, {"type": "null"}]},
+                }
+            },
+            "$defs": {"open": {"type": "object"}},
+        }
+        with self.assertRaises(ValueError) as raised:
+            batch.validate_host_output_schema(nested_schema)
+        self.assertRegex(str(raised.exception), r"\$/properties/entries/items/anyOf/0.*additionalProperties")
+        self.assertRegex(str(raised.exception), r"\$.*\$defs/open.*additionalProperties")
+
+    def test_host_output_schema_rejects_unconstrained_nested_items_and_cycles(self) -> None:
+        schema_path = Path(__file__).parents[1] / "eval/schemas/host-output.schema.json"
+        schema = json.loads(schema_path.read_bytes())
+        open_object = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [],
+            "properties": {},
+        }
+
+        for items, message in (
+            (True, "boolean schemas are unsupported"),
+            (False, "boolean schemas are unsupported"),
+            ({}, "schema must constrain instances"),
+            ({"anyOf": [open_object, True]}, "boolean schemas are unsupported"),
+        ):
+            with self.subTest(items=items):
+                candidate = json.loads(json.dumps(schema))
+                candidate["properties"]["tool_runs"]["items"] = items
+                with self.assertRaisesRegex(ValueError, message):
+                    batch.validate_host_output_schema(candidate)
+
+        recursive = json.loads(json.dumps(schema))
+        recursive["properties"]["tool_runs"]["items"] = {"$ref": "#/$defs/recursive"}
+        recursive["$defs"]["recursive"] = {
+            "anyOf": [
+                {"$ref": "#/$defs/recursive"},
+                open_object,
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "recursive references are unsupported"):
+            batch.validate_host_output_schema(recursive)
+
+    def test_host_output_schema_requires_required_to_match_properties(self) -> None:
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [],
+            "properties": {"value": {"type": "string"}},
+        }
+        with self.assertRaisesRegex(ValueError, r"\$/required.*every declared property"):
+            batch.validate_host_output_schema(schema)
+
+    def test_invalid_schema_stops_prepare_and_execute_before_codex_preflight(self) -> None:
+        index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
+        plan = build_slot_plan(index)
+        plan_bytes = (json.dumps(plan, sort_keys=True) + "\n").encode()
+        authorized_plan = dict(plan, plan_state="go", execution_authorized=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            invalid_schema = root / "open-schema.json"
+            schema = json.loads((Path(__file__).parents[1] / "eval/schemas/host-output.schema.json").read_bytes())
+            schema["properties"]["tool_runs"]["items"] = {"type": "object"}
+            invalid_schema.write_text(json.dumps(schema), encoding="utf-8")
+            with (
+                mock.patch.object(batch, "HOST_SCHEMA", invalid_schema),
+                mock.patch("eval.run_ab_batch._preflight_codex_config") as preflight,
+            ):
+                with self.assertRaisesRegex(ValueError, "strict schema contract"):
+                    preseal_plan(plan, plan_bytes, root / "prepared", root / "missing-config.json")
+                with self.assertRaisesRegex(ValueError, "strict schema contract"):
+                    execute_plan(authorized_plan, root / "prepared", root / "missing-config.json")
+            preflight.assert_not_called()
+            self.assertFalse((root / "prepared").exists())
 
     def test_missing_selected_case_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing selected case metadata"):
@@ -144,6 +244,9 @@ class AbBatchPlanTests(unittest.TestCase):
             skill = root / "skill"
             skill.mkdir()
             (skill / "SKILL.md").write_text("Pinned test-only Skill.\n", encoding="utf-8")
+            (skill / "scripts").mkdir()
+            projector = Path(__file__).parents[1] / "skills/review-changes/scripts/project_tool_runs.py"
+            (skill / "scripts/project_tool_runs.py").write_bytes(projector.read_bytes())
             cases = []
             for case_id in ("case0002", "case0003", "case0006"):
                 reviewer = root / f"{case_id}.json"
@@ -234,6 +337,10 @@ class AbBatchPlanTests(unittest.TestCase):
             )
             self.assertNotIn(str(case3_b).encode(), (case3_b / "input/prompt.txt").read_bytes())
             self.assertTrue((case3_b / manifest["skill_resource"]["zip_path"]).is_file())
+            self.assertEqual(
+                (case2_a / "input/protocol/project_tool_runs.py").read_bytes(),
+                projector.read_bytes(),
+            )
             self.assertEqual(manifest["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertEqual(stat.S_IMODE(case3_b.stat().st_mode), 0o700)
             self.assertEqual(
@@ -478,12 +585,15 @@ def _fake_cli_slot(
         if condition == "A"
         else f"synthetic prompt\nRead {SANDBOX_SKILL_PATH}\n".encode()
     )
-    schema = b'{"type":"object"}\n'
+    schema = batch.HOST_SCHEMA.read_bytes()
     config_bytes = b'{"schema_version":2,"codex_executable":"/fake/codex","strace_executable":"/usr/bin/strace","bwrap_executable":"/fake/bwrap","model":"gpt-6.1-sol","provider_definition":{"name":"custom","base_url":"http://127.0.0.1:8080/v1","wire_api":"responses","requires_openai_auth":true},"reasoning_effort":"high","timeout_seconds":30}\n'
     binding_payloads = {
         "input/reviewer-input.json": reviewer,
         "input/common-prompt.md": prompt,
         "input/protocol/host-output.schema.json": schema,
+        "input/protocol/project_tool_runs.py": (
+            Path(__file__).parents[1] / "skills/review-changes/scripts/project_tool_runs.py"
+        ).read_bytes(),
         "input/runtime-config.json": config_bytes,
     }
     for relative, payload in binding_payloads.items():
@@ -698,6 +808,33 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
 
 
 class BatchExecutionAdapterTests(unittest.TestCase):
+    def test_execute_slot_rejects_open_presealed_schema_before_adapter_start(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_root, config = _fake_cli_slot(Path(temp_dir))
+            schema_path = run_root / "input/protocol/host-output.schema.json"
+            schema = json.loads(schema_path.read_bytes())
+            schema["properties"]["tool_runs"]["items"] = {"type": "object"}
+            schema_bytes = (json.dumps(schema, sort_keys=True) + "\n").encode()
+            schema_path.write_bytes(schema_bytes)
+
+            manifest_path = run_root / "artifacts/source-bundle-manifest.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            schema_entry = next(
+                item for item in manifest["files"]
+                if item["path"] == "input/protocol/host-output.schema.json"
+            )
+            schema_entry["sha256"] = hashlib.sha256(schema_bytes).hexdigest()
+            manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+
+            preseal_path = run_root / "preseal.json"
+            preseal = json.loads(preseal_path.read_bytes())
+            preseal["source_bundle_manifest"] = batch.make_artifact_ref(run_root, manifest_path)
+            preseal_path.write_text(json.dumps(preseal, sort_keys=True) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "additionalProperties to false"):
+                execute_slot(run_root, config, go_authorized=True)
+            self.assertFalse((run_root / "runtime/adapter-start.json").exists())
+
     def test_execute_plan_records_failure_artifacts_and_continues(self) -> None:
         index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
         plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
@@ -1166,6 +1303,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
             (root / "artifacts/reviewer-input.json").write_bytes(b"{}\n")
             (root / "artifacts/common-prompt.md").write_bytes(b"Review.\n")
             (root / "artifacts/output-schema.json").write_bytes(b"{}\n")
+            (root / "artifacts/tool-run-projector.py").write_bytes(b"projector source\n")
             (root / "artifacts/runtime-config.json").write_bytes(b"{}\n")
             source = root / "normalizer.py"
             source.write_text("normalizer source\n", encoding="utf-8")
@@ -1181,6 +1319,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
                     "review_manifest": root / "artifacts/reviewer-input.json",
                     "common_prompt": root / "artifacts/common-prompt.md",
                     "output_schema": root / "artifacts/output-schema.json",
+                    "tool_run_projector": root / "artifacts/tool-run-projector.py",
                     "runtime_config": root / "artifacts/runtime-config.json",
                 },
             )
@@ -1195,7 +1334,10 @@ class RuntimeEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(
                 set(evidence["common_bindings"]),
-                {"review_manifest", "common_prompt", "output_schema", "runtime_config"},
+                {
+                    "review_manifest", "common_prompt", "output_schema",
+                    "tool_run_projector", "runtime_config",
+                },
             )
 
     def test_sidecar_rejects_mismatched_raw_trace_binding(self) -> None:

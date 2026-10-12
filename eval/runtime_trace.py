@@ -22,6 +22,11 @@ _PID_PREFIX = re.compile(r"^(?:\[pid\s+(?P<bracketed>\d+)\]|(?P<plain>\d+))\s+(?
 _CALL = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\((?P<args>.*)\)\s+=\s+(?P<result>.*)$")
 _NUMBER = r"-?(?:0x[0-9a-fA-F]+|\d+)"
 _RETURN = re.compile(rf"^\s*({_NUMBER})\b(?:\s+([A-Z][A-Z0-9_]+))?")
+_UNAVAILABLE_RESULT = re.compile(
+    r"^\s*\?(?:\s+(?P<restart_code>"
+    r"ERESTART(?:SYS|NOHAND|NOINTR|_RESTARTBLOCK))\b"
+    r"(?:\s+\([^()\r\n]*\))?)?\s*$"
+)
 _FD = re.compile(rf"^\s*({_NUMBER})\b")
 _READ_SYSCALLS = {"read", "pread64", "readv", "preadv", "preadv2"}
 _RELEVANT = re.compile(
@@ -95,6 +100,11 @@ def _return(result: str) -> tuple[int, str | None]:
     if match is None:
         raise ValueError("syscall result is not an integer")
     return _integer(match.group(1)), match.group(2)
+
+
+def _unavailable_syscall_result(result: str) -> tuple[bool, str | None]:
+    match = _UNAVAILABLE_RESULT.fullmatch(result)
+    return match is not None, match.group("restart_code") if match is not None else None
 
 
 def _fd(value: str) -> int:
@@ -395,6 +405,17 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             continue
         try:
             args = _split_args(call.group("args"))
+            unavailable, restart_code = _unavailable_syscall_result(call.group("result"))
+            if unavailable:
+                mark_unknown(
+                    line_number,
+                    "syscall_result_unavailable_restart" if restart_code else "syscall_result_unavailable",
+                    pid=pid,
+                    operation=name,
+                )
+                if restart_code is not None:
+                    unknown[-1]["restart_code"] = restart_code
+                continue
             returned, error = _return(call.group("result"))
         except (SyntaxError, ValueError):
             mark_unknown(line_number, "malformed_relevant_syscall", pid=pid, operation=name)

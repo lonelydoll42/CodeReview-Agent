@@ -669,10 +669,12 @@ def _attach_verified_common_runtime(
         "review_manifest": run_dir / record["input"]["review_manifest"],
         "common_prompt": artifact_dir / "common-prompt.txt",
         "output_schema": artifact_dir / "output-schema.json",
+        "tool_run_projector": artifact_dir / "project-tool-runs.py",
         "runtime_config": artifact_dir / "runtime-config.json",
     }
     binding_paths["common_prompt"].write_bytes(common_prompt)
     binding_paths["output_schema"].write_bytes(b'{"type":"object"}\n')
+    binding_paths["tool_run_projector"].write_bytes(b"projector source\n")
     binding_paths["runtime_config"].write_bytes(b'{"requested_model":"test"}\n')
     for path in binding_paths.values():
         path.chmod(0o600)
@@ -777,6 +779,7 @@ def test_summary_requires_equal_common_runtime_bindings_and_separates_completion
         "review_manifest": True,
         "common_prompt": True,
         "output_schema": True,
+        "tool_run_projector": True,
         "runtime_config": True,
     }
     assert pair["runtime_evidence_checks"] == {

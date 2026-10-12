@@ -135,7 +135,12 @@ def _manifest(package: Path, repository: Path, scope: str, output: Path, *extra:
     return json.loads(output.read_text(encoding="utf-8"))
 
 
-def _fake_semgrep(directory: Path, *, version_status: int = 0) -> None:
+def _fake_semgrep(
+    directory: Path,
+    *,
+    version_status: int = 0,
+    with_metadata_finding: bool = False,
+) -> None:
     directory.mkdir()
     executable = directory / "semgrep"
     executable.write_text(
@@ -145,7 +150,15 @@ def _fake_semgrep(directory: Path, *, version_status: int = 0) -> None:
         "if args == ['--version']:\n"
         f"    print('fake semgrep')\n    raise SystemExit({version_status})\n"
         "paths = args[args.index('--quiet') + 1:]\n"
-        "print(json.dumps({'results': [], 'errors': []}))\n",
+        + (
+            "print(json.dumps({'results': [{'path': paths[0], 'start': {'line': 2}, "
+            "'check_id': 'fixture.rule', 'extra': {'severity': 'WARNING', "
+            "'message': 'fixture candidate', 'metadata': {'cwe': 'CWE-89', "
+            "'owasp': ['A01:2021'], 'details': {'source': 'fixture', 'confidence': 0.9}}}}], "
+            "'errors': []}))\n"
+            if with_metadata_finding
+            else "print(json.dumps({'results': [], 'errors': []}))\n"
+        ),
         encoding="utf-8",
     )
     executable.chmod(0o755)
@@ -225,7 +238,7 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     assert staged_final["content_fingerprint"] != worktree["content_fingerprint"]
 
     fake_bin = tmp_path / "fake-bin"
-    _fake_semgrep(fake_bin)
+    _fake_semgrep(fake_bin, with_metadata_finding=True)
     static_output = tmp_path / "tool-runs.json"
     static_env = dict(os.environ)
     static_env["PATH"] = str(fake_bin) + os.pathsep + static_env.get("PATH", "")
@@ -246,6 +259,67 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     assert scan["rules_version"]
     assert "src/permissions.py" in scan["covered_files"]
     assert {item["file"] for item in scan["uncovered_files"]} == {"src/handler.go"}
+    raw_metadata = scan["findings"][0]["metadata"]
+    raw_output_bytes = static_output.read_bytes()
+    assert raw_metadata == {
+        "cwe": "CWE-89",
+        "owasp": ["A01:2021"],
+        "details": {"source": "fixture", "confidence": 0.9},
+    }
+
+    projection = _run_skill(
+        package,
+        "project_tool_runs.py",
+        "--input",
+        str(static_output),
+        cwd=repository.parent,
+    )
+    projected_runs = json.loads(projection.stdout)
+    assert projected_runs[0]["note"] is None
+    assert projected_runs[0]["findings"][0]["metadata_json"] == json.dumps(
+        raw_metadata,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    assert "metadata" not in projected_runs[0]["findings"][0]
+    output_schema = json.loads((ROOT / "eval/schemas/host-output.schema.json").read_text(encoding="utf-8"))
+    tool_run_schema = output_schema["$defs"]["tool_run"]
+    finding_schema = output_schema["$defs"]["tool_finding"]
+    assert set(projected_runs[0]) == set(tool_run_schema["properties"])
+    assert set(projected_runs[0]["findings"][0]) == set(finding_schema["properties"])
+    assert static_output.read_bytes() == raw_output_bytes
+
+    unknown_input = tmp_path / "unknown-tool-run-field.json"
+    unknown_static = copy.deepcopy(static)
+    unknown_static["tool_runs"][0]["unexpected"] = "must not be discarded"
+    _write_json(unknown_input, unknown_static)
+    rejected_projection = _run_skill(
+        package,
+        "project_tool_runs.py",
+        "--input",
+        str(unknown_input),
+        cwd=repository.parent,
+        check=False,
+    )
+    assert rejected_projection.returncode == 2
+    assert "unsupported fields" in rejected_projection.stderr
+
+    non_finite_input = tmp_path / "non-finite-tool-metadata.json"
+    non_finite_static = copy.deepcopy(static)
+    non_finite_static["tool_runs"][0]["findings"][0]["metadata"]["details"]["confidence"] = float("nan")
+    non_finite_input.write_text(json.dumps(non_finite_static), encoding="utf-8")
+    rejected_non_finite = _run_skill(
+        package,
+        "project_tool_runs.py",
+        "--input",
+        str(non_finite_input),
+        cwd=repository.parent,
+        check=False,
+    )
+    assert rejected_non_finite.returncode == 2
+    assert "strict UTF-8 JSON values" in rejected_non_finite.stderr
 
     finding = {
         "finding_id": "owner-access-1",
@@ -322,6 +396,8 @@ def test_independent_package_pins_scopes_context_and_evidence(tmp_path: Path) ->
     assert "authorization_denial" in report
     assert "**Status:** partial" in report
     assert validated["review_status"] == "partial"
+    assert validated["tool_runs"][0]["findings"][0]["metadata"] == raw_metadata
+    assert "metadata_json" not in validated["tool_runs"][0]["findings"][0]
 
     branch_context = {item["filename"]: item for item in branch["context_files"]}
     branch_permission = next(
@@ -665,6 +741,55 @@ def test_static_tool_missing_or_version_failure_remains_explicit(tmp_path: Path)
     assert failed["status"] == "failed"
     assert failed["error_code"] == "semgrep_version_failed"
     assert failed["covered_files"] == []
+
+
+def test_static_projection_preserves_no_supported_language_note(tmp_path: Path) -> None:
+    package = _build_package(tmp_path / "dist")
+    manifest_path = tmp_path / "unsupported-language-manifest.json"
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": "2",
+            "content_fingerprint": "a" * 64,
+            "files": [
+                {
+                    "filename": "src/example.fixture",
+                    "language": "fixture-unknown-language",
+                    "after": {"path": "src/example.fixture", "content": "fixture source\n"},
+                }
+            ],
+        },
+    )
+    fake_bin = tmp_path / "fake-bin"
+    _fake_semgrep(fake_bin)
+    output = tmp_path / "tool-runs.json"
+    env = dict(os.environ)
+    env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+    _run_skill(
+        package,
+        "run_static.py",
+        "--input",
+        str(manifest_path),
+        "--output",
+        str(output),
+        cwd=tmp_path,
+        env=env,
+    )
+
+    raw_output = json.loads(output.read_text(encoding="utf-8"))
+    raw_run = raw_output["tool_runs"][0]
+    assert raw_run["status"] == "completed"
+    assert raw_run["note"] == "No available after-side files match a language in the bundled rules."
+    projection = _run_skill(
+        package,
+        "project_tool_runs.py",
+        "--input",
+        str(output),
+        cwd=tmp_path,
+    )
+    projected_run = json.loads(projection.stdout)[0]
+    assert projected_run["note"] == raw_run["note"]
+    assert projected_run["findings"] == []
 
 
 def test_real_semgrep_scans_the_captured_source_when_available(tmp_path: Path) -> None:

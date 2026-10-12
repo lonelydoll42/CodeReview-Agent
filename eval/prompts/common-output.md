@@ -61,4 +61,6 @@ Use the case-level `reviewer-input.json` at the path supplied by the benchmark r
 
 Allowed `run_status` values are `completed`, `failed`, and `incomplete`. Allowed `review_status` values are `completed`, `partial`, `uncovered`, and `failed`. Use `null` when a value is unknown or unreported. An empty `findings` array means no findings were reported; it does not mean the review was complete. Host-reported `read_paths` are retained as claims and do not independently verify file reads.
 
+For this A/B host-output format, convert a complete `run_static.py` JSON result with `python3 -S protocol/project_tool_runs.py --input <path>` and put its output array in `tool_runs`. The projection carries a run-level `note` and serializes each finding's full `metadata` value as canonical `metadata_json`. It rejects unknown raw fields instead of silently dropping them; retain the original scanner output unchanged.
+
 Store an optional `recheck.json` separately, with the script's `recheck_status` and findings intact. Do not convert an omitted or unrun recheck into an empty successful result.

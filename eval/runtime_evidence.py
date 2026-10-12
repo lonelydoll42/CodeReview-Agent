@@ -22,6 +22,7 @@ COMMON_BINDING_NAMES = (
     "review_manifest",
     "common_prompt",
     "output_schema",
+    "tool_run_projector",
     "runtime_config",
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")

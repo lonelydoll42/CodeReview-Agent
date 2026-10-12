@@ -131,14 +131,16 @@ explicitly sets `PATH`, `HOME`, `CODEX_HOME`, `TMPDIR`, and `LC_CTYPE`. `PWD`
 was present in the six-variable canary, but the adapter does not explicitly
 set it; bwrap or the shell may add it.
 
-The adapter runs slots in
-the frozen order, keeps failures and continues without retrying, and refuses to
-start unless the plan has `plan_state=go` and `execution_authorized=true`.
+The adapter runs slots in the frozen order, records failures without retrying,
+and refuses to start unless the plan has `plan_state=go` and
+`execution_authorized=true`. A coordinator may pause remaining slots; v3 was
+paused after its first failed slot as recorded below.
 The GO fields may change after independent review; the immutable plan digest
 must still match every presealed slot. The v2 command below is the historical
-2026-10-12 invocation, which stopped after its first slot. It is not current
-authorization to retry that batch. The v3 run directory is prepared, but its
-inputs have not been frozen and the batch has not been authorized or executed.
+2026-10-12 invocation, which stopped after its first slot; it is not
+authorization to retry v2. The separately frozen v3 batch has also run and is
+now `closed_incomplete`; see the execution status below. Do not retry either
+batch. No next-batch plan, runtime config, or model request has been issued.
 
 ```sh
 python3 eval/run_ab_batch.py \
@@ -152,7 +154,7 @@ Execution writes raw CLI JSONL, raw model output, strace stderr, raw strace,
 normalized supervisor JSONL, exact exit/timing metadata, and a sealed slot
 result. Successful `slot-result.json` files bind every artifact digest; an
 adapter exception writes `slot-failure-ledger.json` and an adjacent SHA-256
-sidecar for the partial artifacts before the next planned slot starts. All
+sidecar for the partial artifacts before any later slot may start. All
 evidence files are mode 0600 under mode 0700 run directories. The adapter uses
 `strace -f -yy` with raw `read`, `pread64`, `readv`,
 `preadv`, and `preadv2` buffers and an explicit syscall list that includes
@@ -219,17 +221,56 @@ runtime-config identity consistency only. Its artifact-reference check examined
 0 references and reported 12 unavailable slot results, so artifact completeness
 is `incomplete`; this is not a workflow or quality pass. See the [v2 failure report](results/2026-10-12-ab-workflow-v2.md) and [evaluation record](README.md).
 
-The batch runner, artifact failure recording, schema validation, and trace
-normalizer fixes are implemented. The full suite passed 325 tests with 4
-skipped; three Semgrep tests were skipped when Semgrep was absent from `PATH`,
-then 9 Semgrep checks passed with the existing `.venv/bin` on `PATH`. One
-PostgreSQL-dependent test was skipped because `TEST_DATABASE_URL` was unset.
-Independent focused regression checks passed 54 tests, and the workflow
-exporter CLI check passed. These checks cover implementation and workflow
-reproducibility, not A/B evaluation quality.
+The earlier v2 remediation had a historical full-suite result of 325 passed,
+4 skipped; three Semgrep tests were skipped when Semgrep was absent from
+`PATH`, then 9 Semgrep checks passed with the existing `.venv/bin` on `PATH`.
+One PostgreSQL-dependent test was skipped because `TEST_DATABASE_URL` was
+unset. Independent focused regression checks passed 54 tests and the v2
+workflow exporter CLI check passed. These results predate the current v3
+repairs and do not certify them or A/B evaluation quality.
 
-The v3 batch ID is `2026-10-12-ab-workflow-validation-v3`. Its run directory is
-prepared, but its inputs have not been frozen and the batch has not executed;
-it has no quality result. The existing 23-run pilot and its pending human
-labels remain separate; WorkBuddy remains `not_run`, the fixed 0.2.1 fixtures
-remain the release baseline, and PR4/PR5 remain later work.
+The v3 batch ID is `2026-10-12-ab-workflow-validation-v3`. It passed two
+independent GO reviews and formally started, then closed as `closed_incomplete`.
+Of 12 frozen slots, only `case0002/A/rep1` started. Codex rejected the open
+object schema at `properties.tool_runs.items`; the wrapper exited 1 without
+valid JSON. The other 11 slots were paused without retry. Counts: started 1,
+failed 1, unstarted 11, host-completed 0, evidence-valid 0, pairs 0/6. Strict
+build produced 0 records; validate, score, and summarize are NA.
+
+Trace event `11198` is a `pread64` returning a bare `?`, not `ERESTARTSYS`;
+the result is unavailable and the trace remains incomplete. The partial seal's
+`accepted` means only that 98 checked references were consistent; 11 slot
+results are unavailable. The private failure report is outside this repository
+and has SHA-256
+`5e4ccf3b366859d9139235c8861454d18e729fc55f51dd0abc98ec63295559a7`; the
+snapshot-after SHA-256 is
+`e0908e2057bf6fb91d988b1f3b86342af49d6593afe08b4a65d5f0bf3b3c755d`.
+
+The v3 closure export is integrated in `eval/results/`:
+
+- `2026-10-12-ab-workflow-validation-v3-summary.json` SHA-256 `24aef235909d8c554b508fbbb20519742933789477cd5073357bc21608f01e5a`
+- `2026-10-12-ab-workflow-validation-v3-evidence.json` SHA-256 `05a706ff69abeb76c6c6b417d89a1fdefdc0bc538454f5fb49dbd50f226d293f`
+- `2026-10-12-ab-workflow-validation-v3-check.json` SHA-256 `4a424c4e79197cbc2efeebe9240863054e81a048085f2627d0de727957a798eb`
+
+The independent second schema review is GO: the production schema was
+accepted, and actual `tool_runs.items` values of `true` and `{}` were each
+rejected in separate runs; five focused reproduction tests passed. The
+closure export's 30 related CI tests, Ruff, and CLI check passed.
+`eval_reliability_review` gave Limited GO for the actual zero-record v3 closure
+export: sealed-source replay, the summary's actual SHA, and the check agree.
+This GO covers only that zero-record result and cannot be generalized to a
+nonzero summary. Tool projection is complete with 84 independently passed
+focused tests. The full suite passed 358 tests with 4 skips: three Semgrep
+tests could not find the executable on the default PATH, and the PostgreSQL
+integration test lacked `TEST_DATABASE_URL`. Adding `.venv/bin` to PATH
+allowed the Semgrep tests to pass separately (9 passed). Ruff, `pip check`,
+`git diff --check`, and the v3 closure, v2 workflow, and historical pilot
+exporter checks passed. These results do not change v3's `closed_incomplete`
+state or produce a quality result.
+
+The older 23-run pilot and its pending human labels remain separate; WorkBuddy
+remains `not_run`, quality metrics remain null, and model identity/cost remain
+unknown. No v4 artifact or execution exists. Next, freeze and run a fresh
+12-slot workflow-only batch; it will validate the workflow, not quality lift.
+The fixed 0.2.1 fixtures remain the release baseline, and PR4/PR5 remain later
+work.

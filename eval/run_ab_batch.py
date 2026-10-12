@@ -217,6 +217,180 @@ def _canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def validate_host_output_schema(schema: Any, source: str = "host output schema") -> None:
+    """Check the provider-facing schema's closed-object contract without network access."""
+    if not isinstance(schema, dict):
+        raise ValueError(f"{source} must be a JSON Schema object")
+
+    issues: list[str] = []
+    if schema.get("type") != "object":
+        issues.append("$/type: host output root must have type object")
+
+    def child_path(path: str, token: str) -> str:
+        return f"{path}/{token.replace('~', '~0').replace('/', '~1')}"
+
+    def visit(node: Any, path: str, ref_stack: tuple[str, ...] = ()) -> None:
+        if isinstance(node, bool):
+            issues.append(f"{path}: boolean schemas are unsupported; use a constrained schema object")
+            return
+        if not isinstance(node, dict):
+            issues.append(f"{path}: schema branch must be an object or boolean")
+            return
+
+        node_type = node.get("type")
+        if isinstance(node_type, str):
+            type_values = {node_type}
+        elif isinstance(node_type, list) and all(isinstance(item, str) for item in node_type):
+            type_values = set(node_type)
+        else:
+            type_values = set()
+            if "type" in node:
+                issues.append(f"{child_path(path, 'type')}: type must be a string or string array")
+        supported_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
+        if "type" in node and (
+            not type_values
+            or not type_values <= supported_types
+            or (isinstance(node_type, list) and len(type_values) != len(node_type))
+        ):
+            issues.append(f"{child_path(path, 'type')}: type must name supported JSON types")
+
+        enum = node.get("enum")
+        if "enum" in node and (not isinstance(enum, list) or not enum):
+            issues.append(f"{child_path(path, 'enum')}: enum must be a non-empty array")
+
+        choice_keywords = ("allOf", "anyOf", "oneOf")
+        has_choice = False
+        for keyword in choice_keywords:
+            if keyword not in node:
+                continue
+            branches = node[keyword]
+            if not isinstance(branches, list) or not branches:
+                issues.append(f"{child_path(path, keyword)}: schema branches must be a non-empty array")
+            else:
+                has_choice = True
+
+        reference = node.get("$ref")
+        has_reference = isinstance(reference, str)
+        if not (type_values or "const" in node or (isinstance(enum, list) and enum) or has_choice or has_reference):
+            issues.append(
+                f"{path}: schema must constrain instances with type, const, enum, $ref, or non-empty composition"
+            )
+
+        for keyword in ("not", "if", "then", "else", "patternProperties", "contains",
+                        "prefixItems", "unevaluatedItems", "unevaluatedProperties"):
+            if keyword in node:
+                issues.append(f"{child_path(path, keyword)}: keyword is unsupported by the strict schema contract")
+
+        object_schema = "object" in type_values or any(
+            keyword in node
+            for keyword in (
+                "additionalProperties", "dependentRequired", "dependentSchemas", "maxProperties",
+                "minProperties", "patternProperties", "properties", "propertyNames", "required",
+                "unevaluatedProperties",
+            )
+        )
+        if object_schema:
+            properties = node.get("properties")
+            if not isinstance(properties, dict):
+                issues.append(f"{child_path(path, 'properties')}: object schema must declare properties")
+                property_names: set[str] = set()
+            else:
+                property_names = set(properties)
+            if "object" not in type_values:
+                issues.append(f"{child_path(path, 'type')}: object schema must include type object")
+            if node.get("additionalProperties") is not False:
+                issues.append(
+                    f"{child_path(path, 'additionalProperties')}: object schema must set additionalProperties to false"
+                )
+            required = node.get("required")
+            if (
+                not isinstance(required, list)
+                or any(not isinstance(item, str) for item in required)
+                or len(required) != len(set(required))
+                or set(required) != property_names
+            ):
+                issues.append(
+                    f"{child_path(path, 'required')}: required must list every declared property exactly once"
+                )
+
+        schema_maps = ("$defs", "definitions", "properties", "patternProperties", "dependentSchemas")
+        for keyword in schema_maps:
+            if keyword not in node:
+                continue
+            branches = node[keyword]
+            branch_path = child_path(path, keyword)
+            if not isinstance(branches, dict):
+                issues.append(f"{branch_path}: schema map must be an object")
+                continue
+            for name in sorted(branches):
+                visit(branches[name], child_path(branch_path, name), ref_stack)
+
+        schema_arrays = ("allOf", "anyOf", "oneOf", "prefixItems")
+        for keyword in schema_arrays:
+            if keyword not in node:
+                continue
+            branches = node[keyword]
+            branch_path = child_path(path, keyword)
+            if not isinstance(branches, list):
+                issues.append(f"{branch_path}: schema branches must be an array")
+                continue
+            for index, branch in enumerate(branches):
+                visit(branch, child_path(branch_path, str(index)), ref_stack)
+
+        schema_keywords = (
+            "additionalProperties", "contains", "else", "if", "items", "not", "propertyNames",
+            "then", "unevaluatedItems", "unevaluatedProperties",
+        )
+        for keyword in schema_keywords:
+            if keyword not in node:
+                continue
+            branch = node[keyword]
+            branch_path = child_path(path, keyword)
+            if keyword == "items" and isinstance(branch, list):
+                for index, item_schema in enumerate(branch):
+                    visit(item_schema, child_path(branch_path, str(index)), ref_stack)
+            elif isinstance(branch, (dict, bool)):
+                if keyword == "additionalProperties" and branch is False:
+                    continue
+                visit(branch, branch_path, ref_stack)
+
+        if "$ref" in node and not isinstance(reference, str):
+            issues.append(f"{child_path(path, '$ref')}: reference must be a string")
+        elif isinstance(reference, str) and reference != "#" and not reference.startswith("#/"):
+            issues.append(f"{child_path(path, '$ref')}: only local JSON Pointer references are supported offline")
+        elif isinstance(reference, str):
+            target: Any = schema
+            target_path = "$"
+            tokens = [] if reference == "#" else reference[2:].split("/")
+            for token in tokens:
+                token = token.replace("~1", "/").replace("~0", "~")
+                target_path = child_path(target_path, token)
+                if isinstance(target, dict) and token in target:
+                    target = target[token]
+                elif isinstance(target, list) and token.isdecimal() and int(token) < len(target):
+                    target = target[int(token)]
+                else:
+                    issues.append(f"{child_path(path, '$ref')}: unresolved local reference {reference!r}")
+                    break
+            else:
+                if target_path in ref_stack:
+                    issues.append(f"{child_path(path, '$ref')}: recursive references are unsupported")
+                else:
+                    visit(target, target_path, (*ref_stack, target_path))
+
+    visit(schema, "$")
+    if issues:
+        raise ValueError(f"{source} violates the strict schema contract: " + "; ".join(issues))
+
+
+def _validate_host_output_schema_bytes(data: bytes, source: str) -> None:
+    try:
+        schema = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{source} must be UTF-8 JSON") from exc
+    validate_host_output_schema(schema, source)
+
+
 def _write_private(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -638,15 +812,24 @@ def preseal_plan(
         raise ValueError("plan bytes must contain the supplied valid plan") from exc
     if plan_from_bytes != plan:
         raise ValueError("plan bytes do not match the supplied plan object")
+    schema_bytes = HOST_SCHEMA.read_bytes()
+    _validate_host_output_schema_bytes(schema_bytes, str(HOST_SCHEMA))
     config_bytes = runtime_config_path.read_bytes()
     config = _runtime_config(config_bytes)
     _preflight_codex_config(config)
     common_prompt = COMMON_PROMPT.read_bytes()
-    schema_bytes = HOST_SCHEMA.read_bytes()
     normalizer_bytes = TRACE_NORMALIZER.read_bytes()
     skill_source = skill_source.resolve(strict=True)
     if not (skill_source / "SKILL.md").is_file():
         raise ValueError("pinned Skill source must contain SKILL.md")
+    projector_source = skill_source / "scripts" / "project_tool_runs.py"
+    if (
+        projector_source.is_symlink()
+        or projector_source.parent.is_symlink()
+        or not projector_source.is_file()
+    ):
+        raise ValueError("pinned Skill source must contain scripts/project_tool_runs.py")
+    projector_bytes = projector_source.read_bytes()
 
     with _set_umask(0o077):
         _mkdir_private(runs_root)
@@ -670,11 +853,13 @@ def preseal_plan(
             _write_private(input_root / "common-prompt.md", common_prompt)
             _write_private(input_root / "runtime-config.json", config_bytes)
             _write_private(input_root / "protocol" / "host-output.schema.json", schema_bytes)
+            _write_private(input_root / "protocol" / "project_tool_runs.py", projector_bytes)
             for relative, payload in (
                 ("input/reviewer-input.json", reviewer_data),
                 ("input/common-prompt.md", common_prompt),
                 ("input/runtime-config.json", config_bytes),
                 ("input/protocol/host-output.schema.json", schema_bytes),
+                ("input/protocol/project_tool_runs.py", projector_bytes),
             ):
                 manifest_files.append({"path": relative, "sha256": sha256_bytes(payload), "bytes": len(payload)})
 
@@ -1199,6 +1384,12 @@ def _preseal_status(
             raise ValueError(f"prepared input escapes run root: {entry.get('path')}") from exc
         if not path.is_file() or sha256_file(path) != entry["sha256"]:
             raise ValueError(f"prepared input digest mismatch: {entry.get('path')}")
+    schema_path = run_root / "input" / "protocol" / "host-output.schema.json"
+    _validate_host_output_schema_bytes(schema_path.read_bytes(), str(schema_path))
+    if "input/protocol/project_tool_runs.py" not in {
+        entry.get("path") for entry in manifest.get("files", []) if isinstance(entry, dict)
+    }:
+        raise ValueError(f"prepared run is missing the bound tool-run projector: {run_root}")
     return {"metadata": metadata, "manifest": manifest}
 
 
@@ -1446,6 +1637,7 @@ def execute_slot(
         "review_manifest": run_root / "input" / "reviewer-input.json",
         "common_prompt": run_root / "input" / "common-prompt.md",
         "output_schema": run_root / "input" / "protocol" / "host-output.schema.json",
+        "tool_run_projector": run_root / "input" / "protocol" / "project_tool_runs.py",
         "runtime_config": run_root / "input" / "runtime-config.json",
     }
     skill_resource = manifest.get("skill_resource")
@@ -1575,9 +1767,8 @@ def execute_slot(
 
 def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> list[dict[str, Any]]:
     validate_plan(plan, require_go=True)
+    _validate_host_output_schema_bytes(HOST_SCHEMA.read_bytes(), str(HOST_SCHEMA))
     config_bytes = config_path.read_bytes()
-    config = _runtime_config(config_bytes)
-    _preflight_codex_config(config)
     immutable_sha = immutable_plan_sha256(plan)
     run_roots: list[Path] = []
     for slot in plan["slots"]:
@@ -1586,6 +1777,8 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
         if (run_root / "input" / "runtime-config.json").read_bytes() != config_bytes:
             raise ValueError(f"runtime config differs from presealed bytes: {run_root}")
         run_roots.append(run_root)
+    config = _runtime_config(config_bytes)
+    _preflight_codex_config(config)
 
     results: list[dict[str, Any]] = []
     for slot, run_root in zip(plan["slots"], run_roots, strict=True):

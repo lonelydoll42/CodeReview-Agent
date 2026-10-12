@@ -34,17 +34,17 @@ B0 evidence 中 `runs[].artifacts.run_record_sha256` 与 `score_sha256` 没有�
 
 B0 导出中的 raw-output expected 独立匹配 23/23 原始 run records。外部 `run-score-original.tar`（SHA-256 `3562c789dfdcffd7a9abb9395cd41704ec5ce105c051db5b880038a5fed2a0e5`）及 46 条 source manifest 用于核验本轮保存的归档快照；它们证明的是该快照此后的完整性，不能证明这些字节就是 b0 发布时的原始字节。未来重建前仍须核验仓库外归档；导出 CI 不携带私有 run/score 文件，也不能独立证明外部来源完整性。CI 结论只覆盖公开 summary/evidence 的字节和内部一致性。
 
-此前的 pilot/export 补丁回归为 266 passed、4 skipped；独立 core 检查 32 项、exporter 检查 8 项、`python -S` 导出 `check` 和 4 个 tamper probes 均通过。此次 workflow 修复后的完整测试为 325 passed、4 skipped；4 个 skip 中，3 个 Semgrep 测试因该次全量运行的 `PATH` 未包含 Semgrep 而跳过，之后用现有 `.venv/bin` 补跑的 Semgrep 检查为 9 passed；另 1 个 PostgreSQL 测试因未设置 `TEST_DATABASE_URL` 跳过。独立重点回归为 54 passed。Ruff、`pip check`、`git diff --check` 和 workflow exporter CLI `check` 均通过。本轮没有调用模型或执行 v3；这些检查覆盖实现、导出与会话流程，不评定 A/B 质量。strict scoring 对 23 条旧运行仍全部 blocked，人工盲审仍 pending，也没有为这 23 条历史运行创建新的有效评分。
+在 v3 启动前，pilot/export 补丁回归为 266 passed、4 skipped；独立 core 检查 32 项、exporter 检查 8 项、`python -S` 导出 `check` 和 4 个 tamper probes 均通过。较早的 v2 workflow 修复全量测试为 325 passed、4 skipped；3 个 Semgrep 测试因当时 `PATH` 未包含 Semgrep 而跳过，随后用现有 `.venv/bin` 补跑的 Semgrep 检查为 9 passed；另 1 个 PostgreSQL 测试因未设置 `TEST_DATABASE_URL` 跳过。独立重点回归为 54 passed。Ruff、`pip check`、`git diff --check` 和 v2 workflow exporter CLI `check` 均通过。这些历史检查覆盖实现、导出与会话流程，不评定 A/B 质量，也不覆盖后来的 v3 批次或当前待审修补。strict scoring 对 23 条旧运行仍全部 blocked，人工盲审仍 pending，也没有为这 23 条历史运行创建新的有效评分。
 
 后续人工盲审的输入、冻结来源索引、空白模板和操作步骤见[盲审准备指南](results/2026-10-09-ab-pilot-blind-review.md)。这批材料只提供十条 condition-blind prediction 和 source entry；它们不含 agent verdict、oracle mapping 或 human labels，尚未执行人工盲审。覆盖审计仍需保留真实文件读取和工具调用轨迹；Skill bundle digest 只说明包身份，不能证明宿主实际读取或使用了它。
 
-## 2026-10-12 workflow v2 失败与 v3 准备状态
+## 2026-10-12 workflow v2 失败与 v3 关闭状态
 
 [workflow v2 失败报告](results/2026-10-12-ab-workflow-v2.md)记录了基于既有语料的 12-slot 流程复现尝试：1 个 slot 启动，0 个宿主完成，0 个证据有效，11 个未启动；没有生成宿主输出或 run record。seal 的 `accepted` 只表示依赖、冻结计划和 runtime-config 身份一致。artifact-reference 检查实际检查了 0 个引用，12 个 `slot-result.json` 不可用，因此 seal 完整性为 `incomplete`，不代表流程或质量通过。
 
 首个 slot 失败的原因包括：provider 拒绝缺少 `type` 的 `schema_version` 输出 schema；argument 0 的外部二进制 symlink 使 artifact 枚举越界，ledger 错误路径随后重新抛出异常；18 个在成功关闭描述符后出现的 `close`/`EBADF` 事件又使 trace 变为 `unknown`。该批次来自既有语料，不是新盲测；人工标签仍 pending，质量指标仍为 null。完整细节和独立 ledger 核对见失败报告。
 
-可用下列命令重算导出投影并核验其绑定；[已保存的检查结果](results/2026-10-12-ab-workflow-v2-check.json)为 `passed`：
+v2 的历史 projection check 仍可用下列命令重算绑定；[已保存检查结果](results/2026-10-12-ab-workflow-v2-check.json)为 `passed`，仅对应 v2 工件：
 
 ```sh
 python eval/export_workflow_batch.py check \
@@ -58,7 +58,21 @@ python eval/export_workflow_batch.py check \
   --check-output eval/results/2026-10-12-ab-workflow-v2-check.json
 ```
 
-`2026-10-12-ab-workflow-validation-v3` 的 `runs-v3/` 目录已准备；本轮代码补丁和回归检查已完成，但 v3 输入尚未冻结，v3 批次尚未执行，也没有质量通过结论。该流程尝试没有改变旧的 23-run pilot、待完成人工标签、固定 `0.2.1` 夹具或 WorkBuddy `not_run` 状态；PR4 上下文选择器和 PR5 历史报告/发布规划仍在后续队列。
+Standalone Skill 的远端矩阵在提交 `e8c719b635067ac33cca7300ffe8a4584ded3961` 上通过：[run 38198341019](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38198341019)，Linux/Windows × Python 3.10/3.11 四项全过。旧 pilot 的完整性检查也通过：[run 38198341075](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38198341075)；这验证保存工件的一致性，不产生质量结论。
+
+### workflow-validation-v3 执行结果
+
+`2026-10-12-ab-workflow-validation-v3` 在两个独立 GO 后正式启动。12 个冻结 slot 中只有首个 `case0002/A/rep1` 启动：Codex 拒绝了宿主 schema 中开放的 `properties.tool_runs.items` object，wrapper 以 exit 1 结束且未产生有效 JSON；其余 11 个 slot 暂停，没有重试。计数为 started 1、failed 1、unstarted 11、host-completed 0、evidence-valid 0、pairs 0/6。严格 build 得到 0 records，validate、score、summarize 均为 NA。v3 状态为 `closed_incomplete`。
+
+trace 事件 `11198` 实际是 `pread64` 返回裸 `?`，不能解释成 `ERESTARTSYS`；对应结果不可得，trace 保持 incomplete。最终 partial seal 的 `accepted` 仅表示 98 个已检查引用一致；11 个 slot result 不可用，不能据此认定批次或证据完整。私有 failure report 位于仓库外，SHA-256 为 `5e4ccf3b366859d9139235c8861454d18e729fc55f51dd0abc98ec63295559a7`；`snapshot-after` SHA-256 为 `e0908e2057bf6fb91d988b1f3b86342af49d6593afe08b4a65d5f0bf3b3c755d`。
+
+v3 closure export 已集成到仓库，公开投影文件及 SHA-256 如下：
+
+- [summary](results/2026-10-12-ab-workflow-validation-v3-summary.json)：`24aef235909d8c554b508fbbb20519742933789477cd5073357bc21608f01e5a`
+- [evidence](results/2026-10-12-ab-workflow-validation-v3-evidence.json)：`05a706ff69abeb76c6c6b417d89a1fdefdc0bc538454f5fb49dbd50f226d293f`
+- [check](results/2026-10-12-ab-workflow-validation-v3-check.json)：`4a424c4e79197cbc2efeebe9240863054e81a048085f2627d0de727957a798eb`
+
+共享工作区中的 strict schema/preflight 定向 26 项及 trace 定向 21 项通过；normalizer v3 保留 raw trace 的精确 SHA 绑定。schema 二次 review 正式 GO：生产 schema 验证通过，`tool_runs.items` 为 `true` 和 `{}` 的实际输入分别被拒绝，新增 5 项复现测试通过。`eval_reliability_review` 对当前真实 v3 零记录 closure export 给出 Limited GO：封存 source 复算、summary 实际 SHA 与 check 相互一致；该 GO 仅覆盖这份零记录结果，不能外推到非零 summary。closure export 的 30 项相关 CI tests、Ruff 和 CLI check 通过；tool projection 已完成，另有 84 项定向 tests 独立通过。联合全量为 358 passed、4 skipped：3 个 Semgrep 测试在默认 PATH 下找不到可执行文件，1 个 PostgreSQL 集成测试因未设置 `TEST_DATABASE_URL` 跳过；将 `.venv/bin` 加入 PATH 后，Semgrep 测试另行 9 passed。Ruff、`pip check`、`git diff --check` 以及 v3 closure、v2 workflow、历史 pilot exporter checks 均通过。这些结论不改变 v3 的 `closed_incomplete` 状态，也不构成质量或 Skill 增益结论。旧 `0.2.1` ZIP/manifest、v2 失败记录和 23 条历史 pilot 不变；本轮没有 v4 产物或执行。下一步冻结并运行新的 12-slot workflow-only batch；人工标签仍 pending，质量指标仍为 null，模型身份和成本仍 unknown。
 
 ## 记录和产物
 

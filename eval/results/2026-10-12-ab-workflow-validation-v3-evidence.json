@@ -1,0 +1,41 @@
+{
+  "export_id": "2026-10-12-ab-workflow-validation-v3",
+  "exporter": {
+    "name": "eval.export_workflow_batch",
+    "version": "2.1.0"
+  },
+  "schema_version": 1,
+  "source_hashes": {
+    "ab_summary_sha256": null,
+    "closure_report_sha256": "5e4ccf3b366859d9139235c8861454d18e729fc55f51dd0abc98ec63295559a7",
+    "partial_workflow_report_sha256": "de22b8e703c19729a9205f0fa6e8b3502446a56cb1ef4e6fbf43544df4beb110",
+    "plan_sha256": "d613edf4ee1f78a6283e40778d8b5aeb36da2f18607e7b18dfe461501b504496",
+    "post_execution_snapshot_sha256": "e0908e2057bf6fb91d988b1f3b86342af49d6593afe08b4a65d5f0bf3b3c755d",
+    "pre_execution_snapshot_sha256": "7dbe44b4a15f0a92c1671fa5a2e124948cd92e287517ce87619ea2379009e77e",
+    "runtime_config_sha256": "6488d53483e83ec9b9ce7b6688063c3f66d3e3e7730ca1f7ba028270468b8f22"
+  },
+  "source_names": {
+    "ab_summary": null,
+    "closure_report": "failure-report-v3.json",
+    "partial_workflow_report": "workflow-report-partial-v3.json",
+    "plan": "batch-plan-v3.json",
+    "post_execution_snapshot": "snapshot-after-v3.json",
+    "pre_execution_snapshot": "dependencies-before-v3.json",
+    "runtime_config": "runtime-config-v3.json"
+  },
+  "source_status": {
+    "ab_summary": "not_generated"
+  },
+  "summary_binding": {
+    "projection_sha256": "24aef235909d8c554b508fbbb20519742933789477cd5073357bc21608f01e5a",
+    "sha256": "24aef235909d8c554b508fbbb20519742933789477cd5073357bc21608f01e5a"
+  },
+  "tool_versions": {
+    "ab_eval": "0.2.0",
+    "exporter": "2.1.0",
+    "runtime_normalizer": "3",
+    "workflow_seal_helper_sha256": "6cc7e6dd6a9bc7ca3b62616a4627cf788b0ddd393fa8a17d3ab2ca775a6efd63",
+    "workflow_seal_schema_version": 1
+  },
+  "type": "workflow_batch_export_evidence"
+}

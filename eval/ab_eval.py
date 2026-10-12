@@ -1902,7 +1902,8 @@ def summarize(run_paths: list[Path], expected_cases: list[str] | None = None) ->
                     (skill_runtime.get("common_bindings") or {}).get(name),
                 )
                 for name in (
-                    "review_manifest", "common_prompt", "output_schema", "runtime_config"
+                    "review_manifest", "common_prompt", "output_schema",
+                    "tool_run_projector", "runtime_config"
                 )
             }
             common_binding_mismatch = any(value is False for value in common_bindings.values())

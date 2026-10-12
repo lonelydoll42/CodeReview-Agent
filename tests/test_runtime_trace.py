@@ -236,6 +236,94 @@ def test_raw_pread64_uses_the_same_pid_fd_path_attribution() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "restart_code,description",
+    [
+        ("ERESTARTSYS", "To be restarted if SA_RESTART is set"),
+        ("ERESTARTNOHAND", "To be restarted if no handler"),
+        ("ERESTARTNOINTR", "To be restarted"),
+        ("ERESTART_RESTARTBLOCK", "To be restarted"),
+    ],
+)
+def test_unavailable_restart_result_is_unknown_and_keeps_trace_incomplete(
+    restart_code: str,
+    description: str,
+) -> None:
+    parsed = _parse([
+        f"811 pread64(0x3, 0x7fff0000, 0x8, 0x0) = ? {restart_code} ({description})",
+        "811 +++ exited with 1 +++",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 1,
+        "reason": "syscall_result_unavailable_restart",
+        "pid": 811,
+        "operation": "pread64",
+        "restart_code": restart_code,
+    }]
+    assert not any(event.get("syscall") == "pread64" for event in parsed["events"])
+    assert parsed["events"][-1] == {
+        "event": "process_exit",
+        "pid": 811,
+        "exit_code": 1,
+        "trace_line": 2,
+    }
+
+
+def test_completed_errno_return_is_not_an_unavailable_restart() -> None:
+    parsed = _parse([
+        '812 open("/synthetic/library", O_RDONLY) = 3',
+        "812 pread64(0x3, 0x7fff0000, 0x8, 0x0) = -1 EINTR (Interrupted system call)",
+        "812 +++ exited with 0 +++",
+    ])
+
+    assert parsed["complete"] is True
+    assert parsed["unknown"] == []
+    assert parsed["events"][1]["event"] == "read"
+    assert parsed["events"][1]["result"] == -1
+    assert parsed["events"][1]["error"] == "EINTR"
+    assert parsed["events"][1]["bytes_read"] is None
+
+
+def test_bare_unavailable_read_result_is_explicitly_unknown_after_pid_exit() -> None:
+    parsed = _parse([
+        "813 pread64(0x3, 0x7fff0000, 0x8, 0x0) = ?",
+        "813 +++ exited with 1 +++",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 1,
+        "reason": "syscall_result_unavailable",
+        "pid": 813,
+        "operation": "pread64",
+    }]
+    assert not any(event.get("syscall") == "pread64" for event in parsed["events"])
+    assert parsed["events"][-1] == {
+        "event": "process_exit",
+        "pid": 813,
+        "exit_code": 1,
+        "trace_line": 2,
+    }
+
+
+def test_malformed_relevant_line_remains_malformed_and_incomplete() -> None:
+    parsed = _parse([
+        "814 pread64(0x3, 0x7fff0000, 0x8, 0x0) ?",
+        "814 +++ exited with 1 +++",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 1,
+        "reason": "malformed_relevant_syscall",
+        "pid": 814,
+        "operation": "pread64",
+    }]
+    assert not any(event.get("syscall") == "pread64" for event in parsed["events"])
+
+
 def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
