@@ -44,19 +44,7 @@ B0 导出中的 raw-output expected 独立匹配 23/23 原始 run records。外�
 
 首个 slot 失败的原因包括：provider 拒绝缺少 `type` 的 `schema_version` 输出 schema；argument 0 的外部二进制 symlink 使 artifact 枚举越界，ledger 错误路径随后重新抛出异常；18 个在成功关闭描述符后出现的 `close`/`EBADF` 事件又使 trace 变为 `unknown`。该批次来自既有语料，不是新盲测；人工标签仍 pending，质量指标仍为 null。完整细节和独立 ledger 核对见失败报告。
 
-v2 的历史 projection check 仍可用下列命令重算绑定；[已保存检查结果](results/2026-10-12-ab-workflow-v2-check.json)为 `passed`，仅对应 v2 工件：
-
-```sh
-python eval/export_workflow_batch.py check \
-  --seal-report /root/project/review-benchmark-20261010/seal/workflow-report-v2.json \
-  --ab-summary /root/project/review-benchmark-20261010/seal/ab-summary-final-v2.json \
-  --dependency-snapshot /root/project/review-benchmark-20261010/seal/dependencies-before-v2.json \
-  --plan /root/project/review-benchmark-20261010/batch-plan.json \
-  --runtime-config /root/project/review-benchmark-20261010/runtime-config-v2.json \
-  --summary eval/results/2026-10-12-ab-workflow-v2-summary.json \
-  --evidence eval/results/2026-10-12-ab-workflow-v2-evidence.json \
-  --check-output eval/results/2026-10-12-ab-workflow-v2-check.json
-```
+v2 的历史 projection check 记录为 `passed`，仅对应 v2 工件：[summary](results/2026-10-12-ab-workflow-v2-summary.json)、[evidence](results/2026-10-12-ab-workflow-v2-evidence.json) 和[check](results/2026-10-12-ab-workflow-v2-check.json)。重算所需的原始 source inputs 保存在仓库外的受控存储中，因此本仓库不提供依赖机器本地路径的重算命令。
 
 Standalone Skill 的远端矩阵在提交 `e8c719b635067ac33cca7300ffe8a4584ded3961` 上通过：[run 38198341019](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38198341019)，Linux/Windows × Python 3.10/3.11 四项全过。旧 pilot 的完整性检查也通过：[run 38198341075](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38198341075)；这验证保存工件的一致性，不产生质量结论。
 
@@ -72,7 +60,19 @@ v3 closure export 已集成到仓库，公开投影文件及 SHA-256 如下：
 - [evidence](results/2026-10-12-ab-workflow-validation-v3-evidence.json)：`05a706ff69abeb76c6c6b417d89a1fdefdc0bc538454f5fb49dbd50f226d293f`
 - [check](results/2026-10-12-ab-workflow-validation-v3-check.json)：`4a424c4e79197cbc2efeebe9240863054e81a048085f2627d0de727957a798eb`
 
-共享工作区中的 strict schema/preflight 定向 26 项及 trace 定向 21 项通过；normalizer v3 保留 raw trace 的精确 SHA 绑定。schema 二次 review 正式 GO：生产 schema 验证通过，`tool_runs.items` 为 `true` 和 `{}` 的实际输入分别被拒绝，新增 5 项复现测试通过。`eval_reliability_review` 对当前真实 v3 零记录 closure export 给出 Limited GO：封存 source 复算、summary 实际 SHA 与 check 相互一致；该 GO 仅覆盖这份零记录结果，不能外推到非零 summary。closure export 的 30 项相关 CI tests、Ruff 和 CLI check 通过；tool projection 已完成，另有 84 项定向 tests 独立通过。联合全量为 358 passed、4 skipped：3 个 Semgrep 测试在默认 PATH 下找不到可执行文件，1 个 PostgreSQL 集成测试因未设置 `TEST_DATABASE_URL` 跳过；将 `.venv/bin` 加入 PATH 后，Semgrep 测试另行 9 passed。Ruff、`pip check`、`git diff --check` 以及 v3 closure、v2 workflow、历史 pilot exporter checks 均通过。这些结论不改变 v3 的 `closed_incomplete` 状态，也不构成质量或 Skill 增益结论。旧 `0.2.1` ZIP/manifest、v2 失败记录和 23 条历史 pilot 不变；本轮没有 v4 产物或执行。下一步冻结并运行新的 12-slot workflow-only batch；人工标签仍 pending，质量指标仍为 null，模型身份和成本仍 unknown。
+共享工作区中的 strict schema/preflight 定向 26 项及 trace 定向 21 项通过；normalizer v3 保留 raw trace 的精确 SHA 绑定。schema 二次 review 正式 GO：生产 schema 验证通过，`tool_runs.items` 为 `true` 和 `{}` 的实际输入分别被拒绝，新增 5 项复现测试通过。`eval_reliability_review` 对 v3 零记录 closure export 给出 Limited GO：封存 source 复算、summary 实际 SHA 与 check 相互一致；该 GO 仅覆盖这份零记录结果，不能外推到非零 summary。closure export 的 30 项相关 CI tests、Ruff 和 CLI check 通过；tool projection 已完成，另有 84 项定向 tests 独立通过。联合全量为 358 passed、4 skipped：3 个 Semgrep 测试在默认 PATH 下找不到可执行文件，1 个 PostgreSQL 集成测试因未设置 `TEST_DATABASE_URL` 跳过；将 `.venv/bin` 加入 PATH 后，Semgrep 测试另行 9 passed。Ruff、`pip check`、`git diff --check` 以及 v3 closure、v2 workflow、历史 pilot exporter checks 均通过。这些结论不改变 v3 的 `closed_incomplete` 状态，也不构成质量或 Skill 增益结论。旧 `0.2.1` ZIP/manifest、v2 失败记录和 23 条历史 pilot 不变。
+
+### workflow-validation-v4 closure 结果
+
+`2026-10-12-ab-workflow-validation-v4` 是基于既有语料的 workflow-only 执行，不是 fresh blind test。最终状态为 `closed_incomplete`：12 个计划 slot 中 1 个启动、11 个未启动；evidence-valid slots 为 0，eligible pairs 为 0。封存了 1 条 run record 和 1 个机械 score 文件，但这不使该 slot 成为 evidence-valid，也不产生质量结论。严格后处理流水线 build → validate → score → validate → summarize 均通过；公开 export check 的 closure bindings、evidence bindings、source hashes、summary bytes、summary projection 五项均为 `verified`。这些结果验证流程、来源绑定和投影一致性，不代表证据有效、审查正确或 Skill 有增益。
+
+strict summary 有 3 条 paired-case 行和 5 个缺失的 `(case_id, condition)` 组合；前者包括一个已观察 replicate 行和两个 case-level null 占位行，后者按 case/condition 汇总。这两种摘要记录不等于 11 个未启动的计划 slot，不能互相替代。人工 labels 仍 pending，人工质量指标为 null；host/model/provider 身份和成本均 unknown。原始 closure 的 grading index 在首个 slot 启动后才 seal（`pre_first_model=false`）；其 `blocked_label_reference_present` 是保守的路径引用启发式，不证明标签内容曾被读取，也不能作为预运行隔离已成立的证据。
+
+v4 公开 export 固定在提交 `25d35c6`，source commit 为 `c80ab00`，runtime normalizer/parser 为 v3。后续 parser v6 的独立 GO 只适用于将来新工件，不回写或重解释旧 v4、v3、pilot 产物；要复现旧 trust/sealer/scoring，应使用 `c80ab00` 基线。closure export check 根据保存工件的哈希绑定验证公开投影，不要求当前主分支代码保持不变。公开文件与 SHA-256：
+
+- [summary](results/2026-10-12-ab-workflow-validation-v4-summary.json)：`a01af725b67b7116c8731954c98536d0a169037c86bad103ef6a66e7ced69732`
+- [evidence](results/2026-10-12-ab-workflow-validation-v4-evidence.json)：`c27f808b9c2491efe328811223dade78053ea3e9f746eadaa41afdda1612fe14`
+- [check](results/2026-10-12-ab-workflow-validation-v4-check.json)：`4ebd68195a205d3c0de478597fa7387efdf6c76d6fe7d61f44fb0426f5032112`
 
 ## 记录和产物
 
@@ -157,6 +157,6 @@ PR3 已完成输入记录、保存运行、评分产物和首批 A/B pilot 的�
 
 2026-10-09 在准备好的合成 `case-01` 上，用当前 checkout 单独构建的 Skill 完成了一次 Codex 本地前向运行。session 到达 `report_ready`，校验结果包含 1 条 `confirmed` finding；首次 finalize 成功。Semgrep 状态为 `missing`，模型、token 与费用均不可测，记录为 `null`。准备器生成的 case-01 review diff 哈希在运行前后相同，未应用 follow-up patch。
 
-这次只验证入口、session、校验和导出的操作流程，不是 WorkBuddy 使用验收、真实项目盲测、三组同宿主对照或 Skill 增益评分。没有 WorkBuddy 原始 transcript，也没有生成质量分数。运行产物保存在 `/root/project/Session Skill 前向运行 20261009/`，包括初始草稿、`semantic-result.json`、`runs/0001/host-result.json`、`validated-result.json`、`report.md`、session 状态和 `run-log.md`。临时构建 ZIP 的 26 个条目及文件摘要均与 manifest 一致；它由当前 checkout 构建，不等于固定的 `dist/review-changes-0.2.1` 发布包。
+这次只验证入口、session、校验和导出的操作流程，不是 WorkBuddy 使用验收、真实项目盲测、三组同宿主对照或 Skill 增益评分。没有 WorkBuddy 原始 transcript，也没有生成质量分数。原始草稿、`semantic-result.json`、`runs/0001/host-result.json`、`validated-result.json`、`report.md`、session 状态和 `run-log.md` 保留在本机受控 operator 目录，不随仓库发布；公开使用入口见[用户指南](../docs/guide.md)。临时构建 ZIP 的 26 个条目及文件摘要均与 manifest 一致；它由当前 checkout 构建，不等于固定的 `dist/review-changes-0.2.1` 发布包。
 
-基于已保存 session 和包的新会话恢复验证已完成：独立 Codex 会话仅使用保存的 Skill 与 session 产物，核对仓库身份、输入指纹并成功读取已有报告。记录保存在 `/root/project/Session Skill 恢复验证 20261009/resume-validation.md`。这仍不是 WorkBuddy 验收、质量 A/B 或盲测结果；WorkBuddy 状态为 `not_run`。固定 `0.2.1` 包仍是独立发布基线，未被本次前向运行重建或覆盖。
+基于已保存 session 和包的新会话恢复验证已完成：独立 Codex 会话仅使用保存的 Skill 与 session 产物，核对仓库身份、输入指纹并成功读取已有报告。恢复记录保留在本机受控 operator 目录，不随仓库发布；session 与 Skill 的公开边界见[Skill-first 说明](../docs/skill-first.md)。这仍不是 WorkBuddy 验收、质量 A/B 或盲测结果；WorkBuddy 状态为 `not_run`。固定 `0.2.1` 包仍是独立发布基线，未被本次前向运行重建或覆盖。
