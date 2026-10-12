@@ -58,6 +58,25 @@ class AbBatchPlanTests(unittest.TestCase):
         self.assertTrue(all(slot["attempt_kind"] == "independent_replicate" for slot in plan["slots"]))
         self.assertTrue(all(case["annotation_status"] == "pending" for case in plan["cases"].values()))
 
+    def test_plan_accepts_bounded_ascii_ids_and_rejects_invalid_ids(self) -> None:
+        index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
+        plan = build_slot_plan(index)
+        self.assertEqual(plan["benchmark_id"], BENCHMARK_ID)
+
+        for benchmark_id in ("2026-10-12-ab-workflow-validation-v3", "A" * 128, "v3._-batch"):
+            with self.subTest(benchmark_id=benchmark_id):
+                validate_plan({**plan, "benchmark_id": benchmark_id})
+
+        for benchmark_id in (None, "", "_starts-with-underscore", "../escape", "has space", "非ASCII", "A" * 129):
+            with self.subTest(benchmark_id=benchmark_id):
+                with self.assertRaisesRegex(ValueError, "benchmark_id must be a non-empty ASCII identifier"):
+                    validate_plan({**plan, "benchmark_id": benchmark_id})
+
+        missing = dict(plan)
+        del missing["benchmark_id"]
+        with self.assertRaisesRegex(ValueError, "benchmark_id must be a non-empty ASCII identifier"):
+            validate_plan(missing)
+
     def test_host_output_schema_constants_and_strict_objects_are_consistent(self) -> None:
         schema = json.loads((Path(__file__).parents[1] / "eval/schemas/host-output.schema.json").read_bytes())
         object_nodes: list[tuple[str, dict]] = []
@@ -142,7 +161,11 @@ class AbBatchPlanTests(unittest.TestCase):
                     "reviewer_input": str(reviewer),
                     "repositories": {"same_host_direct": str(source)},
                 })
+            case_index_path = root / "case-index.json"
+            case_index_path.write_text(json.dumps({"cases": cases}), encoding="utf-8")
             plan = build_slot_plan({"cases": cases})
+            plan["benchmark_id"] = "2026-10-12-ab-workflow-validation-v3"
+            batch._validate_plan_inputs(plan, case_index_path)
             plan_bytes = (json.dumps(plan, sort_keys=True) + "\n").encode()
             runtime_config = root / "runtime-config.json"
             config = {
@@ -216,6 +239,80 @@ class AbBatchPlanTests(unittest.TestCase):
             self.assertEqual(
                 stat.S_IMODE((case3_b / "artifacts/source-bundle-manifest.json").stat().st_mode),
                 0o600,
+            )
+            immutable_sha = immutable_plan_sha256(plan)
+            for prepared_root, slot in zip(prepared, plan["slots"], strict=True):
+                metadata = json.loads((prepared_root / "run-metadata.json").read_bytes())
+                manifest = json.loads((prepared_root / "artifacts/source-bundle-manifest.json").read_bytes())
+                preseal = json.loads((prepared_root / "preseal.json").read_bytes())
+                self.assertEqual(metadata["benchmark_id"], plan["benchmark_id"])
+                self.assertEqual(manifest["benchmark_id"], plan["benchmark_id"])
+                self.assertEqual(preseal["benchmark_id"], plan["benchmark_id"])
+                self.assertEqual(metadata["immutable_plan_sha256"], immutable_sha)
+                self.assertEqual(manifest["immutable_plan_sha256"], immutable_sha)
+                self.assertEqual(preseal["immutable_plan_sha256"], immutable_sha)
+                self.assertEqual(batch._preseal_status(prepared_root, plan, slot)["metadata"], metadata)
+                self.assertEqual(
+                    batch._preseal_status(prepared_root, immutable_sha)["metadata"],
+                    metadata,
+                )
+
+            drift_root = prepared[0]
+            drift_slot = plan["slots"][0]
+            for relative in (
+                "run-metadata.json",
+                "artifacts/source-bundle-manifest.json",
+                "preseal.json",
+            ):
+                record_path = drift_root / relative
+                original = record_path.read_bytes()
+                drifted = json.loads(original)
+                drifted["benchmark_id"] = "different-batch"
+                record_path.write_text(json.dumps(drifted) + "\n", encoding="utf-8")
+                with self.subTest(drifted_record=relative):
+                    with self.assertRaisesRegex(ValueError, "does not match|does not bind"):
+                        batch._preseal_status(drift_root, plan, drift_slot)
+                record_path.write_bytes(original)
+
+            archived_plan_path = drift_root / "artifacts/batch-plan.json"
+            archived_plan_bytes = archived_plan_path.read_bytes()
+            archived_plan = json.loads(archived_plan_bytes)
+            archived_plan["benchmark_id"] = "different-batch"
+            archived_plan_path.write_text(json.dumps(archived_plan) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "plan identity"):
+                batch._preseal_status(drift_root, plan, drift_slot)
+
+            archived_plan["benchmark_id"] = plan["benchmark_id"]
+            archived_plan["cases"]["case0002"]["annotation_status"] = "annotated"
+            archived_plan_path.write_text(json.dumps(archived_plan) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "plan identity"):
+                batch._preseal_status(drift_root, plan, drift_slot)
+            archived_plan_path.write_bytes(archived_plan_bytes)
+
+            legacy_plan = {**plan, "benchmark_id": BENCHMARK_ID}
+            legacy_plan_bytes = (json.dumps(legacy_plan, sort_keys=True) + "\n").encode()
+            legacy_prepared = preseal_plan(
+                legacy_plan,
+                legacy_plan_bytes,
+                root / "legacy-runs",
+                runtime_config,
+                skill,
+            )
+            legacy_root = legacy_prepared[0]
+            legacy_slot = legacy_plan["slots"][0]
+            self.assertEqual(
+                batch._preseal_status(legacy_root, legacy_plan, legacy_slot)["metadata"]["benchmark_id"],
+                BENCHMARK_ID,
+            )
+
+            legacy_preseal_path = legacy_root / "preseal.json"
+            legacy_preseal = json.loads(legacy_preseal_path.read_bytes())
+            for field in ("benchmark_id", "plan_sha256", "replicate", "attempt", "attempt_kind"):
+                del legacy_preseal[field]
+            legacy_preseal_path.write_text(json.dumps(legacy_preseal) + "\n", encoding="utf-8")
+            self.assertEqual(
+                batch._preseal_status(legacy_root, legacy_plan, legacy_slot)["metadata"]["benchmark_id"],
+                BENCHMARK_ID,
             )
 
 
@@ -341,7 +438,31 @@ def _private_write(path: Path, data: bytes, *, directory_mode: int = 0o700) -> N
     path.chmod(0o600)
 
 
-def _fake_cli_slot(tmp_path: Path, *, condition: str = "A") -> tuple[Path, dict]:
+def _fake_cli_slot(
+    tmp_path: Path,
+    *,
+    condition: str = "A",
+    benchmark_id: str = BENCHMARK_ID,
+) -> tuple[Path, dict]:
+    cases = [
+        {
+            "case_id": case_id,
+            "base": "abc",
+            "head": "def",
+            "snapshot": {"base_tree": "b", "head_tree": "h", "scoped_diff_sha256": "d"},
+            "scope_paths": ["src.py"],
+            "reviewer_input": "/unused/reviewer-input.json",
+            "repositories": {"same_host_direct": "/unused/repository"},
+        }
+        for case_id in ("case0002", "case0003", "case0006")
+    ]
+    plan = build_slot_plan({"cases": cases})
+    plan["benchmark_id"] = benchmark_id
+    slot = next(
+        item for item in plan["slots"]
+        if item["case_id"] == "case0002" and item["condition"] == condition and item["replicate"] == 1
+    )
+    plan_bytes = (json.dumps(plan, sort_keys=True) + "\n").encode()
     condition_dir = "same_host_direct" if condition == "A" else "current_skill"
     run_root = tmp_path / "case0002" / condition_dir / "repeat01"
     for relative in ("input/protocol", "artifacts", "runtime"):
@@ -404,6 +525,11 @@ def _fake_cli_slot(tmp_path: Path, *, condition: str = "A") -> tuple[Path, dict]
     _private_write(normalizer, TRACE_NORMALIZER.read_bytes())
     manifest = {
         "schema_version": 2,
+        "benchmark_id": plan["benchmark_id"],
+        "case_id": slot["case_id"],
+        "condition": slot["condition"],
+        "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
+        "immutable_plan_sha256": immutable_plan_sha256(plan),
         "files": [
             {"path": relative, "sha256": hashlib.sha256(payload).hexdigest()}
             for relative, payload in binding_payloads.items()
@@ -414,16 +540,18 @@ def _fake_cli_slot(tmp_path: Path, *, condition: str = "A") -> tuple[Path, dict]
         run_root / "artifacts/source-bundle-manifest.json",
         (json.dumps(manifest, sort_keys=True) + "\n").encode(),
     )
+    _private_write(run_root / "artifacts/batch-plan.json", plan_bytes)
     metadata = {
         "schema_version": 1,
-        "benchmark_id": BENCHMARK_ID,
-        "case_id": "case0002",
-        "condition": condition,
-        "run_order": 1,
-        "replicate": 1,
-        "attempt": 1,
-        "attempt_kind": "independent_replicate",
-        "immutable_plan_sha256": "a" * 64,
+        "benchmark_id": plan["benchmark_id"],
+        "case_id": slot["case_id"],
+        "condition": slot["condition"],
+        "run_order": slot["run_order"],
+        "replicate": slot["replicate"],
+        "attempt": slot["attempt"],
+        "attempt_kind": slot["attempt_kind"],
+        "group_id": f"{plan['benchmark_id']}:{slot['case_id']}:replicate-{slot['replicate']}",
+        "immutable_plan_sha256": immutable_plan_sha256(plan),
     }
     _private_write(run_root / "run-metadata.json", (json.dumps(metadata) + "\n").encode())
 
@@ -534,6 +662,23 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
         run_root / "artifacts/source-bundle-manifest.json",
         (json.dumps(manifest, sort_keys=True) + "\n").encode(),
     )
+    _private_write(run_root / "preseal.json", (
+        json.dumps({
+            "schema_version": 1,
+            "benchmark_id": plan["benchmark_id"],
+            "case_id": slot["case_id"],
+            "condition": slot["condition"],
+            "run_order": slot["run_order"],
+            "replicate": slot["replicate"],
+            "attempt": slot["attempt"],
+            "attempt_kind": slot["attempt_kind"],
+            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
+            "immutable_plan_sha256": immutable_plan_sha256(plan),
+            "source_bundle_manifest": batch.make_artifact_ref(
+                run_root, run_root / "artifacts/source-bundle-manifest.json",
+            ),
+        }, sort_keys=True) + "\n"
+    ).encode())
     config = {
         "schema_version": 2,
         "codex_executable": str(executable),
@@ -556,6 +701,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
     def test_execute_plan_records_failure_artifacts_and_continues(self) -> None:
         index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
         plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        plan["benchmark_id"] = "new-safe-batch.v3"
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             runs_root = root / "runs"
@@ -608,6 +754,8 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(execute.call_count, 12)
             ledger_path = first_root / "slot-failure-ledger.json"
             ledger = json.loads(ledger_path.read_bytes())
+            self.assertEqual(ledger["benchmark_id"], plan["benchmark_id"])
+            self.assertEqual(ledger["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertEqual(ledger["run_order"], 1)
             self.assertEqual(ledger["failure_reason"], "adapter_failure:RuntimeError")
             self.assertEqual(
@@ -714,6 +862,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
     def test_execute_plan_does_not_retry_a_failed_artifact_scan(self) -> None:
         index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
         plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        plan["benchmark_id"] = "new-safe-batch.v3"
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             runs_root = root / "runs"
@@ -765,7 +914,8 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertTrue(ledger["artifact_collection_error"])
             slot_result = json.loads((first_root / "slot-result.json").read_bytes())
             self.assertEqual(slot_result["schema_version"], 1)
-            self.assertEqual(slot_result["benchmark_id"], BENCHMARK_ID)
+            self.assertEqual(slot_result["benchmark_id"], plan["benchmark_id"])
+            self.assertEqual(slot_result["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertTrue(slot_result["planned"])
             self.assertTrue(slot_result["launched"])
             self.assertFalse(slot_result["host_completed"])
@@ -785,6 +935,9 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(slot_result["artifact_collection_error"], ledger["artifact_collection_error"])
             self.assertEqual(slot_result["runtime_evidence"]["status"], "incomplete")
             self.assertEqual(slot_result["immutable_plan_sha256"], immutable_plan_sha256(plan))
+            adapter_failure = json.loads((first_root / "runtime/adapter-failure.json").read_bytes())
+            self.assertEqual(adapter_failure["benchmark_id"], plan["benchmark_id"])
+            self.assertEqual(adapter_failure["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertEqual(ledger["immutable_plan_sha256"], slot_result["immutable_plan_sha256"])
             self.assertEqual(ledger["attempt_kind"], slot_result["attempt_kind"])
             self.assertEqual(
@@ -825,7 +978,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         if not Path("/usr/bin/codex").exists():
             self.skipTest("the Codex-bundled bwrap runtime is required for the adapter test")
         with tempfile.TemporaryDirectory() as temp_dir:
-            run_root, config = _fake_cli_slot(Path(temp_dir))
+            run_root, config = _fake_cli_slot(Path(temp_dir), benchmark_id="new-safe-batch.v3")
             fake_home = Path(temp_dir) / "host-home"
             _private_write(fake_home / ".codex" / "auth.json", b"test-only auth placeholder\n")
             with self.assertRaisesRegex(ValueError, "GO authorization gate"):
@@ -845,6 +998,8 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(result["runtime_evidence"]["supervisor_exit_code"], 0)
             self.assertEqual(result["runtime_evidence"]["common_binding_status"], "verified")
             start = json.loads((run_root / "runtime/adapter-start.json").read_bytes())
+            self.assertEqual(start["benchmark_id"], result["benchmark_id"])
+            self.assertEqual(start["immutable_plan_sha256"], result["immutable_plan_sha256"])
             argv = start["argv"]
             self.assertEqual(argv[0], "/usr/bin/strace")
             self.assertIn(config["bwrap_executable"], argv)
@@ -874,6 +1029,26 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(
                 json.loads((run_root / "runtime/codex-events.jsonl").read_text().splitlines()[0])["thread_id"],
                 "fake-thread",
+            )
+            execution = json.loads((run_root / "runtime/execution.json").read_bytes())
+            self.assertEqual(execution["benchmark_id"], result["benchmark_id"])
+            self.assertEqual(execution["immutable_plan_sha256"], result["immutable_plan_sha256"])
+            self.assertEqual(execution["raw_trace_sha256"], sha256_file(run_root / "runtime/strace.log"))
+            self.assertEqual(
+                execution["supervisor_events_sha256"],
+                sha256_file(run_root / "runtime/supervisor-events.jsonl"),
+            )
+            self.assertEqual(
+                execution["normalizer"]["source_sha256"],
+                sha256_file(run_root / "artifacts/runtime_trace.py"),
+            )
+            self.assertEqual(
+                execution["source_bundle_manifest_sha256"],
+                sha256_file(run_root / "artifacts/source-bundle-manifest.json"),
+            )
+            self.assertEqual(
+                execution["runtime_evidence_sha256"],
+                sha256_file(run_root / "runtime-evidence.json"),
             )
             checks = json.loads((run_root / "runtime/codex-home/sandbox-check.json").read_bytes())
             self.assertTrue(all(checks.values()))

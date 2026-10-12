@@ -16,6 +16,7 @@ from eval.export_ab_pilot import (
     build_export,
     build_historical_export,
     check_export,
+    main,
     prepare_blind_review_bundle,
     validate_export,
 )
@@ -421,6 +422,56 @@ def test_check_fails_on_stale_digest(tmp_path: Path) -> None:
     evidence_path.write_bytes(_bytes(evidence))
     with pytest.raises(ExportError, match="file bytes"):
         check_export(summary_path, evidence_path)
+
+
+def test_public_historical_projection_checks_recorded_source_commit(capsys: pytest.CaptureFixture[str]) -> None:
+    repo_root = Path(__file__).parents[1]
+    summary_path = repo_root / "eval/results/2026-10-09-ab-pilot-summary.json"
+    evidence_path = repo_root / "eval/results/2026-10-09-ab-pilot-evidence.json"
+    source_ref = "f63e5afb4206fa6d49fc869e52c106031afa9a04"
+
+    assert main([
+        "check",
+        "--summary", str(summary_path),
+        "--evidence", str(evidence_path),
+        "--historical-replay-tool-source-ref", source_ref,
+    ]) == 0
+    assert "verified summary/evidence export" in capsys.readouterr().out
+
+
+def test_public_historical_projection_default_check_guides_to_source_ref() -> None:
+    repo_root = Path(__file__).parents[1]
+    summary_path = repo_root / "eval/results/2026-10-09-ab-pilot-summary.json"
+    evidence_path = repo_root / "eval/results/2026-10-09-ab-pilot-evidence.json"
+
+    with pytest.raises(ExportError, match="--historical-replay-tool-source-ref"):
+        check_export(summary_path, evidence_path)
+
+
+def test_public_historical_projection_rejects_current_head_as_wrong_source_ref() -> None:
+    repo_root = Path(__file__).parents[1]
+    summary_path = repo_root / "eval/results/2026-10-09-ab-pilot-summary.json"
+    evidence_path = repo_root / "eval/results/2026-10-09-ab-pilot-evidence.json"
+
+    with pytest.raises(ExportError, match="does not match eval/ab_eval.py"):
+        check_export(summary_path, evidence_path, historical_replay_tool_source_ref="HEAD")
+
+
+def test_public_historical_projection_rejects_tampered_digest_with_correct_source_ref(tmp_path: Path) -> None:
+    repo_root = Path(__file__).parents[1]
+    summary_path = repo_root / "eval/results/2026-10-09-ab-pilot-summary.json"
+    original_evidence = json.loads((repo_root / "eval/results/2026-10-09-ab-pilot-evidence.json").read_bytes())
+    original_evidence["historical_source_verification"]["replay_tool"]["sha256"] = "0" * 64
+    original_evidence["source_digests"]["historical_replay_tool_sha256"] = "0" * 64
+    evidence_path = tmp_path / "tampered-evidence.json"
+    evidence_path.write_bytes(_bytes(original_evidence))
+
+    with pytest.raises(ExportError, match="does not match eval/ab_eval.py"):
+        check_export(
+            summary_path,
+            evidence_path,
+            historical_replay_tool_source_ref="f63e5afb4206fa6d49fc869e52c106031afa9a04",
+        )
 
 
 def test_build_historical_export_recomputes_only_descriptive_counts(tmp_path: Path) -> None:

@@ -85,8 +85,11 @@ python eval/export_ab_pilot.py build-historical \
   --evidence-output eval/results/2026-10-09-ab-pilot-evidence.json
 python eval/export_ab_pilot.py check \
   --summary eval/results/2026-10-09-ab-pilot-summary.json \
-  --evidence eval/results/2026-10-09-ab-pilot-evidence.json
+  --evidence eval/results/2026-10-09-ab-pilot-evidence.json \
+  --historical-replay-tool-source-ref f63e5afb4206fa6d49fc869e52c106031afa9a04
 ```
+
+By default, `check` compares the recorded replay-tool digest with the current `eval/ab_eval.py`. The historical source-ref option instead reads that file's exact blob from the named Git commit and compares its SHA-256 with the historical projection. For the published 2026-10-09 projection, the recorded source is commit `f63e5afb4206fa6d49fc869e52c106031afa9a04`. This verifies which source blob the projection cites; it does not establish that this scorer produced the original run results. The 23 strict replays remain blocked, zero scores were accepted, and no score files were written.
 
 Strict score and summary replay remains blocked until contemporaneous reviewer-input digests are available. Before another rebuild, verify the external archive and the run/score entries in its source manifest:
 

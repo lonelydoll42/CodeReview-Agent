@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -36,3 +38,4 @@ jobs:
           python eval/export_ab_pilot.py check
           --summary eval/results/2026-10-09-ab-pilot-summary.json
           --evidence eval/results/2026-10-09-ab-pilot-evidence.json
+          --historical-replay-tool-source-ref f63e5afb4206fa6d49fc869e52c106031afa9a04

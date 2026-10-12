@@ -34,6 +34,7 @@ else:
 
 
 BENCHMARK_ID = "2026-10-10-ab-workflow-validation"
+_BENCHMARK_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", re.ASCII)
 PLAN_STATE = "waiting_for_independent_go"
 CASE_IDS = ("case0002", "case0003", "case0006")
 SLOT_ORDER = (
@@ -302,10 +303,19 @@ def _expected_slots() -> list[dict[str, Any]]:
     ]
 
 
+def _validate_benchmark_id(value: Any) -> str:
+    if not isinstance(value, str) or _BENCHMARK_ID_PATTERN.fullmatch(value) is None:
+        raise ValueError(
+            "plan benchmark_id must be a non-empty ASCII identifier of at most 128 characters"
+        )
+    return value
+
+
 def validate_plan(value: Any, *, require_go: bool = False) -> dict[str, Any]:
     if not isinstance(value, dict) or value.get("schema_version") != 1:
         raise ValueError("plan must be a schema_version 1 object")
-    if value.get("benchmark_id") != BENCHMARK_ID or value.get("slots") != _expected_slots():
+    _validate_benchmark_id(value.get("benchmark_id"))
+    if value.get("slots") != _expected_slots():
         raise ValueError("plan does not match the frozen benchmark identity and 12-slot order")
     if not isinstance(value.get("cases"), dict) or set(value["cases"]) != set(CASE_IDS):
         raise ValueError("plan case metadata does not match the frozen selected cases")
@@ -622,6 +632,12 @@ def preseal_plan(
 ) -> list[Path]:
     """Freeze model-visible bytes for all slots without starting Codex."""
     validate_plan(plan)
+    try:
+        plan_from_bytes = validate_plan(json.loads(plan_bytes))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("plan bytes must contain the supplied valid plan") from exc
+    if plan_from_bytes != plan:
+        raise ValueError("plan bytes do not match the supplied plan object")
     config_bytes = runtime_config_path.read_bytes()
     config = _runtime_config(config_bytes)
     _preflight_codex_config(config)
@@ -728,9 +744,14 @@ def preseal_plan(
             _write_json(run_root / "run-metadata.json", metadata)
             _write_json(run_root / "preseal.json", {
                 "schema_version": 1,
+                "benchmark_id": plan["benchmark_id"],
                 "case_id": slot["case_id"],
                 "condition": condition,
                 "run_order": slot["run_order"],
+                "replicate": slot["replicate"],
+                "attempt": slot["attempt"],
+                "attempt_kind": slot["attempt_kind"],
+                "plan_sha256": sha256_bytes(plan_bytes),
                 "immutable_plan_sha256": immutable_plan_sha256(plan),
                 "source_bundle_manifest": make_artifact_ref(run_root, artifacts / "source-bundle-manifest.json"),
             })
@@ -975,6 +996,7 @@ def _failed_slot_result(
     slot: dict[str, Any],
     run_root: Path,
     immutable_sha: str,
+    benchmark_id: str,
     failure_reason: str,
     failure_detail: str,
     inventory: dict[str, Any],
@@ -1005,7 +1027,7 @@ def _failed_slot_result(
         )
         result = {
             "schema_version": 1,
-            "benchmark_id": BENCHMARK_ID,
+            "benchmark_id": benchmark_id,
             "planned": True,
             "launched": launched,
             "host_completed": host_completed,
@@ -1021,6 +1043,8 @@ def _failed_slot_result(
             "failure_reason": failure_reason,
             "adapter_failure": {
                 "schema_version": 1,
+                "benchmark_id": benchmark_id,
+                "immutable_plan_sha256": immutable_sha,
                 "failure_reason": failure_reason,
                 "detail": failure_detail,
             },
@@ -1036,11 +1060,15 @@ def _failed_slot_result(
             "excluded_runtime_symlinks": inventory["excluded_runtime_symlinks"],
         }
     result.update(
+        benchmark_id=benchmark_id,
+        immutable_plan_sha256=immutable_sha,
         planned=True,
         run_status="failed",
         failure_reason=failure_reason,
         adapter_failure={
             "schema_version": 1,
+            "benchmark_id": benchmark_id,
+            "immutable_plan_sha256": immutable_sha,
             "failure_reason": failure_reason,
             "detail": failure_detail,
         },
@@ -1054,17 +1082,115 @@ def _failed_slot_result(
     return result
 
 
-def _preseal_status(run_root: Path, immutable_sha: str) -> dict[str, Any]:
+def _preseal_status(
+    run_root: Path,
+    plan: dict[str, Any] | str,
+    expected_slot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if isinstance(plan, str):
+        expected_immutable_sha = plan
+        archived_bytes = (run_root / "artifacts" / "batch-plan.json").read_bytes()
+        archived_plan = validate_plan(json.loads(archived_bytes))
+        if immutable_plan_sha256(archived_plan) != expected_immutable_sha:
+            raise ValueError(f"prepared slot is bound to a different frozen plan: {run_root}")
+        case_id, condition_dir, repeat_dir = run_root.parts[-3:]
+        condition = "A" if condition_dir == "same_host_direct" else "B" if condition_dir == "current_skill" else None
+        replicate_match = re.fullmatch(r"repeat([0-9]+)", repeat_dir)
+        expected_slot = next((
+            slot for slot in archived_plan["slots"]
+            if slot["case_id"] == case_id
+            and slot["condition"] == condition
+            and replicate_match is not None
+            and slot["replicate"] == int(replicate_match.group(1))
+        ), None)
+        if expected_slot is None:
+            raise ValueError(f"prepared slot path does not identify a frozen plan slot: {run_root}")
+        plan = archived_plan
+    if expected_slot is None:
+        raise ValueError("preseal validation requires a frozen plan slot")
+    validate_plan(plan)
+    immutable_sha = immutable_plan_sha256(plan)
+    if expected_slot not in plan["slots"]:
+        raise ValueError("expected slot is not present in the frozen plan")
+    expected_path_parts = (
+        expected_slot["case_id"],
+        "same_host_direct" if expected_slot["condition"] == "A" else "current_skill",
+        f"repeat{expected_slot['replicate']:02d}",
+    )
+    if run_root.parts[-3:] != expected_path_parts:
+        raise ValueError(f"prepared slot path does not match the frozen plan: {run_root}")
+
+    plan_path = run_root / "artifacts" / "batch-plan.json"
+    plan_bytes = plan_path.read_bytes()
+    archived_plan = validate_plan(json.loads(plan_bytes))
+    if (
+        archived_plan["benchmark_id"] != plan["benchmark_id"]
+        or immutable_plan_sha256(archived_plan) != immutable_sha
+        or expected_slot not in archived_plan["slots"]
+    ):
+        raise ValueError(f"prepared slot plan identity does not match the requested plan: {run_root}")
+
     metadata = json.loads((run_root / "run-metadata.json").read_bytes())
     manifest_path = run_root / "artifacts" / "source-bundle-manifest.json"
     manifest = json.loads(manifest_path.read_bytes())
-    if metadata.get("immutable_plan_sha256") != immutable_sha or manifest.get("immutable_plan_sha256") != immutable_sha:
-        raise ValueError(f"prepared slot is bound to a different frozen plan: {run_root}")
+    preseal = json.loads((run_root / "preseal.json").read_bytes())
+    record_fields = {
+        "benchmark_id": plan["benchmark_id"],
+        "immutable_plan_sha256": immutable_sha,
+        "case_id": expected_slot["case_id"],
+        "condition": expected_slot["condition"],
+        "run_order": expected_slot["run_order"],
+        "replicate": expected_slot["replicate"],
+        "attempt": expected_slot["attempt"],
+        "attempt_kind": expected_slot["attempt_kind"],
+    }
+    for field, expected in record_fields.items():
+        if metadata.get(field) != expected:
+            raise ValueError(f"prepared run metadata does not match the frozen plan: {run_root}")
+    manifest_fields = {
+        "benchmark_id": plan["benchmark_id"],
+        "immutable_plan_sha256": immutable_sha,
+        "case_id": expected_slot["case_id"],
+        "condition": expected_slot["condition"],
+    }
+    for field, expected in manifest_fields.items():
+        if manifest.get(field) != expected:
+            raise ValueError(f"prepared source manifest does not match the frozen plan: {run_root}")
+    if metadata.get("group_id") != (
+        f"{plan['benchmark_id']}:{expected_slot['case_id']}:replicate-{expected_slot['replicate']}"
+    ):
+        raise ValueError(f"prepared run metadata group id does not match the frozen plan: {run_root}")
+    if manifest.get("plan_sha256") != sha256_bytes(plan_bytes):
+        raise ValueError(f"prepared source manifest does not bind the archived plan: {run_root}")
+
+    preseal_fields = {
+        "schema_version": 1,
+        "immutable_plan_sha256": immutable_sha,
+        "case_id": expected_slot["case_id"],
+        "condition": expected_slot["condition"],
+        "run_order": expected_slot["run_order"],
+    }
+    if any(preseal.get(field) != expected for field, expected in preseal_fields.items()):
+        raise ValueError(f"prepared preseal record does not match the frozen plan: {run_root}")
+    optional_preseal_fields = {
+        "benchmark_id": plan["benchmark_id"],
+        "plan_sha256": sha256_bytes(plan_bytes),
+        "replicate": expected_slot["replicate"],
+        "attempt": expected_slot["attempt"],
+        "attempt_kind": expected_slot["attempt_kind"],
+    }
+    if any(
+        field in preseal and preseal[field] != expected
+        for field, expected in optional_preseal_fields.items()
+    ):
+        raise ValueError(f"prepared preseal record does not match the frozen plan: {run_root}")
+    expected_manifest_ref = make_artifact_ref(run_root, manifest_path)
+    if preseal.get("source_bundle_manifest") != expected_manifest_ref:
+        raise ValueError(f"prepared preseal manifest reference does not match: {run_root}")
+
     runtime = run_root / "runtime"
     if any((runtime / name).exists() for name in ("adapter-start.json", "adapter-failure.json", "execution.json")):
         raise ValueError(f"slot has already been attempted; retries are disabled: {run_root}")
-    if manifest.get("plan_sha256") != sha256_file(run_root / "artifacts" / "batch-plan.json"):
-        raise ValueError(f"prepared plan copy digest mismatch: {run_root}")
     for entry in manifest.get("files", []):
         path = (run_root / entry["path"]).resolve()
         try:
@@ -1152,6 +1278,16 @@ def execute_slot(
         raise ValueError("slot execution requires the plan GO authorization gate")
     run_root = run_root.resolve(strict=True)
     metadata = json.loads((run_root / "run-metadata.json").read_bytes())
+    archived_plan = validate_plan(json.loads((run_root / "artifacts" / "batch-plan.json").read_bytes()))
+    expected_slot = next((
+        slot for slot in archived_plan["slots"]
+        if all(metadata.get(field) == slot[field] for field in (
+            "case_id", "condition", "run_order", "replicate", "attempt", "attempt_kind",
+        ))
+    ), None)
+    if expected_slot is None:
+        raise ValueError(f"run metadata does not identify a frozen plan slot: {run_root}")
+    _preseal_status(run_root, archived_plan, expected_slot)
     manifest_path = run_root / "artifacts" / "source-bundle-manifest.json"
     manifest = json.loads(manifest_path.read_bytes())
     runtime = run_root / "runtime"
@@ -1209,6 +1345,8 @@ def execute_slot(
     failure_reason: str | None = None
     _write_json(runtime / "adapter-start.json", {
         "schema_version": 1,
+        "benchmark_id": metadata["benchmark_id"],
+        "immutable_plan_sha256": metadata["immutable_plan_sha256"],
         "started_at": started_at,
         "argv": strace_argv,
         "codex_argv": codex_argv,
@@ -1289,6 +1427,8 @@ def execute_slot(
     _write_private(supervisor_path, _jsonl_bytes(supervisor_events))
     execution = {
         "schema_version": 1,
+        "benchmark_id": metadata["benchmark_id"],
+        "immutable_plan_sha256": metadata["immutable_plan_sha256"],
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_seconds": duration,
@@ -1301,7 +1441,6 @@ def execute_slot(
         "trace_reason": parsed_trace["reason"],
         "trace_unknown": parsed_trace["unknown"],
     }
-    _write_json(runtime / "execution.json", execution)
 
     common_bindings = {
         "review_manifest": run_root / "input" / "reviewer-input.json",
@@ -1340,6 +1479,18 @@ def execute_slot(
     except ValueError as exc:
         verified_runtime = _empty_runtime_evidence(run_status, f"runtime evidence could not be verified: {exc}")
         verification_error = str(exc)
+
+    execution.update({
+        "raw_trace_sha256": sha256_bytes(raw_trace),
+        "supervisor_events_sha256": sha256_file(supervisor_path),
+        "normalizer": {
+            "version": NORMALIZER_VERSION,
+            "source_sha256": sha256_file(artifacts / "runtime_trace.py"),
+        },
+        "source_bundle_manifest_sha256": sha256_file(manifest_path),
+        "runtime_evidence_sha256": sha256_file(run_root / "runtime-evidence.json"),
+    })
+    _write_json(runtime / "execution.json", execution)
 
     evidence_valid = (
         verified_runtime.get("status") == "verified"
@@ -1396,6 +1547,8 @@ def execute_slot(
         )
         result["adapter_failure"] = {
             "schema_version": 1,
+            "benchmark_id": metadata["benchmark_id"],
+            "immutable_plan_sha256": metadata["immutable_plan_sha256"],
             "failure_reason": adapter_failure_reason,
             "detail": str(exc),
         }
@@ -1429,7 +1582,7 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
     run_roots: list[Path] = []
     for slot in plan["slots"]:
         run_root = runs_root / _slot_key(slot)
-        _preseal_status(run_root, immutable_sha)
+        _preseal_status(run_root, plan, slot)
         if (run_root / "input" / "runtime-config.json").read_bytes() != config_bytes:
             raise ValueError(f"runtime config differs from presealed bytes: {run_root}")
         run_roots.append(run_root)
@@ -1448,6 +1601,8 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
             ledger_path = run_root / "slot-failure-ledger.json"
             adapter_failure = {
                 "schema_version": 1,
+                "benchmark_id": plan["benchmark_id"],
+                "immutable_plan_sha256": immutable_sha,
                 "failure_reason": f"adapter_failure:{exc.__class__.__name__}",
                 "detail": str(exc),
             }
@@ -1460,6 +1615,7 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
                 slot,
                 run_root,
                 immutable_sha,
+                plan["benchmark_id"],
                 adapter_failure["failure_reason"],
                 str(exc),
                 inventory,
@@ -1472,7 +1628,7 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
             )
             ledger: dict[str, Any] = {
                 "schema_version": 1,
-                "benchmark_id": BENCHMARK_ID,
+                "benchmark_id": plan["benchmark_id"],
                 "immutable_plan_sha256": immutable_sha,
                 "case_id": slot["case_id"],
                 "condition": slot["condition"],
@@ -1542,8 +1698,10 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
 
 
 def _validate_plan_inputs(plan: dict[str, Any], case_index_path: Path) -> None:
+    validate_plan(plan)
     index = json.loads(case_index_path.read_bytes())
     expected = build_slot_plan(index)
+    expected["benchmark_id"] = plan["benchmark_id"]
     if _immutable_plan(plan) != _immutable_plan(expected):
         raise ValueError("plan case inputs differ from the selected case-index snapshot")
 

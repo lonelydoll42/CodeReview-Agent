@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -343,7 +344,13 @@ def _validate_agent_projection(evidence: dict[str, Any], runs: list[dict[str, An
         )
 
 
-def _validate_historical_provenance(summary: dict[str, Any], evidence: dict[str, Any], runs: list[dict[str, Any]]) -> None:
+def _validate_historical_provenance(
+    summary: dict[str, Any],
+    evidence: dict[str, Any],
+    runs: list[dict[str, Any]],
+    historical_replay_tool_digest: str | None = None,
+    historical_replay_tool_source_ref: str | None = None,
+) -> None:
     summary_status = summary.get("historical_recalculation")
     _require(isinstance(summary_status, dict), "summary must mark its historical recalculation basis")
     _require(summary_status.get("status") == "retained_historical_descriptive", "summary must remain historical descriptive evidence")
@@ -412,7 +419,18 @@ def _validate_historical_provenance(summary: dict[str, Any], evidence: dict[str,
     _require(isinstance(tool.get("version"), str) and tool.get("version"), "historical replay tool version is missing")
     tool_digest = tool.get("sha256")
     _require(isinstance(tool_digest, str) and HEX_SHA256.fullmatch(tool_digest), "historical replay tool digest is invalid")
-    _require(tool_digest == _sha256(Path(__file__).with_name("ab_eval.py").read_bytes()), "historical replay tool source digest changed")
+    if historical_replay_tool_digest is None:
+        historical_replay_tool_digest = _sha256(Path(__file__).with_name("ab_eval.py").read_bytes())
+        replay_tool_error = (
+            "historical replay tool source digest changed; pass "
+            "--historical-replay-tool-source-ref <commit> to verify a preserved historical source blob"
+        )
+    else:
+        replay_tool_error = (
+            "historical replay tool source digest does not match eval/ab_eval.py at "
+            f"--historical-replay-tool-source-ref {historical_replay_tool_source_ref}"
+        )
+    _require(tool_digest == historical_replay_tool_digest, replay_tool_error)
 
     source_manifests = provenance.get("source_manifests")
     _require(isinstance(source_manifests, dict), "historical source manifests are missing")
@@ -442,7 +460,40 @@ def _validate_historical_provenance(summary: dict[str, Any], evidence: dict[str,
         _require(isinstance(audit.get("current_audit_digest"), str) and HEX_SHA256.fullmatch(audit["current_audit_digest"]), "current reviewer-input audit digest is invalid")
 
 
-def validate_export(summary_bytes: bytes, evidence_bytes: bytes) -> None:
+def _historical_replay_tool_blob(source_ref: str) -> bytes:
+    _require(isinstance(source_ref, str) and source_ref.strip() == source_ref and bool(source_ref), "historical replay tool source ref must be a non-empty commit ref")
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{source_ref}^{{commit}}"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            shell=False,
+        ).stdout.strip().decode("ascii")
+        return subprocess.run(
+            ["git", "show", f"{commit}:eval/ab_eval.py"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            shell=False,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as exc:
+        detail = exc.stderr.decode("utf-8", errors="replace").strip() if isinstance(exc, subprocess.CalledProcessError) and exc.stderr else str(exc)
+        raise ExportError(f"cannot read eval/ab_eval.py from historical source ref {source_ref!r}: {detail}") from exc
+
+
+def validate_export(
+    summary_bytes: bytes,
+    evidence_bytes: bytes,
+    *,
+    historical_replay_tool_source_ref: str | None = None,
+) -> None:
+    historical_replay_tool_digest = (
+        _sha256(_historical_replay_tool_blob(historical_replay_tool_source_ref))
+        if historical_replay_tool_source_ref is not None
+        else None
+    )
     try:
         summary = json.loads(summary_bytes)
         evidence = json.loads(evidence_bytes)
@@ -510,7 +561,13 @@ def validate_export(summary_bytes: bytes, evidence_bytes: bytes) -> None:
         ),
         "human quality metrics must remain unknown until human labels exist",
     )
-    _validate_historical_provenance(summary, evidence, runs)
+    _validate_historical_provenance(
+        summary,
+        evidence,
+        runs,
+        historical_replay_tool_digest=historical_replay_tool_digest,
+        historical_replay_tool_source_ref=historical_replay_tool_source_ref,
+    )
     inclusion = evidence.get("inclusion")
     _require(isinstance(inclusion, dict), "evidence.inclusion is required")
     for key in ("frozen_oracle_included", "private_mapping_included", "raw_host_outputs_included", "source_run_records_included"):
@@ -863,8 +920,16 @@ def build_historical_export(
         )
 
 
-def check_export(summary_path: Path, evidence_path: Path) -> None:
-    validate_export(summary_path.read_bytes(), evidence_path.read_bytes())
+def check_export(
+    summary_path: Path,
+    evidence_path: Path,
+    historical_replay_tool_source_ref: str | None = None,
+) -> None:
+    validate_export(
+        summary_path.read_bytes(),
+        evidence_path.read_bytes(),
+        historical_replay_tool_source_ref=historical_replay_tool_source_ref,
+    )
 
 
 def prepare_blind_review_bundle(
@@ -995,6 +1060,10 @@ def main(argv: list[str] | None = None) -> int:
     check = subparsers.add_parser("check", help="Check byte and semantic identity of an export")
     check.add_argument("--summary", type=Path, required=True)
     check.add_argument("--evidence", type=Path, required=True)
+    check.add_argument(
+        "--historical-replay-tool-source-ref",
+        help="Commit whose eval/ab_eval.py bytes should be checked for a preserved historical export",
+    )
     blind = subparsers.add_parser("prepare-blind-review", help="Prepare condition-blind input, frozen source index, and empty labels template")
     blind.add_argument("--anonymous-input", type=Path, required=True)
     blind.add_argument("--operator-root", type=Path, required=True)
@@ -1034,7 +1103,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"prepared condition-blind review bundle: {args.input_output} {args.sources_output} {args.template_output}")
             return 0
-        check_export(args.summary, args.evidence)
+        check_export(
+            args.summary,
+            args.evidence,
+            historical_replay_tool_source_ref=args.historical_replay_tool_source_ref,
+        )
         print(f"verified summary/evidence export: {args.summary} {args.evidence}")
         return 0
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
