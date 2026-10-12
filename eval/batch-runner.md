@@ -184,19 +184,25 @@ events leave the trace incomplete. Each event keeps the parser's observed PID
 and one-based `trace_line`. Bind `call_id` only from the matching CLI event; do
 not infer process IDs or descriptor paths in the adapter.
 
-Capture with `strace -f -yy -e raw=read,pread64,readv,preadv,preadv2`, without buffer dumping, set
+Capture with `strace -f -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2`, including `eventfd` and `eventfd2`, without buffer dumping; set
 `umask 077`, and verify all evidence files are mode 0600
 with run directories mode 0700. Raw read buffers must remain pointers. Never
-trace environment values, headers, or network payloads. Parser `unknown`
+trace environment values, headers, or network payloads. The adapter records its
+actual argv in `adapter-start.json` and `execution.json`, uses the finite
+per-string `-s 65536` limit, and does not enable `-v`. This improves capture for
+long argv within the limit; truncated or abbreviated argv remains unknown and
+keeps the trace incomplete. Parser `unknown`
 entries for malformed or unassociated syscall records remain incomplete.
-Unknown file paths and successful reads from unknown descriptors are retained
-as path-attribution gaps; they do
-not invalidate known pipe traffic or prove a B Skill load. A B Skill-load
-claim requires a unique CLI `cat` event, its successful same-PID and same-call
-ID read of the pinned path, and complete `aggregated_output` equality with the
-pinned ZIP member bytes. Any successful readable open, read, or mapping of
-the pinned path in A is a
-protocol violation, regardless of which CLI command made it.
+Successful opens with unknown paths that are readable or have unknown
+readability, positive reads from unknown non-pipe descriptors, and readable
+mappings with unknown paths make runtime evidence incomplete. Unknown
+write-only opens remain attribution limitations but do not alone make evidence
+incomplete; known pipe traffic remains exempt. Path gaps never prove a B Skill
+load. A B Skill-load claim requires a unique CLI `cat` event, its successful
+same-PID and same-call ID read of the pinned path, and complete
+`aggregated_output` equality with the pinned ZIP member bytes. Any successful
+readable open, read, or mapping of the pinned path in A is a protocol violation,
+regardless of which CLI command made it.
 
 The run record references this sidecar through `artifacts.runtime_evidence`;
 the sidecar remains a separate evidence artifact, not a replacement for the

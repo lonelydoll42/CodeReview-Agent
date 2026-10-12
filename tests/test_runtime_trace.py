@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from eval.runtime_trace import normalizer_identity, parse_raw_trace
+from eval.runtime_trace import STRACE_STRING_LIMIT, normalizer_identity, parse_raw_trace
 
 
 def _parse(lines: list[str]) -> dict:
@@ -105,7 +106,7 @@ def test_repeated_close_ebadf_is_known_only_after_same_pid_close_without_reopen(
     ])
 
     closes = [event for event in parsed["events"] if event["event"] == "close"]
-    assert parsed["normalizer"]["version"] == "3"
+    assert parsed["normalizer"]["version"] == "6"
     assert closes[1]["known_closed"] is True
     assert closes[2]["known_closed"] is False
     assert closes[4]["known_closed"] is False
@@ -198,6 +199,38 @@ def test_mmap_keeps_path_and_readability_for_resource_access_checks() -> None:
     assert mapping["success"] is True
 
 
+@pytest.mark.parametrize("flags", [
+    "MAP_PRIVATE|MAP_ANONYMOUS",
+    "MAP_PRIVATE|MAP_ANON",
+    "34",
+    "0x22",
+])
+def test_anonymous_readable_mmap_is_not_a_file_path_gap(flags: str) -> None:
+    parsed = _parse([
+        f"812 mmap(NULL, 4096, PROT_READ, {flags}, -1, 0) = 0x7f000000",
+    ])
+
+    mapping = parsed["events"][0]
+    assert mapping["anonymous"] is True
+    assert mapping["path"] is None
+    assert parsed["attribution_unknown"] == []
+
+
+@pytest.mark.parametrize("flags", [
+    "MAP_PRIVATE|MAP_UNKNOWN|MAP_ANONYMOUS",
+    "MAP_PRIVATE|MAP_SHARED|MAP_ANONYMOUS",
+    "0x24",
+])
+def test_unproven_anonymous_flags_keep_readable_mmap_unattributed(flags: str) -> None:
+    parsed = _parse([
+        f"812 mmap(NULL, 4096, PROT_READ, {flags}, -1, 0) = 0x7f000000",
+    ])
+
+    mapping = parsed["events"][0]
+    assert mapping["anonymous"] is None
+    assert len(parsed["attribution_unknown"]) == 1
+
+
 def test_relative_open_and_buffered_read_are_rejected_without_copying_data() -> None:
     parsed = _parse([
         '801 openat(AT_FDCWD, "relative.txt", O_RDONLY) = 3',
@@ -212,6 +245,188 @@ def test_relative_open_and_buffered_read_are_rejected_without_copying_data() -> 
     )
     assert any(item["reason"] == "read_buffer_is_not_raw_pointer" for item in parsed["unknown"])
     assert "SYNTHETIC_BUFFER_MUST_NOT_ESCAPE" not in json.dumps(parsed)
+
+
+def test_yy_fd_paths_resolve_relative_openat_and_read_descriptors() -> None:
+    parsed = _parse([
+        '815 openat(AT_FDCWD</synthetic/root>, "sub/input.txt", O_RDONLY) = 3</synthetic/root/sub/input.txt>',
+        '815 read(3</synthetic/root/sub/input.txt>, 0x7fff0000, 0x4) = 0x4',
+        '815 pread64(3</synthetic/root/sub/input.txt>, 0x7fff0000, 0x4, 0x0) = 0x4',
+    ])
+
+    assert parsed["unknown"] == []
+    assert parsed["attribution_unknown"] == []
+    open_event, read_event, pread_event = parsed["events"]
+    assert open_event["path"] == "/synthetic/root/sub/input.txt"
+    assert read_event["path"] == "/synthetic/root/sub/input.txt"
+    assert pread_event["path"] == "/synthetic/root/sub/input.txt"
+    assert read_event["bytes_read"] == pread_event["bytes_read"] == 4
+
+
+def test_relative_openat_uses_traced_dirfd_and_read_fd_annotations() -> None:
+    parsed = _parse([
+        '816 openat(AT_FDCWD</synthetic/root>, "sub", O_RDONLY|O_DIRECTORY) = 3</synthetic/root/sub>',
+        '816 openat(3</synthetic/root/sub>, "input.txt", O_RDONLY) = 4',
+        "816 read(4, 0x7fff0000, 0x2) = 0x2",
+        '817 read(9</synthetic/unobserved>, 0x7fff0000, 0x1) = 0x1',
+    ])
+
+    opens = [event for event in parsed["events"] if event["event"] == "open"]
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert [event["path"] for event in opens] == [
+        "/synthetic/root/sub", "/synthetic/root/sub/input.txt",
+    ]
+    assert [event["path"] for event in reads] == [
+        "/synthetic/root/sub/input.txt", "/synthetic/unobserved",
+    ]
+    assert parsed["attribution_unknown"] == []
+
+
+def test_relative_openat_dirfd_conflict_keeps_both_path_candidates() -> None:
+    pinned_root = "/slot/input/pinned-skill/review-changes"
+    parsed = _parse([
+        f'824 open("{pinned_root}", O_RDONLY|O_DIRECTORY) = 3<{pinned_root}>',
+        '824 openat(3</synthetic/other-dir>, "SKILL.md", O_RDONLY) = 4</synthetic/other-dir/SKILL.md>',
+        "824 read(4, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    opened = [event for event in parsed["events"] if event["event"] == "open"][1]
+    assert opened["dirfd_tracked_path"] == pinned_root
+    assert opened["dirfd_annotation_path"] == "/synthetic/other-dir"
+    assert opened["dirfd_path_disagreement"] is True
+    assert opened["dirfd_path_conflict"] is True
+    assert opened["requested_path"] == f"{pinned_root}/SKILL.md"
+    assert opened["returned_path"] == "/synthetic/other-dir/SKILL.md"
+    assert opened["path_candidates"] == [
+        f"{pinned_root}/SKILL.md",
+        "/synthetic/other-dir/SKILL.md",
+    ]
+    assert opened["path_conflict"] is True
+    assert parsed["complete"] is False
+    assert any(
+        item["reason"] == "open_dirfd_path_disagrees_with_tracked_path"
+        for item in parsed["unknown"]
+    )
+
+
+def test_unannotated_relative_openat_and_read_remain_unattributed() -> None:
+    parsed = _parse([
+        '818 openat(AT_FDCWD, "relative.txt", O_RDONLY) = 3',
+        "818 read(3, 0x7fff0000, 0x1) = 0x1",
+        "818 +++ exited with 0 +++",
+    ])
+
+    opens = [event for event in parsed["events"] if event["event"] == "open"]
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert opens[0]["path"] is None
+    assert reads[0]["path"] is None
+    assert len(parsed["attribution_unknown"]) == 2
+    assert parsed["events"][-1]["exit_code"] == 0
+
+
+def test_open_fd_annotation_does_not_erase_normalized_request_path() -> None:
+    parsed = _parse([
+        '820 openat(AT_FDCWD, "/slot/input/pinned-skill/review-changes/SKILL.md", O_RDONLY) = 3</other-target>',
+        '820 read(3</other-target>, 0x7fff0000, 0x1) = 0x1',
+    ])
+
+    opened, read = parsed["events"]
+    assert opened["requested_path"] == "/slot/input/pinned-skill/review-changes/SKILL.md"
+    assert opened["returned_path"] == opened["path"] == "/other-target"
+    assert opened["path_disagreement"] is True
+    assert opened["path_conflict"] is True
+    assert read["tracked_path"] == read["path"] == "/other-target"
+    assert any(item["reason"] == "open_request_and_fd_path_disagree" for item in parsed["unknown"])
+    assert parsed["complete"] is False
+
+
+@pytest.mark.parametrize(("requested", "observed"), [
+    (
+        "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "/usr/lib/x86_64-linux-gnu/libc.so.6.0.0",
+    ),
+])
+def test_known_open_path_aliases_do_not_create_trace_conflicts(
+    requested: str,
+    observed: str,
+) -> None:
+    parsed = _parse([
+        f'822 open("{requested}", O_RDONLY) = 3<{observed}>',
+        f'822 read(3<{observed}>, 0x7fff0000, 0x1) = 0x1',
+    ])
+
+    opened, read = parsed["events"]
+    assert opened["requested_path"] == requested
+    assert opened["returned_path"] == observed
+    assert opened["path_disagreement"] is True
+    assert opened["path_conflict"] is False
+    assert opened["path_alias_status"] == "known"
+    assert read["tracked_path"] == read["path"] == observed
+    assert read["path_conflict"] is False
+    assert parsed["unknown"] == []
+    assert parsed["attribution_unknown"] == []
+
+
+def test_proc_self_numeric_pid_annotation_is_preserved_as_unproven() -> None:
+    parsed = _parse([
+        '825 open("/proc/self/maps", O_RDONLY) = 3</proc/3/maps>',
+        '826 open("/proc/self/maps", O_RDONLY) = 3</proc/3/maps>',
+    ])
+
+    opens = [event for event in parsed["events"] if event["event"] == "open"]
+    assert len(opens) == 2
+    assert [event["pid"] for event in opens] == [825, 826]
+    assert all(event["requested_path"] == "/proc/self/maps" for event in opens)
+    assert all(event["returned_path"] == "/proc/3/maps" for event in opens)
+    assert all(event["path_alias_status"] == "unproven" for event in opens)
+    assert all(event["path_conflict"] is False for event in opens)
+    assert parsed["complete"] is True
+    assert parsed["unknown"] == []
+
+
+def test_eventfd_read_is_a_known_non_file_descriptor() -> None:
+    parsed = _parse([
+        "823 eventfd2(0, EFD_CLOEXEC) = 4",
+        "823 read(4<anon_inode:[eventfd]>, 0x7fff0000, 0x8) = 0x8",
+    ])
+
+    read = parsed["events"][-1]
+    assert read["event"] == "read"
+    assert read["fd_kind"] == "anon_inode"
+    assert read["path"] is None
+    assert "unknown_reason" not in read
+    assert parsed["attribution_unknown"] == []
+
+
+def test_read_fd_annotation_does_not_erase_tracked_path() -> None:
+    parsed = _parse([
+        '821 open("/slot/input/pinned-skill/review-changes/SKILL.md", O_RDONLY) = 3',
+        "821 read(3</other-target>, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    read = parsed["events"][-1]
+    assert read["tracked_path"] == "/slot/input/pinned-skill/review-changes/SKILL.md"
+    assert read["path"] == "/other-target"
+    assert read["path_disagreement"] is True
+    assert any(item["reason"] == "read_fd_path_disagrees_with_tracked_path" for item in parsed["unknown"])
+    assert parsed["complete"] is False
+
+
+def test_truncated_execve_argv_stays_unknown_after_zero_exit() -> None:
+    parsed = _parse([
+        '819 execve("/usr/bin/true", ["/usr/bin/true", "SYNTHETIC_ARG", ...], 0x0 /* 1 var */) = 0',
+        "819 +++ exited with 0 +++",
+    ])
+
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 1,
+        "reason": "exec_argv_unavailable_or_truncated",
+        "pid": 819,
+        "operation": "execve",
+    }]
+    assert not any(event["event"] == "exec" for event in parsed["events"])
+    assert parsed["events"][-1]["exit_code"] == 0
 
 
 def test_raw_pread64_uses_the_same_pid_fd_path_attribution() -> None:
@@ -230,6 +445,11 @@ def test_raw_pread64_uses_the_same_pid_fd_path_attribution() -> None:
         "result": 8,
         "bytes_read": 8,
         "path": "/synthetic/library",
+        "tracked_path": "/synthetic/library",
+        "path_candidates": ["/synthetic/library"],
+        "path_disagreement": False,
+        "path_conflict": False,
+        "path_alias_status": "same",
         "fd_kind": "file",
         "error": None,
         "trace_line": 2,
@@ -328,7 +548,7 @@ def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
     assert identity["name"] == "eval.runtime_trace"
-    assert identity["version"] == "3"
+    assert identity["version"] == "6"
     assert identity["source_sha256"] == hashlib.sha256(module_path.read_bytes()).hexdigest()
 
 
@@ -344,7 +564,7 @@ def test_real_strace_raw_read_preflight(tmp_path: Path, program: str, arguments:
     trace_path = tmp_path / f"{program}-strace.log"
     run = subprocess.run(
         [
-            strace, "-f", "-yy", "-s", "4096",
+            strace, "-f", "-yy", "-s", str(STRACE_STRING_LIMIT),
             "-e", "trace=execve,execveat,open,openat,openat2,creat,close,read,pread64,readv,preadv,preadv2,dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork,exit,exit_group",
             "-e", "raw=read,pread64,readv,preadv,preadv2",
             "-o", str(trace_path), "--", executable, *arguments, str(target),
@@ -376,3 +596,66 @@ def test_real_strace_raw_read_preflight(tmp_path: Path, program: str, arguments:
         r"\bread\(0x[0-9a-fA-F]+, 0x[0-9a-fA-F]+, 0x[0-9a-fA-F]+\)\s*=\s*0x[0-9a-fA-F]+",
         trace_text,
     )
+
+
+def test_real_strace_finite_limit_keeps_long_argv_and_abbreviates_environment(
+    tmp_path: Path,
+) -> None:
+    strace = shutil.which("strace")
+    executable = shutil.which("true")
+    if strace is None or executable is None:
+        pytest.skip("strace and true are required")
+
+    long_argument = "SYNTHETIC_ARG_" + "x" * 50000
+    trace_path = tmp_path / "long-argv-strace.log"
+    run = subprocess.run(
+        [
+            strace, "-f", "-yy", "-s", str(STRACE_STRING_LIMIT),
+            "-e", "trace=execve", "-o", str(trace_path), "--", executable, long_argument,
+        ],
+        env={"PATH": os.defpath, "SYNTHETIC_ENV_SENTINEL": "SYNTHETIC_SECRET_MARKER"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=15,
+    )
+    raw = trace_path.read_bytes()
+    parsed = parse_raw_trace(raw)
+
+    assert run.returncode == 0
+    assert parsed["complete"] is True
+    assert b"SYNTHETIC_SECRET_MARKER" not in raw
+    traced = [
+        event for event in parsed["events"]
+        if event["event"] == "exec" and event["success"] and Path(event["argv"][0]).name == "true"
+    ]
+    assert len(traced) == 1
+    assert len(traced[0]["argv"][-1]) == len(long_argument)
+
+
+def test_real_strace_argv_over_finite_limit_stays_incomplete(tmp_path: Path) -> None:
+    strace = shutil.which("strace")
+    executable = shutil.which("true")
+    if strace is None or executable is None:
+        pytest.skip("strace and true are required")
+
+    long_argument = "SYNTHETIC_ARG_" + "x" * (STRACE_STRING_LIMIT + 4096)
+    trace_path = tmp_path / "over-limit-argv-strace.log"
+    run = subprocess.run(
+        [
+            strace, "-f", "-yy", "-s", str(STRACE_STRING_LIMIT),
+            "-e", "trace=execve", "-o", str(trace_path), "--", executable, long_argument,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=15,
+    )
+    raw = trace_path.read_bytes()
+    parsed = parse_raw_trace(raw)
+
+    assert run.returncode == 0
+    assert parsed["complete"] is False
+    assert any(item["reason"] == "exec_argv_unavailable_or_truncated" for item in parsed["unknown"])
+    assert parsed["events"][-1]["event"] == "process_exit"
+    assert parsed["events"][-1]["exit_code"] == 0

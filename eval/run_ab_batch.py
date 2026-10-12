@@ -27,10 +27,10 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility for 
 
 if __package__:
     from .runtime_evidence import NORMALIZER_VERSION, validate_sidecar_shape, verify_runtime_evidence
-    from .runtime_trace import parse_raw_trace
+    from .runtime_trace import STRACE_STRING_LIMIT, parse_raw_trace
 else:
     from runtime_evidence import NORMALIZER_VERSION, validate_sidecar_shape, verify_runtime_evidence
-    from runtime_trace import parse_raw_trace
+    from runtime_trace import STRACE_STRING_LIMIT, parse_raw_trace
 
 
 BENCHMARK_ID = "2026-10-10-ab-workflow-validation"
@@ -57,13 +57,21 @@ TRACE_NORMALIZER = Path(__file__).with_name("runtime_trace.py")
 DEFAULT_SKILL_SOURCE = Path(__file__).resolve().parents[1] / "skills" / "review-changes"
 TRACE_SYSCALLS = (
     "execve,execveat,open,openat,openat2,creat,close,read,pread64,readv,preadv,preadv2,"
-    "mmap,mmap2,pipe,pipe2,dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork"
+    "mmap,mmap2,pipe,pipe2,eventfd,eventfd2,dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork"
 )
 SANDBOX_INPUT = Path("/slot/input")
 SANDBOX_OUTPUT = Path("/slot/raw-model-output.txt")
 SANDBOX_CODEX_HOME = Path("/codex-home")
 SANDBOX_SKILL_PATH = SANDBOX_INPUT / "pinned-skill" / "review-changes" / "SKILL.md"
 SANDBOX_PATH = "/usr/bin:/bin"
+
+
+def _build_trace_argv(strace_executable: str, trace_path: Path, command: list[str]) -> list[str]:
+    return [
+        strace_executable, "-f", "-yy", "-s", str(STRACE_STRING_LIMIT),
+        "-e", "raw=read,pread64,readv,preadv,preadv2", "-e", f"trace={TRACE_SYSCALLS}",
+        "-o", str(trace_path.resolve()), "--", *command,
+    ]
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -1523,11 +1531,7 @@ def execute_slot(
         codex_home=codex_home,
         auth_file=auth_file,
     )
-    strace_argv = [
-        config["strace_executable"], "-f", "-yy", "-s", "4096",
-        "-e", "raw=read,pread64,readv,preadv,preadv2", "-e", f"trace={TRACE_SYSCALLS}",
-        "-o", str(trace_path.resolve()), "--", *bwrap_argv,
-    ]
+    strace_argv = _build_trace_argv(config["strace_executable"], trace_path, bwrap_argv)
 
     started_at = _utc_now()
     monotonic_start = time.monotonic()

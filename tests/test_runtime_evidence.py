@@ -372,8 +372,9 @@ def test_unattributed_read_cannot_prove_skill_load(
 
     evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
 
-    assert evidence["status"] == "verified"
+    assert evidence["status"] == "incomplete"
     assert evidence["verified_loaded"] is None
+    assert any("successful readable access" in item for item in evidence["limitations"])
 
 
 def test_unknown_inherited_fd_read_is_a_path_gap_not_a_skill_load_proof(tmp_path: Path) -> None:
@@ -392,9 +393,146 @@ def test_unknown_inherited_fd_read_is_a_path_gap_not_a_skill_load_proof(tmp_path
 
     assert parsed["complete"] is True
     assert parsed["attribution_unknown"]
-    assert evidence["status"] == "verified"
+    assert evidence["status"] == "incomplete"
     assert evidence["verified_loaded"] is None
     assert any("path attribution" in item for item in evidence["limitations"])
+
+
+@pytest.mark.parametrize("access", ["open", "read", "mmap"])
+def test_unattributed_readable_access_makes_runtime_evidence_incomplete(
+    tmp_path: Path, access: str
+) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path)
+    lines = [
+        '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+    ]
+    if access == "open":
+        lines.append('102 openat(AT_FDCWD, "relative.txt", O_RDONLY) = 3')
+    elif access == "read":
+        lines.append("102 read(0x3, 0x7fff0000, 0x1) = 0x1")
+    else:
+        lines.append("102 mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, 0x3, 0) = 0x7f000000")
+    lines.extend(["102 +++ exited with 0 +++", "101 +++ exited with 0 +++", ""])
+    parsed = _refresh_trace_artifacts(run_dir, "\n".join(lines).encode("utf-8"))
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    assert parsed["complete"] is True
+    assert parsed["attribution_unknown"]
+    assert evidence["status"] == "incomplete"
+    assert evidence["verified_loaded"] is None
+    assert any("successful readable access" in item for item in evidence["limitations"])
+
+
+def test_unattributed_write_only_open_does_not_make_runtime_evidence_incomplete(
+    tmp_path: Path,
+) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path)
+    raw = "\n".join([
+        '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        '102 openat(AT_FDCWD, "relative.txt", O_WRONLY) = 3',
+        "102 +++ exited with 0 +++",
+        "101 +++ exited with 0 +++",
+        "",
+    ]).encode("utf-8")
+    parsed = _refresh_trace_artifacts(run_dir, raw)
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    assert parsed["complete"] is True
+    assert parsed["attribution_unknown"]
+    assert evidence["status"] == "verified"
+    assert evidence["verified_loaded"] is None
+
+
+@pytest.mark.parametrize("conflict", ["open_result", "read_annotation"])
+def test_pinned_request_path_survives_fd_annotation_conflicts(
+    tmp_path: Path, conflict: str
+) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path, condition="same_host_direct")
+    if conflict == "open_result":
+        access_lines = [
+            f'102 openat(AT_FDCWD, "{SKILL_PATH}", O_RDONLY) = 3</other-target>',
+            "102 read(3</other-target>, 0x7fff0000, 0x1) = 0x1",
+        ]
+    else:
+        access_lines = [
+            f'102 openat(AT_FDCWD, "{SKILL_PATH}", O_RDONLY) = 3',
+            "102 read(3</other-target>, 0x7fff0000, 0x1) = 0x1",
+        ]
+    raw = "\n".join([
+        '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        *access_lines,
+        "102 +++ exited with 0 +++",
+        "101 +++ exited with 0 +++",
+        "",
+    ]).encode("utf-8")
+    parsed = _refresh_trace_artifacts(run_dir, raw)
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    assert parsed["complete"] is False
+    assert evidence["status"] == "incomplete"
+    assert evidence["protocol_violation"] is True
+    assert evidence["verified_loaded"] is None
+
+
+def test_conflicting_openat_dirfd_preserves_pinned_candidate_and_blocks_proof(
+    tmp_path: Path,
+) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path, condition="same_host_direct")
+    pinned_dir = SKILL_PATH.rsplit("/", 1)[0]
+    raw = "\n".join([
+        '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        f'102 openat(AT_FDCWD, "{pinned_dir}", O_RDONLY|O_DIRECTORY) = 3<{pinned_dir}>',
+        '102 openat(3</synthetic/other-dir>, "SKILL.md", O_RDONLY) = 4</synthetic/other-dir/SKILL.md>',
+        "102 read(4, 0x7fff0000, 0x1) = 0x1",
+        "102 +++ exited with 0 +++",
+        "101 +++ exited with 0 +++",
+        "",
+    ]).encode("utf-8")
+    parsed = _refresh_trace_artifacts(run_dir, raw)
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    conflicting_open = next(
+        event for event in parsed["events"]
+        if event["event"] == "open" and event.get("dirfd_path_conflict")
+    )
+    assert SKILL_PATH in conflicting_open["path_candidates"]
+    assert parsed["complete"] is False
+    assert evidence["status"] == "incomplete"
+    assert evidence["protocol_violation"] is True
+    assert evidence["verified_loaded"] is None
+
+
+def test_unproven_proc_self_alias_cannot_prove_pinned_skill_load(tmp_path: Path) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path)
+    raw = "\n".join([
+        '101 execve("/usr/bin/codex", ["codex", "exec"], 0x0, 0x0) = 0',
+        f'102 execve("/usr/bin/cat", ["cat", "--", "{SKILL_PATH}"], 0x0, 0x0) = 0',
+        '102 open("/proc/self/maps", O_RDONLY) = 3</proc/3/maps>',
+        "102 read(3</proc/3/maps>, 0x7fff0000, 0x1) = 0x1",
+        "102 +++ exited with 0 +++",
+        "101 +++ exited with 0 +++",
+        "",
+    ]).encode("utf-8")
+    parsed = _refresh_trace_artifacts(run_dir, raw)
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    proc_open = next(event for event in parsed["events"] if event["event"] == "open")
+    assert proc_open["path_alias_status"] == "unproven"
+    assert proc_open["requested_path"] == "/proc/self/maps"
+    assert proc_open["returned_path"] == "/proc/3/maps"
+    assert evidence["status"] == "verified"
+    assert evidence["verified_loaded"] is None
+    assert evidence["skill_load_status"] == "unknown"
+    assert any("PID namespace identity proof" in item for item in evidence["limitations"])
 
 
 def test_decoded_read_buffer_makes_runtime_evidence_incomplete(tmp_path: Path) -> None:

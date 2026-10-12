@@ -32,7 +32,7 @@ from eval.run_ab_batch import (
     _preflight_codex_config,
     write_runtime_config,
 )
-from eval.runtime_trace import parse_raw_trace
+from eval.runtime_trace import STRACE_STRING_LIMIT, parse_raw_trace
 
 
 class AbBatchPlanTests(unittest.TestCase):
@@ -808,6 +808,16 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
 
 
 class BatchExecutionAdapterTests(unittest.TestCase):
+    def test_trace_argv_uses_finite_limit_without_environment_expansion(self) -> None:
+        argv = batch._build_trace_argv(
+            "/usr/bin/strace", Path("/tmp/synthetic-trace.log"), ["/usr/bin/true"],
+        )
+
+        self.assertEqual(argv[argv.index("-s") + 1], str(STRACE_STRING_LIMIT))
+        self.assertNotIn("-v", argv)
+        self.assertIn("raw=read,pread64,readv,preadv,preadv2", argv)
+        self.assertEqual(argv[-2:], ["--", "/usr/bin/true"])
+
     def test_execute_slot_rejects_open_presealed_schema_before_adapter_start(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             run_root, config = _fake_cli_slot(Path(temp_dir))
@@ -1139,6 +1149,8 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(start["immutable_plan_sha256"], result["immutable_plan_sha256"])
             argv = start["argv"]
             self.assertEqual(argv[0], "/usr/bin/strace")
+            self.assertEqual(argv[argv.index("-s") + 1], str(STRACE_STRING_LIMIT))
+            self.assertNotIn("-v", argv)
             self.assertIn(config["bwrap_executable"], argv)
             self.assertIn("--unshare-all", argv)
             self.assertIn("--share-net", argv)
@@ -1253,7 +1265,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
-    def test_v3_parser_keeps_v2_sidecar_untrusted(self) -> None:
+    def test_v6_parser_keeps_v5_sidecar_untrusted(self) -> None:
         raw_trace = (
             b'701 open("/synthetic/legacy", O_RDONLY) = 3\n'
             b"701 close(3) = 0\n"
@@ -1261,7 +1273,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
         )
         parsed = parse_raw_trace(raw_trace)
         closes = [event for event in parsed["events"] if event["event"] == "close"]
-        self.assertEqual(parsed["normalizer"]["version"], "3")
+        self.assertEqual(parsed["normalizer"]["version"], "6")
         self.assertTrue(closes[1]["known_closed"])
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1276,7 +1288,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
                     "sha256": "b" * 64,
                     "source_raw_trace": raw_ref,
                     "normalizer": {
-                        "version": "2",
+                        "version": "5",
                         "source": {"path": "artifacts/runtime_trace.py", "sha256": "c" * 64},
                     },
                 },
@@ -1288,7 +1300,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
             }
             batch._write_json(root / "runtime-evidence.json", sidecar)
 
-            with self.assertRaisesRegex(ValueError, "normalizer must bind version 3"):
+            with self.assertRaisesRegex(ValueError, "normalizer must bind version 6"):
                 batch.verify_runtime_evidence(root, "runtime-evidence.json", {"run_status": "completed"})
 
     def test_sidecar_hashes_raw_trace_and_binds_normalizer_source(self) -> None:

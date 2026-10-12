@@ -1,6 +1,6 @@
 """Conservatively normalize syscall events from raw strace output.
 
-Capture with ``strace -f -yy -e raw=read,pread64,readv,preadv,preadv2``. Read
+Capture with ``strace -f -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2``. Read
 buffers must remain raw pointers; decoded buffer text is rejected so the trace
 cannot carry file data.
 """
@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import posixpath
 import re
 from pathlib import Path
 from typing import Any
 
 
 NORMALIZER_NAME = "eval.runtime_trace"
-NORMALIZER_VERSION = "3"
+NORMALIZER_VERSION = "6"
+STRACE_STRING_LIMIT = 65536
 NORMALIZER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 _PID_PREFIX = re.compile(r"^(?:\[pid\s+(?P<bracketed>\d+)\]|(?P<plain>\d+))\s+(?P<body>.*)$")
@@ -28,9 +30,13 @@ _UNAVAILABLE_RESULT = re.compile(
     r"(?:\s+\([^()\r\n]*\))?)?\s*$"
 )
 _FD = re.compile(rf"^\s*({_NUMBER})\b")
+_FD_ANNOTATION = re.compile(
+    rf"^\s*(?:AT_FDCWD|{_NUMBER})<(?P<path>/[^<>]*)>\s*$"
+)
+_FD_KIND_ANNOTATION = re.compile(rf"^\s*({_NUMBER})<(?P<kind>[^<>]+)>\s*$")
 _READ_SYSCALLS = {"read", "pread64", "readv", "preadv", "preadv2"}
 _RELEVANT = re.compile(
-    r"^(?:execve(?:at)?|open(?:at2?|at)?|creat|close|read|pread64|readv|preadv2?|mmap2?|pipe2?|dup2?|dup3|fcntl|close_range|clone3?|fork|vfork)\("
+    r"^(?:execve(?:at)?|open(?:at2?|at)?|creat|close|read|pread64|readv|preadv2?|mmap2?|pipe2?|eventfd2?|dup2?|dup3|fcntl|close_range|clone3?|fork|vfork)\("
 )
 _EXITED = re.compile(r"^\+\+\+ exited with (\d+) \+\+\+$")
 _SIGNALED = re.compile(r"^\+\+\+ killed by ([A-Z0-9]+)(?: \(.*\))? \+\+\+$")
@@ -132,6 +138,221 @@ def _open_path_and_flags(name: str, args: list[str]) -> tuple[str, str]:
     return path, flags
 
 
+def _absolute_fd_path(value: str) -> str | None:
+    match = _FD_ANNOTATION.fullmatch(value.strip())
+    if match is None:
+        return None
+    path = match.group("path")
+    if not path.isascii() or "\\" in path or path.endswith(" (deleted)"):
+        return None
+    return path
+
+
+def _fd_annotation_kind(value: str) -> str | None:
+    match = _FD_KIND_ANNOTATION.fullmatch(value.strip())
+    if match is None:
+        return None
+    annotation = match.group("kind")
+    if annotation.startswith("pipe:["):
+        return "pipe"
+    if annotation.startswith("anon_inode:"):
+        return "anon_inode"
+    if annotation.startswith("socket:["):
+        return "socket"
+    return None
+
+
+def _fd_path(
+    value: str,
+    table: dict[int, dict[str, Any] | None],
+) -> tuple[str | None, str | None, str | None, bool, bool]:
+    annotated = _absolute_fd_path(value)
+    try:
+        state = table.get(_fd(value))
+    except ValueError:
+        state = None
+    tracked = state.get("path") if state is not None else None
+    disagreement = tracked is not None and annotated is not None and tracked != annotated
+    conflict = disagreement and not _known_path_equivalent(tracked, annotated)
+    return tracked or annotated, tracked, annotated, disagreement, conflict
+
+
+def _unproven_proc_alias(left: str, right: str) -> bool:
+    proc_self = "/proc/self"
+    for requested, observed in ((left, right), (right, left)):
+        if requested != proc_self and not requested.startswith(proc_self + "/"):
+            continue
+        match = re.fullmatch(r"/proc/[1-9][0-9]*(?P<suffix>/.*)?", observed)
+        if match is not None and (match.group("suffix") or "") == requested[len(proc_self):]:
+            return True
+    return False
+
+
+def _known_path_equivalent(requested: str, observed: str) -> bool:
+    if requested == observed:
+        return True
+
+    for alias, target in (("/lib", "/usr/lib"), ("/lib64", "/usr/lib64")):
+        if requested == alias or requested.startswith(alias + "/"):
+            resolved = target + requested[len(alias):]
+            if resolved == observed:
+                return True
+
+    requested_parent, requested_name = posixpath.split(requested)
+    observed_parent, observed_name = posixpath.split(observed)
+    library_roots = ("/lib/", "/lib64/", "/usr/lib/", "/usr/lib64/")
+    soname = re.fullmatch(r"lib[^/]+\.so(?:\.\d+)*", requested_name)
+    if (
+        requested_parent == observed_parent
+        and requested_parent.startswith(library_roots)
+        and soname is not None
+        and observed_name.startswith(requested_name + ".")
+        and re.fullmatch(r"(?:\d+\.)*\d+", observed_name[len(requested_name) + 1:])
+    ):
+        return True
+    return False
+
+
+def _observed_open_path(
+    name: str,
+    args: list[str],
+    result: str,
+    table: dict[int, dict[str, Any] | None],
+) -> dict[str, Any]:
+    try:
+        path, flags = _open_path_and_flags(name, args)
+    except (IndexError, SyntaxError, ValueError):
+        return {
+            "path": None, "requested_path": None, "returned_path": None,
+            "path_candidates": [], "flags": "", "dirfd_tracked_path": None,
+            "dirfd_annotation_path": None, "dirfd_path_disagreement": False,
+            "dirfd_path_conflict": False, "path_disagreement": False,
+            "path_conflict": False, "path_alias_status": "same",
+        }
+
+    returned_path = _absolute_fd_path(result)
+    requested_paths: list[str] = []
+    dirfd_tracked_path = None
+    dirfd_annotation_path = None
+    dirfd_path_disagreement = False
+    dirfd_path_conflict = False
+    if path.startswith("/"):
+        requested_paths.append(posixpath.normpath(path))
+    elif name in {"openat", "openat2"} and args:
+        base, dirfd_tracked_path, dirfd_annotation_path, dirfd_path_disagreement, dirfd_path_conflict = _fd_path(
+            args[0], table,
+        )
+        for candidate_base in (dirfd_tracked_path, dirfd_annotation_path):
+            if candidate_base is not None:
+                candidate = posixpath.normpath(posixpath.join(candidate_base, path))
+                if candidate not in requested_paths:
+                    requested_paths.append(candidate)
+        if not requested_paths and base is not None:
+            requested_paths.append(posixpath.normpath(posixpath.join(base, path)))
+
+    requested_path = requested_paths[0] if requested_paths else None
+    path_disagreement = dirfd_path_disagreement or (
+        requested_path is not None
+        and returned_path is not None
+        and requested_path != returned_path
+    )
+    result_path_disagreement = (
+        requested_path is not None
+        and returned_path is not None
+        and requested_path != returned_path
+    )
+    result_path_conflict = (
+        result_path_disagreement
+        and not _known_path_equivalent(requested_path, returned_path)
+        and not _unproven_proc_alias(requested_path, returned_path)
+    )
+    path_conflict = dirfd_path_conflict or result_path_conflict
+    unproven_alias = (
+        (dirfd_path_disagreement and dirfd_tracked_path is not None
+         and dirfd_annotation_path is not None
+         and _unproven_proc_alias(dirfd_tracked_path, dirfd_annotation_path))
+        or (result_path_disagreement and _unproven_proc_alias(requested_path, returned_path))
+    )
+    if path_conflict:
+        alias_status = "conflict"
+    elif unproven_alias:
+        alias_status = "unproven"
+    elif path_disagreement:
+        alias_status = "known"
+    else:
+        alias_status = "same"
+
+    path_candidates = list(requested_paths)
+    if returned_path is not None and returned_path not in path_candidates:
+        path_candidates.append(returned_path)
+    return {
+        "path": returned_path or requested_path,
+        "requested_path": requested_path,
+        "returned_path": returned_path,
+        "path_candidates": path_candidates,
+        "flags": flags,
+        "dirfd_tracked_path": dirfd_tracked_path,
+        "dirfd_annotation_path": dirfd_annotation_path,
+        "dirfd_path_disagreement": dirfd_path_disagreement,
+        "dirfd_path_conflict": dirfd_path_conflict,
+        "path_disagreement": path_disagreement,
+        "path_conflict": path_conflict,
+        "path_alias_status": alias_status,
+    }
+
+
+def _remember_fd_path(
+    table: dict[int, dict[str, Any] | None], fd_number: int, path: str
+) -> dict[str, Any]:
+    previous = table.get(fd_number)
+    state = {
+        "kind": "file",
+        "path": path,
+        "cloexec": previous.get("cloexec") if previous is not None else None,
+        "readable": previous.get("readable") if previous is not None else None,
+    }
+    table[fd_number] = state
+    return state
+
+
+def _fd_observed_path(
+    value: str,
+    fd_number: int,
+    table: dict[int, dict[str, Any] | None],
+    pid: int,
+) -> tuple[dict[str, Any] | None, str | None, str | None, bool, bool, str, list[str]]:
+    state = table.get(fd_number)
+    tracked_path = state.get("path") if state is not None else None
+    annotated_path = _absolute_fd_path(value)
+    disagreement = (
+        annotated_path is not None
+        and tracked_path is not None
+        and annotated_path != tracked_path
+    )
+    conflict = (
+        disagreement
+        and not _known_path_equivalent(tracked_path, annotated_path)
+        and not _unproven_proc_alias(tracked_path, annotated_path)
+    )
+    if annotated_path is not None and tracked_path is None:
+        state = _remember_fd_path(table, fd_number, annotated_path)
+    elif state is None:
+        kind = _fd_annotation_kind(value)
+        if kind is not None:
+            state = {"kind": kind, "path": None, "cloexec": None, "readable": None}
+            table[fd_number] = state
+    if conflict:
+        alias_status = "conflict"
+    elif disagreement and _unproven_proc_alias(tracked_path, annotated_path):
+        alias_status = "unproven"
+    elif disagreement:
+        alias_status = "known"
+    else:
+        alias_status = "same"
+    paths = [path for path in (tracked_path, annotated_path) if path is not None]
+    return state, annotated_path or tracked_path, tracked_path, disagreement, conflict, alias_status, paths
+
+
 def _event(event: str, pid: int, line: int, **fields: Any) -> dict[str, Any]:
     return {"event": event, "pid": pid, **fields, "trace_line": line}
 
@@ -199,6 +420,31 @@ def _readable_mapping(protection: str) -> bool | None:
     if protection and not re.search(r"[A-Za-z_]", protection):
         return False
     return None
+
+
+_MAPPING_FLAGS = {
+    "MAP_SHARED", "MAP_PRIVATE", "MAP_SHARED_VALIDATE", "MAP_FIXED",
+    "MAP_ANONYMOUS", "MAP_ANON", "MAP_32BIT", "MAP_GROWSDOWN",
+    "MAP_DENYWRITE", "MAP_EXECUTABLE", "MAP_LOCKED", "MAP_NORESERVE",
+    "MAP_POPULATE", "MAP_NONBLOCK", "MAP_STACK", "MAP_HUGETLB", "MAP_SYNC",
+    "MAP_FIXED_NOREPLACE", "MAP_UNINITIALIZED", "MAP_FILE",
+}
+
+
+def _anonymous_mapping(flags: str) -> bool | None:
+    numeric = re.fullmatch(r"\s*(0x[0-9a-fA-F]+|\d+)\s*", flags)
+    if numeric is not None:
+        value = _integer(numeric.group(1))
+        if value < 0 or value & 0xF not in {1, 2, 3}:
+            return None
+        return bool(value & 0x20)
+
+    tokens = {token.strip() for token in flags.split("|") if token.strip()}
+    if not tokens or not tokens <= _MAPPING_FLAGS:
+        return None
+    if "MAP_PRIVATE" in tokens and ("MAP_SHARED" in tokens or "MAP_SHARED_VALIDATE" in tokens):
+        return None
+    return bool(tokens & {"MAP_ANONYMOUS", "MAP_ANON"})
 
 
 def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
@@ -400,7 +646,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
         if name not in {
             "execve", "execveat", "open", "openat", "openat2", "creat",
             "close", *_READ_SYSCALLS, "mmap", "mmap2", "pipe", "pipe2", "dup", "dup2", "dup3", "fcntl",
-            "close_range", "clone", "clone3", "fork", "vfork",
+            "eventfd", "eventfd2", "close_range", "clone", "clone3", "fork", "vfork",
         }:
             continue
         try:
@@ -451,6 +697,20 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             ))
             continue
 
+        if name in {"eventfd", "eventfd2"}:
+            if returned >= 0:
+                table[returned] = {
+                    "kind": "anon_inode", "path": None,
+                    "cloexec": name == "eventfd2" and len(args) > 1 and "EFD_CLOEXEC" in args[1],
+                    "readable": None,
+                }
+                clear_closed_markers(table, returned)
+                invalidate_uncertain_parent_fd(pid, returned)
+            events.append(_event(
+                "fd_operation", pid, line_number, syscall=name, result=returned, error=error,
+            ))
+            continue
+
         if name in {"execve", "execveat"}:
             argv_index = 1 if name == "execve" else 2
             if len(args) <= argv_index:
@@ -478,11 +738,14 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             continue
 
         if name in {"open", "openat", "openat2", "creat"}:
-            try:
-                path, flags = _open_path_and_flags(name, args)
-            except (SyntaxError, ValueError):
-                path, flags = None, ""
+            open_paths = _observed_open_path(
+                name, args, call.group("result"), table,
+            )
             success = returned >= 0
+            path = open_paths["path"]
+            requested_path = open_paths["requested_path"]
+            returned_path = open_paths["returned_path"]
+            flags = open_paths["flags"]
             absolute_path = path if isinstance(path, str) and path.startswith("/") else None
             readable = False if name == "creat" else _readable_open(flags)
             if success:
@@ -494,9 +757,28 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                 invalidate_uncertain_parent_fd(pid, returned)
             event = _event(
                 "open", pid, line_number, syscall=name, fd=returned if success else None,
-                path=absolute_path, readable=readable,
+                path=absolute_path, requested_path=requested_path,
+                returned_path=returned_path,
+                path_candidates=open_paths["path_candidates"],
+                dirfd_tracked_path=open_paths["dirfd_tracked_path"],
+                dirfd_annotation_path=open_paths["dirfd_annotation_path"],
+                dirfd_path_disagreement=open_paths["dirfd_path_disagreement"],
+                dirfd_path_conflict=open_paths["dirfd_path_conflict"],
+                path_disagreement=open_paths["path_disagreement"],
+                path_conflict=open_paths["path_conflict"],
+                path_alias_status=open_paths["path_alias_status"],
+                readable=readable,
                 success=success, result=returned, error=error,
             )
+            if success and open_paths["path_conflict"]:
+                reason = (
+                    "open_dirfd_path_disagrees_with_tracked_path"
+                    if open_paths["dirfd_path_conflict"]
+                    else "open_request_and_fd_path_disagree"
+                )
+                mark_unknown(
+                    line_number, reason, pid=pid, operation=name,
+                )
             if success and absolute_path is None:
                 event["unknown_reason"] = "open_path_not_absolute_or_unavailable"
                 mark_attribution_unknown(
@@ -512,17 +794,34 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             try:
                 fd_number = _fd(args[4])
                 readable = _readable_mapping(args[2])
+                anonymous = _anonymous_mapping(args[3])
             except ValueError:
                 mark_unknown(line_number, "mmap_descriptor_or_protection_unavailable", pid=pid, operation=name)
                 continue
             mapping_success = not call.group("result").strip().startswith("-1")
-            state = table.get(fd_number) if fd_number >= 0 else None
-            path = state.get("path") if state is not None else None
+            (
+                state, path, tracked_path, path_disagreement, path_conflict,
+                path_alias_status, path_candidates,
+            ) = _fd_observed_path(
+                args[4], fd_number, table, pid,
+            )
             event = _event(
                 "mmap", pid, line_number, syscall=name, fd=fd_number,
-                path=path, readable=readable, success=mapping_success,
+                path=path, tracked_path=tracked_path,
+                path_candidates=path_candidates,
+                path_disagreement=path_disagreement, path_conflict=path_conflict,
+                path_alias_status=path_alias_status,
+                readable=readable,
+                anonymous=anonymous, success=mapping_success,
             )
-            if mapping_success and readable is True and fd_number >= 0 and path is None:
+            if mapping_success and path_conflict:
+                mark_unknown(
+                    line_number, "mmap_fd_path_disagrees_with_tracked_path", pid=pid, operation=name,
+                )
+            if (
+                mapping_success and readable is True and path is None
+                and anonymous is not True
+            ):
                 event["unknown_reason"] = "fd_not_opened_absolutely_in_same_pid"
                 mark_attribution_unknown(
                     line_number, event["unknown_reason"], pid=pid, operation=name,
@@ -572,15 +871,26 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             except ValueError:
                 mark_unknown(line_number, "read_fd_or_count_unavailable", pid=pid, operation=name)
                 continue
-            state = table.get(fd_number)
-            path = state.get("path") if state is not None else None
+            (
+                state, path, tracked_path, path_disagreement, path_conflict,
+                path_alias_status, path_candidates,
+            ) = _fd_observed_path(
+                args[0], fd_number, table, pid,
+            )
             event = _event(
                 "read", pid, line_number, syscall=name, fd=fd_number, count=requested,
                 result=returned, bytes_read=returned if returned > 0 else None,
-                path=path, fd_kind=state.get("kind") if state is not None else "unknown",
+                path=path, tracked_path=tracked_path, path_candidates=path_candidates,
+                path_disagreement=path_disagreement, path_conflict=path_conflict,
+                path_alias_status=path_alias_status,
+                fd_kind=state.get("kind") if state is not None else "unknown",
                 error=error,
             )
-            if path is None and event["fd_kind"] != "pipe":
+            if path_conflict:
+                mark_unknown(
+                    line_number, "read_fd_path_disagrees_with_tracked_path", pid=pid, operation=name,
+                )
+            if path is None and event["fd_kind"] not in {"pipe", "anon_inode", "socket"}:
                 event["unknown_reason"] = "fd_not_opened_absolutely_in_same_pid"
                 if returned > 0:
                     mark_attribution_unknown(

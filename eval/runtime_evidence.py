@@ -12,12 +12,11 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .runtime_trace import normalizer_identity, parse_raw_trace
+    from .runtime_trace import NORMALIZER_VERSION, normalizer_identity, parse_raw_trace
 else:
-    from runtime_trace import normalizer_identity, parse_raw_trace
+    from runtime_trace import NORMALIZER_VERSION, normalizer_identity, parse_raw_trace
 
 
-NORMALIZER_VERSION = "3"
 COMMON_BINDING_NAMES = (
     "review_manifest",
     "common_prompt",
@@ -496,7 +495,14 @@ def verify_runtime_evidence(
             matching_cats.append((item, cat_path))
     pinned_resource_accesses = [
         event for event in parsed_events
-        if event.get("path") == skill_path and (
+        if event.get("path_alias_status") != "unproven"
+        and skill_path in (
+            event.get("path"),
+            event.get("requested_path"),
+            event.get("returned_path"),
+            event.get("tracked_path"),
+            *(event.get("path_candidates") if isinstance(event.get("path_candidates"), list) else []),
+        ) and (
             (
                 _event_name(event) == "open"
                 and event.get("success") is True
@@ -514,6 +520,29 @@ def verify_runtime_evidence(
             )
         )
     ] if skill_path is not None else []
+    has_unattributed_readable_access = any(
+        (
+            _event_name(event) == "open"
+            and event.get("success") is True
+            and event.get("path") is None
+            and event.get("readable") is not False
+        )
+        or (
+            _event_name(event) == "read"
+            and event.get("path") is None
+            and event.get("fd_kind") not in {"pipe", "anon_inode", "socket"}
+            and isinstance(event.get("bytes_read"), int)
+            and event["bytes_read"] > 0
+        )
+        or (
+            _event_name(event) == "mmap"
+            and event.get("success") is True
+            and event.get("readable") is True
+            and event.get("path") is None
+            and event.get("anonymous") is not True
+        )
+        for event in parsed_events
+    )
     if record.get("condition") == "same_host_direct" and (
         pinned_resource_accesses
         or (isinstance(resource, dict) and resource.get("mounted") is True)
@@ -540,6 +569,8 @@ def verify_runtime_evidence(
                 if _event_name(event) == "read"
                 and event.get("pid") == cat_exec.get("pid")
                 and _call_id(event) == call_id
+                and event.get("path_alias_status") != "unproven"
+                and event.get("path_conflict") is not True
                 and event.get("path") == cat_path
                 and isinstance(event.get("bytes_read"), int)
                 and event["bytes_read"] > 0
@@ -556,18 +587,35 @@ def verify_runtime_evidence(
     elif len(matching_cats) > 1:
         has_association_gap = True
 
-    status = "verified" if not has_association_gap and trace_status in {"success", "failed"} else "incomplete"
+    status = (
+        "verified"
+        if (
+            not has_association_gap
+            and not has_unattributed_readable_access
+            and trace_status in {"success", "failed"}
+        )
+        else "incomplete"
+    )
     if status != "verified" and skill_loaded is True:
         skill_loaded = None
         skill_status = "incomplete_trace"
     limitations = []
-    if status != "verified":
+    if has_association_gap:
         limitations.append("runtime traces lack a complete PID/call-id association")
+    if has_unattributed_readable_access:
+        limitations.append("trace has a successful readable access with unknown path attribution")
     if binding_status != "verified":
         limitations.append("common prompt/config/schema/input bindings are incomplete")
     if parsed_trace["attribution_unknown"]:
         limitations.append(
             f"{len(parsed_trace['attribution_unknown'])} file descriptor path attribution(s) are unknown"
+        )
+    unproven_alias_count = sum(
+        event.get("path_alias_status") == "unproven" for event in parsed_events
+    )
+    if unproven_alias_count:
+        limitations.append(
+            f"{unproven_alias_count} proc-self path alias(es) lack PID namespace identity proof"
         )
     if skill_status == "unknown" and record.get("condition") == "current_skill":
         limitations.append("pinned Skill load was not proven by a traced cat read and exact ZIP-member output")
