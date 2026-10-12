@@ -24,7 +24,7 @@
     "tool_runs"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"type": "integer", "const": 1},
     "case_id": {"type": "string", "minLength": 1},
     "run_status": {"enum": ["completed", "failed", "incomplete"]},
     "review_status": {"enum": ["completed", "partial", "uncovered", "failed", null]},

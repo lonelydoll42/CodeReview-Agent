@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
+from eval import run_ab_batch as batch
 from eval.run_ab_batch import (
     BENCHMARK_ID,
     PLAN_STATE,
@@ -56,6 +57,49 @@ class AbBatchPlanTests(unittest.TestCase):
         self.assertTrue(all(slot["attempt"] == 1 for slot in plan["slots"]))
         self.assertTrue(all(slot["attempt_kind"] == "independent_replicate" for slot in plan["slots"]))
         self.assertTrue(all(case["annotation_status"] == "pending" for case in plan["cases"].values()))
+
+    def test_host_output_schema_constants_and_strict_objects_are_consistent(self) -> None:
+        schema = json.loads((Path(__file__).parents[1] / "eval/schemas/host-output.schema.json").read_bytes())
+        object_nodes: list[tuple[str, dict]] = []
+
+        def walk(value: object, path: str = "$") -> None:
+            if isinstance(value, dict):
+                if "const" in value:
+                    constant = value["const"]
+                    if isinstance(constant, bool):
+                        expected_type = "boolean"
+                    elif isinstance(constant, int):
+                        expected_type = "integer"
+                    elif isinstance(constant, float):
+                        expected_type = "number"
+                    elif isinstance(constant, str):
+                        expected_type = "string"
+                    else:
+                        self.fail(f"unsupported const value at {path}: {constant!r}")
+                    self.assertEqual(value.get("type"), expected_type, path)
+                node_type = value.get("type")
+                if node_type == "object" or (
+                    isinstance(node_type, list) and "object" in node_type
+                ):
+                    object_nodes.append((path, value))
+                for key, child in value.items():
+                    walk(child, f"{path}/{key}")
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    walk(child, f"{path}/{index}")
+
+        walk(schema)
+        opaque_objects = []
+        for path, node in object_nodes:
+            properties = node.get("properties")
+            if properties is None:
+                opaque_objects.append(path)
+                continue
+            self.assertIs(node.get("additionalProperties"), False, path)
+            self.assertEqual(set(node.get("required", [])), set(properties), path)
+
+        # tool_runs keeps its existing opaque-object protocol; every declared object is strict.
+        self.assertEqual(opaque_objects, ["$/properties/tool_runs/items"])
 
     def test_missing_selected_case_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "missing selected case metadata"):
@@ -433,6 +477,9 @@ else:
 if not all(checks.values()):
     raise AssertionError("sandbox mount checks failed: " + json.dumps(checks, sort_keys=True))
 (Path(os.environ["CODEX_HOME"]) / "sandbox-check.json").write_text(json.dumps(checks))
+installation_id = Path(os.environ["CODEX_HOME"]) / "installation_id"
+installation_id.write_text("fake installation\\n")
+installation_id.chmod(0o644)
 output_path.write_text(json.dumps({
     "schema_version": 1,
     "case_id": "case0002",
@@ -533,10 +580,24 @@ class BatchExecutionAdapterTests(unittest.TestCase):
                     raise RuntimeError("simulated adapter failure")
                 return {"run_status": "completed"}
 
+            real_inventory = batch._artifact_inventory
+
+            def inspect_ledger_then_collect(run_root: Path) -> dict:
+                ledger_path = run_root / "slot-failure-ledger.json"
+                self.assertTrue(ledger_path.is_file())
+                early_ledger = json.loads(ledger_path.read_bytes())
+                self.assertEqual(early_ledger["artifacts"], {})
+                self.assertEqual(
+                    ledger_path.with_suffix(".json.sha256").read_text(encoding="ascii"),
+                    f"{hashlib.sha256(ledger_path.read_bytes()).hexdigest()}  {ledger_path.name}\n",
+                )
+                return real_inventory(run_root)
+
             with (
                 mock.patch("eval.run_ab_batch._runtime_config", return_value={}),
                 mock.patch("eval.run_ab_batch._preflight_codex_config"),
                 mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
+                mock.patch("eval.run_ab_batch._artifact_inventory", side_effect=inspect_ledger_then_collect),
                 mock.patch("eval.run_ab_batch.execute_slot", side_effect=run_slot) as execute,
             ):
                 results = execute_plan(plan, runs_root, config_path)
@@ -553,6 +614,179 @@ class BatchExecutionAdapterTests(unittest.TestCase):
                 ledger["artifacts"]["runtime/strace.log"]["sha256"],
                 hashlib.sha256(b"partial trace\n").hexdigest(),
             )
+            self.assertNotIn("slot-failure-ledger.json", ledger["artifacts"])
+            self.assertNotIn("slot-failure-ledger.json.sha256", ledger["artifacts"])
+            self.assertEqual(ledger["excluded_runtime_symlinks"], [])
+            self.assertEqual(
+                ledger_path.with_suffix(".json.sha256").read_text(encoding="ascii"),
+                f"{hashlib.sha256(ledger_path.read_bytes()).hexdigest()}  {ledger_path.name}\n",
+            )
+
+    def test_artifact_inventory_excludes_external_symlinks_and_records_link_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "run"
+            artifact = root / "runtime" / "trace.log"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"trace\n")
+            executable = Path(temp_dir) / "codex-native"
+            executable.write_bytes(b"system executable")
+            link = root / "runtime" / "codex-home" / "tmp" / "arg0" / "codex-execve-wrapper"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(executable)
+
+            inventory = batch._artifact_inventory(root)
+
+        self.assertEqual(set(inventory["artifacts"]), {"runtime/trace.log"})
+        self.assertEqual(
+            inventory["excluded_runtime_symlinks"],
+            [{"path": "runtime/codex-home/tmp/arg0/codex-execve-wrapper", "target": str(executable)}],
+        )
+
+    def test_artifact_inventory_propagates_scandir_denial_with_partial_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "run"
+            root.mkdir()
+            (root / "a-trace.log").write_bytes(b"partial trace\n")
+            denied = root / "denied"
+            denied.mkdir()
+            real_scandir = batch.os.scandir
+
+            def controlled_scandir(path: str | Path):
+                if Path(path) == denied:
+                    raise PermissionError("controlled denied directory")
+                return real_scandir(path)
+
+            with mock.patch("eval.run_ab_batch.os.scandir", side_effect=controlled_scandir):
+                with self.assertRaises(batch.ArtifactCollectionError) as raised:
+                    batch._artifact_inventory(root)
+
+        self.assertIn("denied", str(raised.exception))
+        self.assertIn("controlled denied directory", str(raised.exception))
+        self.assertEqual(
+            raised.exception.inventory["artifacts"],
+            {
+                "a-trace.log": {
+                    "path": "a-trace.log",
+                    "sha256": hashlib.sha256(b"partial trace\n").hexdigest(),
+                },
+            },
+        )
+        self.assertEqual(raised.exception.inventory["excluded_runtime_symlinks"], [])
+
+    def test_runtime_mode_normalization_does_not_follow_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runtime = root / "runtime"
+            codex_home = runtime / "codex-home"
+            codex_home.mkdir(parents=True)
+            installation_id = codex_home / "installation_id"
+            installation_id.write_text("local id\n", encoding="ascii")
+            installation_id.chmod(0o644)
+            external = root / "external executable"
+            external.write_bytes(b"external")
+            external.chmod(0o644)
+            link = codex_home / "native-codex"
+            link.symlink_to(external)
+
+            batch._normalize_runtime_modes(runtime)
+
+            self.assertEqual(stat.S_IMODE(installation_id.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(external.stat().st_mode), 0o644)
+            self.assertTrue(link.is_symlink())
+
+    def test_runtime_root_symlink_is_rejected_without_changing_target_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            external = root / "external"
+            external.mkdir()
+            external.chmod(0o755)
+            runtime = root / "runtime"
+            runtime.symlink_to(external, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                batch._normalize_runtime_modes(runtime)
+            with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                batch._mkdir_private(runtime)
+
+            self.assertEqual(stat.S_IMODE(external.stat().st_mode), 0o755)
+            self.assertTrue(runtime.is_symlink())
+
+    def test_execute_plan_does_not_retry_a_failed_artifact_scan(self) -> None:
+        index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
+        plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_root = root / "runs"
+            config_path = root / "runtime-config.json"
+            config_bytes = b"{}\n"
+            config_path.write_bytes(config_bytes)
+            run_roots = []
+            for slot in plan["slots"]:
+                condition = "same_host_direct" if slot["condition"] == "A" else "current_skill"
+                run_root = runs_root / slot["case_id"] / condition / f"repeat{slot['replicate']:02d}"
+                (run_root / "input").mkdir(parents=True)
+                (run_root / "input/runtime-config.json").write_bytes(config_bytes)
+                run_roots.append(run_root)
+
+            first_root = run_roots[0]
+            partial = {"runtime/strace.log": {"path": "runtime/strace.log", "sha256": "a" * 64}}
+            links = [{"path": "runtime/codex-home/tmp/arg0/codex", "target": "/usr/lib/codex"}]
+            scan_error = batch.ArtifactCollectionError(
+                "artifact inventory failed after partial collection",
+                {"artifacts": partial, "excluded_runtime_symlinks": links},
+            )
+
+            def run_slot(run_root: Path, _config: dict, *, go_authorized: bool) -> dict:
+                self.assertTrue(go_authorized)
+                if run_root == first_root:
+                    runtime = run_root / "runtime"
+                    runtime.mkdir()
+                    (runtime / "adapter-start.json").write_text("{}\n", encoding="utf-8")
+                    raise scan_error
+                return {"run_status": "completed"}
+
+            with (
+                mock.patch("eval.run_ab_batch._runtime_config", return_value={}),
+                mock.patch("eval.run_ab_batch._preflight_codex_config"),
+                mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
+                mock.patch("eval.run_ab_batch._artifact_inventory") as inventory,
+                mock.patch("eval.run_ab_batch.execute_slot", side_effect=run_slot),
+            ):
+                results = execute_plan(plan, runs_root, config_path)
+
+            self.assertEqual(len(results), 12)
+            self.assertEqual(results[0]["run_status"], "failed")
+            self.assertTrue(all(result["run_status"] == "completed" for result in results[1:]))
+            inventory.assert_not_called()
+            ledger_path = first_root / "slot-failure-ledger.json"
+            ledger = json.loads(ledger_path.read_bytes())
+            self.assertEqual(ledger["artifacts"], partial)
+            self.assertEqual(ledger["excluded_runtime_symlinks"], links)
+            self.assertTrue(ledger["artifact_collection_error"])
+            slot_result = json.loads((first_root / "slot-result.json").read_bytes())
+            self.assertEqual(slot_result["schema_version"], 1)
+            self.assertEqual(slot_result["benchmark_id"], BENCHMARK_ID)
+            self.assertTrue(slot_result["planned"])
+            self.assertTrue(slot_result["launched"])
+            self.assertFalse(slot_result["host_completed"])
+            self.assertFalse(slot_result["evidence_valid"])
+            self.assertEqual(slot_result["outcome"], "failure")
+            self.assertEqual(slot_result["condition"], "A")
+            self.assertEqual(slot_result["case_id"], first_root.parts[-3])
+            self.assertEqual(slot_result["run_order"], 1)
+            self.assertEqual(slot_result["replicate"], 1)
+            self.assertEqual(slot_result["attempt"], 1)
+            self.assertEqual(slot_result["attempt_kind"], "independent_replicate")
+            self.assertEqual(slot_result["run_status"], "failed")
+            self.assertEqual(slot_result["failure_reason"], ledger["failure_reason"])
+            self.assertEqual(slot_result["adapter_failure"], ledger["adapter_failure"])
+            self.assertEqual(slot_result["artifacts"], ledger["artifacts"])
+            self.assertEqual(slot_result["excluded_runtime_symlinks"], ledger["excluded_runtime_symlinks"])
+            self.assertEqual(slot_result["artifact_collection_error"], ledger["artifact_collection_error"])
+            self.assertEqual(slot_result["runtime_evidence"]["status"], "incomplete")
+            self.assertEqual(slot_result["immutable_plan_sha256"], immutable_plan_sha256(plan))
+            self.assertEqual(ledger["immutable_plan_sha256"], slot_result["immutable_plan_sha256"])
+            self.assertEqual(ledger["attempt_kind"], slot_result["attempt_kind"])
             self.assertEqual(
                 ledger_path.with_suffix(".json.sha256").read_text(encoding="ascii"),
                 f"{hashlib.sha256(ledger_path.read_bytes()).hexdigest()}  {ledger_path.name}\n",
@@ -643,6 +877,10 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             )
             checks = json.loads((run_root / "runtime/codex-home/sandbox-check.json").read_bytes())
             self.assertTrue(all(checks.values()))
+            self.assertEqual(
+                stat.S_IMODE((run_root / "runtime/codex-home/installation_id").stat().st_mode),
+                0o600,
+            )
             trace_path = run_root / "runtime/strace.log"
             parsed_trace = parse_raw_trace(trace_path.read_bytes())
             self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
@@ -703,6 +941,44 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
+    def test_v3_parser_keeps_v2_sidecar_untrusted(self) -> None:
+        raw_trace = (
+            b'701 open("/synthetic/legacy", O_RDONLY) = 3\n'
+            b"701 close(3) = 0\n"
+            b"701 close(3) = -1 EBADF (Bad file descriptor)\n"
+        )
+        parsed = parse_raw_trace(raw_trace)
+        closes = [event for event in parsed["events"] if event["event"] == "close"]
+        self.assertEqual(parsed["normalizer"]["version"], "3")
+        self.assertTrue(closes[1]["known_closed"])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "run"
+            root.mkdir(mode=0o700)
+            raw_ref = {"path": "runtime/strace.log", "sha256": hashlib.sha256(raw_trace).hexdigest()}
+            sidecar = {
+                "schema_version": 1,
+                "codex_events": {"path": "runtime/codex-events.jsonl", "sha256": "a" * 64},
+                "supervisor_events": {
+                    "path": "runtime/supervisor-events.jsonl",
+                    "sha256": "b" * 64,
+                    "source_raw_trace": raw_ref,
+                    "normalizer": {
+                        "version": "2",
+                        "source": {"path": "artifacts/runtime_trace.py", "sha256": "c" * 64},
+                    },
+                },
+                "raw_trace": raw_ref,
+                "source_bundle_manifest": {
+                    "path": "artifacts/source-bundle-manifest.json",
+                    "sha256": "d" * 64,
+                },
+            }
+            batch._write_json(root / "runtime-evidence.json", sidecar)
+
+            with self.assertRaisesRegex(ValueError, "normalizer must bind version 3"):
+                batch.verify_runtime_evidence(root, "runtime-evidence.json", {"run_status": "completed"})
+
     def test_sidecar_hashes_raw_trace_and_binds_normalizer_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

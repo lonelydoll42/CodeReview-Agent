@@ -15,7 +15,7 @@ from typing import Any
 
 
 NORMALIZER_NAME = "eval.runtime_trace"
-NORMALIZER_VERSION = "2"
+NORMALIZER_VERSION = "3"
 NORMALIZER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 _PID_PREFIX = re.compile(r"^(?:\[pid\s+(?P<bracketed>\d+)\]|(?P<plain>\d+))\s+(?P<body>.*)$")
@@ -213,6 +213,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
     attribution_unknown: list[dict[str, Any]] = result["attribution_unknown"]
     fd_tables: dict[int, dict[int, dict[str, Any] | None]] = {}
     uncertain_fd_sharing: dict[int, dict[int, dict[str, Any] | None]] = {}
+    successfully_closed: dict[int, set[int]] = {}
 
     def mark_unknown(line: int, reason: str, *, pid: int | None = None, operation: str | None = None) -> None:
         item: dict[str, Any] = {"trace_line": line, "reason": reason}
@@ -229,10 +230,16 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             "trace_line": line, "reason": reason, "pid": pid, "operation": operation,
         })
 
+    def clear_closed_markers(table: dict[int, dict[str, Any] | None], fd_number: int) -> None:
+        for owner_pid, owner_table in fd_tables.items():
+            if owner_table is table:
+                successfully_closed.setdefault(owner_pid, set()).discard(fd_number)
+
     def invalidate_uncertain_parent_fd(pid: int, fd_number: int) -> None:
         parent_table = uncertain_fd_sharing.get(pid)
         if parent_table is not None:
             parent_table[fd_number] = None
+            clear_closed_markers(parent_table, fd_number)
 
     try:
         text = raw_trace.decode("utf-8")
@@ -341,6 +348,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             else:
                 fd_tables[relation["child_pid"]] = _copy_fd_table(parent_table)
                 uncertain_fd_sharing[relation["child_pid"]] = parent_table
+            successfully_closed[relation["child_pid"]] = set()
             events.append(_event(
                 "process_create", pid, relation["line"],
                 child_pid=relation["child_pid"], syscall=relation["syscall"],
@@ -354,6 +362,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                 table.clear()
             fd_tables.pop(pid, None)
             uncertain_fd_sharing.pop(pid, None)
+            successfully_closed.pop(pid, None)
             continue
         signaled = _SIGNALED.match(body)
         if signaled is not None:
@@ -362,6 +371,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                 table.clear()
             fd_tables.pop(pid, None)
             uncertain_fd_sharing.pop(pid, None)
+            successfully_closed.pop(pid, None)
             continue
 
         if record.get("pending_start") is not None:
@@ -411,6 +421,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             if fds is not None:
                 for fd_number in fds:
                     table[fd_number] = {"kind": "pipe", "path": None, "cloexec": cloexec}
+                    clear_closed_markers(table, fd_number)
                     invalidate_uncertain_parent_fd(pid, fd_number)
             events.append(_event(
                 "pipe", pid, line_number, syscall=name,
@@ -458,6 +469,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                     "kind": "file", "path": absolute_path,
                     "cloexec": "O_CLOEXEC" in flags, "readable": readable,
                 }
+                clear_closed_markers(table, returned)
                 invalidate_uncertain_parent_fd(pid, returned)
             event = _event(
                 "open", pid, line_number, syscall=name, fd=returned if success else None,
@@ -504,16 +516,25 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                 mark_unknown(line_number, "close_fd_unavailable", pid=pid, operation=name)
                 continue
             success = returned == 0
+            known_closed = (
+                returned == -1
+                and error == "EBADF"
+                and fd_number not in table
+                and fd_number in successfully_closed.get(pid, set())
+            )
             if success:
                 table.pop(fd_number, None)
+                clear_closed_markers(table, fd_number)
+                successfully_closed.setdefault(pid, set()).add(fd_number)
                 invalidate_uncertain_parent_fd(pid, fd_number)
-            else:
+            elif not known_closed:
                 table[fd_number] = None
+                clear_closed_markers(table, fd_number)
                 invalidate_uncertain_parent_fd(pid, fd_number)
                 mark_unknown(line_number, "close_result_leaves_fd_state_unknown", pid=pid, operation=name)
             events.append(_event(
                 "close", pid, line_number, fd=fd_number, success=success,
-                result=returned, error=error,
+                result=returned, error=error, known_closed=known_closed,
             ))
             continue
 
@@ -563,6 +584,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                     else:
                         target_fd = returned
                     table[target_fd] = dict(source_state) if source_state is not None else None
+                    clear_closed_markers(table, target_fd)
                     invalidate_uncertain_parent_fd(pid, target_fd)
                 elif name == "fcntl" and len(args) > 1 and args[1] == "F_SETFD":
                     state = table.get(source_fd)

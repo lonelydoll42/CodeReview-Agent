@@ -34,9 +34,31 @@ B0 evidence 中 `runs[].artifacts.run_record_sha256` 与 `score_sha256` 没有�
 
 B0 导出中的 raw-output expected 独立匹配 23/23 原始 run records。外部 `run-score-original.tar`（SHA-256 `3562c789dfdcffd7a9abb9395cd41704ec5ce105c051db5b880038a5fed2a0e5`）及 46 条 source manifest 用于核验本轮保存的归档快照；它们证明的是该快照此后的完整性，不能证明这些字节就是 b0 发布时的原始字节。未来重建前仍须核验仓库外归档；导出 CI 不携带私有 run/score 文件，也不能独立证明外部来源完整性。CI 结论只覆盖公开 summary/evidence 的字节和内部一致性。
 
-本轮补丁回归为 258 passed、4 skipped；另有导出定向测试 8 passed，合计 266 passed、4 skipped。独立 core 检查 32 项、exporter 检查 8 项、`python -S` 导出 `check` 和 4 个 tamper probes 均通过；Ruff、`pip check`、`git diff --check` 通过。4 个 skip 分别为 1 个 PostgreSQL 依赖测试和 3 个 Semgrep 依赖测试。本轮没有调用模型或重跑 A/B；strict scoring 对 23 条旧运行全部 blocked，人工盲审仍 pending，也没有为这 23 条历史运行创建新的有效评分。
+此前的 pilot/export 补丁回归为 266 passed、4 skipped；独立 core 检查 32 项、exporter 检查 8 项、`python -S` 导出 `check` 和 4 个 tamper probes 均通过。此次 workflow 修复后的完整测试为 325 passed、4 skipped；4 个 skip 中，3 个 Semgrep 测试因该次全量运行的 `PATH` 未包含 Semgrep 而跳过，之后用现有 `.venv/bin` 补跑的 Semgrep 检查为 9 passed；另 1 个 PostgreSQL 测试因未设置 `TEST_DATABASE_URL` 跳过。独立重点回归为 54 passed。Ruff、`pip check`、`git diff --check` 和 workflow exporter CLI `check` 均通过。本轮没有调用模型或执行 v3；这些检查覆盖实现、导出与会话流程，不评定 A/B 质量。strict scoring 对 23 条旧运行仍全部 blocked，人工盲审仍 pending，也没有为这 23 条历史运行创建新的有效评分。
 
 后续人工盲审的输入、冻结来源索引、空白模板和操作步骤见[盲审准备指南](results/2026-10-09-ab-pilot-blind-review.md)。这批材料只提供十条 condition-blind prediction 和 source entry；它们不含 agent verdict、oracle mapping 或 human labels，尚未执行人工盲审。覆盖审计仍需保留真实文件读取和工具调用轨迹；Skill bundle digest 只说明包身份，不能证明宿主实际读取或使用了它。
+
+## 2026-10-12 workflow v2 失败与 v3 准备状态
+
+[workflow v2 失败报告](results/2026-10-12-ab-workflow-v2.md)记录了基于既有语料的 12-slot 流程复现尝试：1 个 slot 启动，0 个宿主完成，0 个证据有效，11 个未启动；没有生成宿主输出或 run record。seal 的 `accepted` 只表示依赖、冻结计划和 runtime-config 身份一致。artifact-reference 检查实际检查了 0 个引用，12 个 `slot-result.json` 不可用，因此 seal 完整性为 `incomplete`，不代表流程或质量通过。
+
+首个 slot 失败的原因包括：provider 拒绝缺少 `type` 的 `schema_version` 输出 schema；argument 0 的外部二进制 symlink 使 artifact 枚举越界，ledger 错误路径随后重新抛出异常；18 个在成功关闭描述符后出现的 `close`/`EBADF` 事件又使 trace 变为 `unknown`。该批次来自既有语料，不是新盲测；人工标签仍 pending，质量指标仍为 null。完整细节和独立 ledger 核对见失败报告。
+
+可用下列命令重算导出投影并核验其绑定；[已保存的检查结果](results/2026-10-12-ab-workflow-v2-check.json)为 `passed`：
+
+```sh
+python eval/export_workflow_batch.py check \
+  --seal-report /root/project/review-benchmark-20261010/seal/workflow-report-v2.json \
+  --ab-summary /root/project/review-benchmark-20261010/seal/ab-summary-final-v2.json \
+  --dependency-snapshot /root/project/review-benchmark-20261010/seal/dependencies-before-v2.json \
+  --plan /root/project/review-benchmark-20261010/batch-plan.json \
+  --runtime-config /root/project/review-benchmark-20261010/runtime-config-v2.json \
+  --summary eval/results/2026-10-12-ab-workflow-v2-summary.json \
+  --evidence eval/results/2026-10-12-ab-workflow-v2-evidence.json \
+  --check-output eval/results/2026-10-12-ab-workflow-v2-check.json
+```
+
+`2026-10-12-ab-workflow-validation-v3` 的 `runs-v3/` 目录已准备；本轮代码补丁和回归检查已完成，但 v3 输入尚未冻结，v3 批次尚未执行，也没有质量通过结论。该流程尝试没有改变旧的 23-run pilot、待完成人工标签、固定 `0.2.1` 夹具或 WorkBuddy `not_run` 状态；PR4 上下文选择器和 PR5 历史报告/发布规划仍在后续队列。
 
 ## 记录和产物
 

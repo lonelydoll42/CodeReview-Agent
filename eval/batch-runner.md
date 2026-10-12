@@ -126,15 +126,19 @@ reachable. It exposes `/usr`, `/lib`, and `/lib64` read-only, mounts only that
 slot's `input/` tree read-only, bind-mounts the raw output file and a private
 per-slot `CODEX_HOME` writable, and overlays the single host auth file at
 `CODEX_HOME/auth.json` read-only. The checkout, sibling slots, and operator
-directories are absent. The CLI environment is cleared and rebuilt from
-`PATH`, `HOME`, `CODEX_HOME`, `TMPDIR`, `LC_CTYPE`, and `PWD`.
+directories are absent. The CLI environment is cleared and the adapter
+explicitly sets `PATH`, `HOME`, `CODEX_HOME`, `TMPDIR`, and `LC_CTYPE`. `PWD`
+was present in the six-variable canary, but the adapter does not explicitly
+set it; bwrap or the shell may add it.
 
 The adapter runs slots in
 the frozen order, keeps failures and continues without retrying, and refuses to
 start unless the plan has `plan_state=go` and `execution_authorized=true`.
 The GO fields may change after independent review; the immutable plan digest
-must still match every presealed slot. The current external plan remains
-waiting and execution is not authorized.
+must still match every presealed slot. The v2 command below is the historical
+2026-10-12 invocation, which stopped after its first slot. It is not current
+authorization to retry that batch. The v3 run directory is prepared, but its
+inputs have not been frozen and the batch has not been authorized or executed.
 
 ```sh
 python3 eval/run_ab_batch.py \
@@ -199,3 +203,33 @@ and common prompt/config/schema digests. Host-reported model/version values
 are not proof of remote service identity. A coverage audit marked verified
 must name an independent auditor and source and bind its trace artifact path
 and digest.
+
+## 2026-10-12 Execution Status
+
+The v2 batch had 12 planned slots: 1 launched, 0 host-completed, 0
+evidence-valid, and 11 not started. No host output or run record was produced.
+The provider rejected the first-slot output schema because `schema_version`
+lacked a `type`. An external binary symlink at argument 0 let artifact
+enumeration escape its intended boundary, and the ledger error path re-raised
+the failure. Separately, 18 `close` events reported `EBADF` after successful
+closes, which made the trace `unknown`.
+
+The final seal's `accepted` status covers dependency, frozen-plan, and
+runtime-config identity consistency only. Its artifact-reference check examined
+0 references and reported 12 unavailable slot results, so artifact completeness
+is `incomplete`; this is not a workflow or quality pass. See the [v2 failure report](results/2026-10-12-ab-workflow-v2.md) and [evaluation record](README.md).
+
+The batch runner, artifact failure recording, schema validation, and trace
+normalizer fixes are implemented. The full suite passed 325 tests with 4
+skipped; three Semgrep tests were skipped when Semgrep was absent from `PATH`,
+then 9 Semgrep checks passed with the existing `.venv/bin` on `PATH`. One
+PostgreSQL-dependent test was skipped because `TEST_DATABASE_URL` was unset.
+Independent focused regression checks passed 54 tests, and the workflow
+exporter CLI check passed. These checks cover implementation and workflow
+reproducibility, not A/B evaluation quality.
+
+The v3 batch ID is `2026-10-12-ab-workflow-validation-v3`. Its run directory is
+prepared, but its inputs have not been frozen and the batch has not executed;
+it has no quality result. The existing 23-run pilot and its pending human
+labels remain separate; WorkBuddy remains `not_run`, the fixed 0.2.1 fixtures
+remain the release baseline, and PR4/PR5 remain later work.

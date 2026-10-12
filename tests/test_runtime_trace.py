@@ -92,6 +92,27 @@ def test_close_and_fd_reuse_cannot_retain_the_old_path() -> None:
     assert reads[1]["result"] == 2
 
 
+def test_repeated_close_ebadf_is_known_only_after_same_pid_close_without_reopen() -> None:
+    parsed = _parse([
+        '705 open("/synthetic/closed", O_RDONLY) = 3',
+        "705 close(3</synthetic/closed>) = 0",
+        "705 close(3) = -1 EBADF (Bad file descriptor)",
+        "706 close(3) = -1 EBADF (Bad file descriptor)",
+        '707 open("/synthetic/reused", O_RDONLY) = 3',
+        "707 close(3) = 0",
+        '707 open("/synthetic/reopened", O_RDONLY) = 3',
+        "707 close(3) = -1 EBADF (Bad file descriptor)",
+    ])
+
+    closes = [event for event in parsed["events"] if event["event"] == "close"]
+    assert parsed["normalizer"]["version"] == "3"
+    assert closes[1]["known_closed"] is True
+    assert closes[2]["known_closed"] is False
+    assert closes[4]["known_closed"] is False
+    assert parsed["complete"] is False
+    assert len(parsed["unknown"]) == 2
+
+
 def test_fork_inherits_observed_descriptors_without_global_invalidation() -> None:
     parsed = _parse([
         '900 open("/synthetic/inherited", O_RDONLY) = 3',
@@ -219,7 +240,7 @@ def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
     assert identity["name"] == "eval.runtime_trace"
-    assert identity["version"] == "2"
+    assert identity["version"] == "3"
     assert identity["source_sha256"] == hashlib.sha256(module_path.read_bytes()).hexdigest()
 
 

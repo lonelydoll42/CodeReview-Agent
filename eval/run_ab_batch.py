@@ -225,12 +225,47 @@ def _write_private(path: Path, data: bytes) -> None:
         path.chmod(0o600)
 
 
+def _write_private_atomic(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        if os.name == "posix":
+            path.chmod(0o600)
+            directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    except BaseException:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _write_json(path: Path, value: Any) -> None:
     _write_private(path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def _write_failure_ledger(path: Path, value: dict[str, Any]) -> None:
+    _write_private_atomic(path, (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+    _write_private_atomic(
+        path.with_suffix(path.suffix + ".sha256"),
+        f"{sha256_file(path)}  {path.name}\n".encode("ascii"),
+    )
+
+
 def _mkdir_private(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not stat.S_ISDIR(path.lstat().st_mode):
+        raise ValueError(f"private directory must not be a symlink or file: {path}")
     if os.name == "posix":
         path.chmod(0o700)
 
@@ -805,15 +840,217 @@ def _jsonl_bytes(events: list[dict[str, Any]]) -> bytes:
     return b"".join(_canonical_bytes(event) for event in events)
 
 
-def _artifact_refs(run_root: Path) -> dict[str, dict[str, str]]:
-    result: dict[str, dict[str, str]] = {}
-    for path in sorted(run_root.rglob("*")):
-        if not path.is_file() or path.name == "slot-result.json":
-            continue
+class ArtifactCollectionError(ValueError):
+    """Artifact scan failure with the references collected before the error."""
+
+    def __init__(
+        self,
+        message: str,
+        inventory: dict[str, Any],
+        *,
+        slot_result: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.inventory = inventory
+        self.slot_result = slot_result
+
+
+def _artifact_inventory(run_root: Path) -> dict[str, Any]:
+    run_root = run_root.resolve(strict=True)
+    inventory: dict[str, Any] = {"artifacts": {}, "excluded_runtime_symlinks": []}
+
+    def collection_error(exc: OSError) -> None:
+        path = Path(exc.filename) if exc.filename is not None else run_root
+        try:
+            relative = path.relative_to(run_root).as_posix() or "."
+        except ValueError:
+            relative = "."
+        raise ArtifactCollectionError(
+            f"artifact tree could not be enumerated: {relative}: {exc}", inventory,
+        ) from exc
+
+    def is_excluded(path: Path, relative: Path) -> bool:
+        return path.name in {
+            "slot-result.json",
+            "slot-failure-ledger.json",
+            "slot-failure-ledger.json.sha256",
+        } or relative.parts[:2] in {
+            ("input", "repository"), ("input", "pinned-skill"),
+        }
+
+    def record_entry(path: Path) -> int:
         relative = path.relative_to(run_root)
-        if relative.parts[:2] in {("input", "repository"), ("input", "pinned-skill")}:
-            continue
-        result[relative.as_posix()] = make_artifact_ref(run_root, path)
+        try:
+            mode = path.lstat().st_mode
+        except OSError as exc:
+            raise ArtifactCollectionError(
+                f"artifact could not be inspected: {relative.as_posix()}: {exc}", inventory,
+            ) from exc
+        if stat.S_ISLNK(mode):
+            try:
+                target = os.readlink(path)
+            except OSError as exc:
+                raise ArtifactCollectionError(
+                    f"artifact link could not be read: {relative.as_posix()}: {exc}", inventory,
+                ) from exc
+            inventory["excluded_runtime_symlinks"].append({
+                "path": relative.as_posix(),
+                "target": target,
+            })
+        elif stat.S_ISREG(mode):
+            try:
+                inventory["artifacts"][relative.as_posix()] = make_artifact_ref(run_root, path)
+            except (OSError, ValueError) as exc:
+                raise ArtifactCollectionError(
+                    f"artifact could not be hashed: {relative.as_posix()}: {exc}", inventory,
+                ) from exc
+        return mode
+
+    for root_text, directory_names, file_names in os.walk(
+        run_root, topdown=True, onerror=collection_error, followlinks=False,
+    ):
+        root = Path(root_text)
+        directory_names.sort()
+        file_names.sort()
+        for name in tuple(directory_names):
+            path = root / name
+            relative = path.relative_to(run_root)
+            if is_excluded(path, relative):
+                directory_names.remove(name)
+                continue
+            if not stat.S_ISDIR(record_entry(path)):
+                directory_names.remove(name)
+        for name in file_names:
+            path = root / name
+            relative = path.relative_to(run_root)
+            if not is_excluded(path, relative):
+                record_entry(path)
+    return inventory
+
+
+def _artifact_refs(run_root: Path) -> dict[str, dict[str, str]]:
+    return _artifact_inventory(run_root)["artifacts"]
+
+
+def _normalize_runtime_modes(runtime: Path) -> None:
+    try:
+        runtime_mode = runtime.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISDIR(runtime_mode):
+        raise ValueError("runtime root must be a real directory")
+    if os.name == "posix":
+        runtime.chmod(0o700)
+    for root_text, directory_names, file_names in os.walk(runtime, topdown=True, followlinks=False):
+        root = Path(root_text)
+        for name in directory_names:
+            path = root / name
+            try:
+                mode = path.lstat().st_mode
+                if stat.S_ISDIR(mode) and os.name == "posix":
+                    path.chmod(0o700)
+            except OSError:
+                raise
+        for name in file_names:
+            path = root / name
+            try:
+                mode = path.lstat().st_mode
+                if stat.S_ISREG(mode) and os.name == "posix":
+                    path.chmod(0o600)
+            except OSError:
+                raise
+
+
+def _load_optional_object(path: Path) -> dict[str, Any]:
+    try:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            return {}
+        value = json.loads(path.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _failed_slot_result(
+    slot: dict[str, Any],
+    run_root: Path,
+    immutable_sha: str,
+    failure_reason: str,
+    failure_detail: str,
+    inventory: dict[str, Any],
+    *,
+    slot_result: dict[str, Any] | None = None,
+    artifact_collection_error: str | None = None,
+) -> dict[str, Any]:
+    if slot_result is not None:
+        result = dict(slot_result)
+    else:
+        runtime = run_root / "runtime"
+        try:
+            runtime_is_directory = stat.S_ISDIR(runtime.lstat().st_mode)
+        except OSError:
+            runtime_is_directory = False
+        execution = _load_optional_object(runtime / "execution.json") if runtime_is_directory else {}
+        host_output = _load_optional_object(run_root / "host-output.json")
+        started = (runtime / "adapter-start.json") if runtime_is_directory else None
+        try:
+            launched = started is not None and stat.S_ISREG(started.lstat().st_mode)
+        except OSError:
+            launched = False
+        wrapper_exit = execution.get("wrapper_exit_code")
+        host_completed = (
+            host_output.get("run_status") == "completed"
+            and wrapper_exit == 0
+            and execution.get("timed_out") is False
+        )
+        result = {
+            "schema_version": 1,
+            "benchmark_id": BENCHMARK_ID,
+            "planned": True,
+            "launched": launched,
+            "host_completed": host_completed,
+            "evidence_valid": False,
+            "outcome": "failure" if launched else "not_started",
+            "case_id": slot["case_id"],
+            "condition": slot["condition"],
+            "run_order": slot["run_order"],
+            "replicate": slot["replicate"],
+            "attempt": slot["attempt"],
+            "attempt_kind": slot["attempt_kind"],
+            "run_status": "failed",
+            "failure_reason": failure_reason,
+            "adapter_failure": {
+                "schema_version": 1,
+                "failure_reason": failure_reason,
+                "detail": failure_detail,
+            },
+            "host_output_json_object": bool(host_output),
+            "wrapper_exit_code": wrapper_exit,
+            "duration_seconds": execution.get("duration_seconds"),
+            "started_at": execution.get("started_at"),
+            "finished_at": execution.get("finished_at"),
+            "immutable_plan_sha256": immutable_sha,
+            "runtime_evidence": _empty_runtime_evidence("failed", failure_detail),
+            "runtime_evidence_verification_error": None,
+            "artifacts": inventory["artifacts"],
+            "excluded_runtime_symlinks": inventory["excluded_runtime_symlinks"],
+        }
+    result.update(
+        planned=True,
+        run_status="failed",
+        failure_reason=failure_reason,
+        adapter_failure={
+            "schema_version": 1,
+            "failure_reason": failure_reason,
+            "detail": failure_detail,
+        },
+        evidence_valid=False,
+        artifacts=inventory["artifacts"],
+        excluded_runtime_symlinks=inventory["excluded_runtime_symlinks"],
+    )
+    result["outcome"] = "failure" if result.get("launched") else "not_started"
+    if artifact_collection_error is not None:
+        result["artifact_collection_error"] = artifact_collection_error
     return result
 
 
@@ -1103,27 +1340,82 @@ def execute_slot(
     except ValueError as exc:
         verified_runtime = _empty_runtime_evidence(run_status, f"runtime evidence could not be verified: {exc}")
         verification_error = str(exc)
-    result = {
-        "schema_version": 1,
-        "benchmark_id": metadata["benchmark_id"],
-        "case_id": metadata["case_id"],
-        "condition": metadata["condition"],
-        "run_order": metadata["run_order"],
-        "replicate": metadata["replicate"],
-        "attempt": metadata["attempt"],
-        "attempt_kind": metadata["attempt_kind"],
-        "run_status": run_status,
-        "failure_reason": failure_reason,
-        "host_output_json_object": host_output is not None,
-        "wrapper_exit_code": wrapper_exit,
-        "duration_seconds": duration,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "immutable_plan_sha256": metadata["immutable_plan_sha256"],
-        "runtime_evidence": verified_runtime,
-        "runtime_evidence_verification_error": verification_error,
-        "artifacts": _artifact_refs(run_root),
-    }
+
+    evidence_valid = (
+        verified_runtime.get("status") == "verified"
+        and verified_runtime.get("protocol_violation") is False
+    )
+
+    def slot_result_for(
+        inventory: dict[str, Any],
+        *,
+        result_status: str,
+        result_failure: str | None,
+        result_outcome: str,
+        result_evidence_valid: bool,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "benchmark_id": metadata["benchmark_id"],
+            "planned": True,
+            "launched": True,
+            "host_completed": run_status == "completed",
+            "evidence_valid": result_evidence_valid,
+            "outcome": result_outcome,
+            "case_id": metadata["case_id"],
+            "condition": metadata["condition"],
+            "run_order": metadata["run_order"],
+            "replicate": metadata["replicate"],
+            "attempt": metadata["attempt"],
+            "attempt_kind": metadata["attempt_kind"],
+            "run_status": result_status,
+            "failure_reason": result_failure,
+            "host_output_json_object": host_output is not None,
+            "wrapper_exit_code": wrapper_exit,
+            "duration_seconds": duration,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "immutable_plan_sha256": metadata["immutable_plan_sha256"],
+            "runtime_evidence": verified_runtime,
+            "runtime_evidence_verification_error": verification_error,
+            "artifacts": inventory["artifacts"],
+            "excluded_runtime_symlinks": inventory["excluded_runtime_symlinks"],
+        }
+
+    try:
+        _normalize_runtime_modes(runtime)
+        inventory = _artifact_inventory(run_root)
+    except ArtifactCollectionError as exc:
+        adapter_failure_reason = f"adapter_failure:{exc.__class__.__name__}"
+        result = slot_result_for(
+            exc.inventory,
+            result_status="failed",
+            result_failure=adapter_failure_reason,
+            result_outcome="failure",
+            result_evidence_valid=False,
+        )
+        result["adapter_failure"] = {
+            "schema_version": 1,
+            "failure_reason": adapter_failure_reason,
+            "detail": str(exc),
+        }
+        result["artifact_collection_error"] = str(exc)
+        exc.slot_result = result
+        _write_json(run_root / "slot-result.json", result)
+        raise
+
+    outcome = (
+        "failure" if run_status == "failed"
+        else "host_completed" if run_status == "completed" and evidence_valid
+        else "incomplete"
+    )
+    result = slot_result_for(
+        inventory,
+        result_status=run_status,
+        result_failure=failure_reason,
+        result_outcome=outcome,
+        result_evidence_valid=evidence_valid,
+    )
     _write_json(run_root / "slot-result.json", result)
     return result
 
@@ -1148,33 +1440,104 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
             results.append(execute_slot(run_root, config, go_authorized=True))
         except Exception as exc:
             runtime = run_root / "runtime"
-            _mkdir_private(runtime)
-            _write_json(runtime / "adapter-failure.json", {
+            runtime_directory_error = None
+            try:
+                _mkdir_private(runtime)
+            except Exception as runtime_error:
+                runtime_directory_error = f"{runtime_error.__class__.__name__}:{runtime_error}"
+            ledger_path = run_root / "slot-failure-ledger.json"
+            adapter_failure = {
                 "schema_version": 1,
                 "failure_reason": f"adapter_failure:{exc.__class__.__name__}",
                 "detail": str(exc),
-            })
-            ledger_path = run_root / "slot-failure-ledger.json"
-            _write_json(ledger_path, {
+            }
+            inventory = (
+                exc.inventory
+                if isinstance(exc, ArtifactCollectionError)
+                else {"artifacts": {}, "excluded_runtime_symlinks": []}
+            )
+            slot_result = _failed_slot_result(
+                slot,
+                run_root,
+                immutable_sha,
+                adapter_failure["failure_reason"],
+                str(exc),
+                inventory,
+                slot_result=(
+                    exc.slot_result if isinstance(exc, ArtifactCollectionError) else None
+                ),
+                artifact_collection_error=(
+                    str(exc) if isinstance(exc, ArtifactCollectionError) else None
+                ),
+            )
+            ledger: dict[str, Any] = {
                 "schema_version": 1,
+                "benchmark_id": BENCHMARK_ID,
+                "immutable_plan_sha256": immutable_sha,
                 "case_id": slot["case_id"],
                 "condition": slot["condition"],
                 "run_order": slot["run_order"],
                 "replicate": slot["replicate"],
                 "attempt": slot["attempt"],
+                "attempt_kind": slot["attempt_kind"],
+                "planned": True,
+                "launched": slot_result["launched"],
+                "host_completed": slot_result["host_completed"],
+                "evidence_valid": False,
+                "outcome": slot_result["outcome"],
                 "run_status": "failed",
-                "failure_reason": f"adapter_failure:{exc.__class__.__name__}",
-                "artifacts": _artifact_refs(run_root),
-            })
-            _write_private(
-                ledger_path.with_suffix(ledger_path.suffix + ".sha256"),
-                f"{sha256_file(ledger_path)}  {ledger_path.name}\n".encode("ascii"),
-            )
-            results.append({
-                "case_id": run_root.parts[-3],
-                "run_root": str(run_root),
-                "run_status": "failed",
-            })
+                "failure_reason": adapter_failure["failure_reason"],
+                "adapter_failure": adapter_failure,
+                "artifacts": inventory["artifacts"],
+                "excluded_runtime_symlinks": inventory["excluded_runtime_symlinks"],
+            }
+            if runtime_directory_error is not None:
+                ledger["runtime_directory_error"] = runtime_directory_error
+            if isinstance(exc, ArtifactCollectionError):
+                ledger["artifact_collection_error"] = str(exc)
+            _write_failure_ledger(ledger_path, ledger)
+
+            if runtime_directory_error is None:
+                try:
+                    _write_json(runtime / "adapter-failure.json", adapter_failure)
+                except Exception as write_error:
+                    ledger["adapter_failure_write_error"] = f"{write_error.__class__.__name__}:{write_error}"
+
+            try:
+                _normalize_runtime_modes(runtime)
+            except Exception as mode_error:
+                ledger["runtime_mode_normalization_error"] = f"{mode_error.__class__.__name__}:{mode_error}"
+
+            if not isinstance(exc, ArtifactCollectionError):
+                try:
+                    inventory = _artifact_inventory(run_root)
+                    ledger["artifacts"] = inventory["artifacts"]
+                    ledger["excluded_runtime_symlinks"] = inventory["excluded_runtime_symlinks"]
+                except ArtifactCollectionError as scan_error:
+                    ledger["artifacts"] = scan_error.inventory["artifacts"]
+                    ledger["excluded_runtime_symlinks"] = scan_error.inventory["excluded_runtime_symlinks"]
+                    ledger["artifact_collection_error"] = str(scan_error)
+                except Exception as scan_error:
+                    ledger["artifact_collection_error"] = f"{scan_error.__class__.__name__}:{scan_error}"
+            if "artifact_collection_error" in ledger:
+                slot_result["artifact_collection_error"] = ledger["artifact_collection_error"]
+            slot_result["artifacts"] = ledger["artifacts"]
+            slot_result["excluded_runtime_symlinks"] = ledger["excluded_runtime_symlinks"]
+            for field in (
+                "runtime_directory_error",
+                "adapter_failure_write_error",
+                "runtime_mode_normalization_error",
+            ):
+                if field in ledger:
+                    slot_result[field] = ledger[field]
+            ledger["planned"] = slot_result["planned"]
+            ledger["launched"] = slot_result["launched"]
+            ledger["host_completed"] = slot_result["host_completed"]
+            ledger["evidence_valid"] = slot_result["evidence_valid"]
+            ledger["outcome"] = slot_result["outcome"]
+            _write_json(run_root / "slot-result.json", slot_result)
+            _write_failure_ledger(ledger_path, ledger)
+            results.append(slot_result)
     return results
 
 

@@ -1,0 +1,299 @@
+{
+  "benchmark_id": "2026-10-10-ab-workflow-validation",
+  "execution_identity": {
+    "host": null,
+    "model": null,
+    "provider": null,
+    "status": "unknown"
+  },
+  "export_id": "2026-10-12-ab-workflow-v2",
+  "human_adjudication": {
+    "clean_case_false_alarms": null,
+    "labels": [],
+    "labels_read": false,
+    "precision": null,
+    "recall": null,
+    "status": "pending",
+    "wrong_resolution_count": null
+  },
+  "integrity": {
+    "artifact_reference_check": {
+      "references_checked": 0,
+      "reported_status": "no_mismatches",
+      "unavailable_slot_results": 12
+    },
+    "dependency_status": "unchanged",
+    "scope": "Accepted seal status covers dependency, plan, and runtime-config identity consistency; it does not mean the workflow completed or every artifact was verified.",
+    "seal_completeness": "incomplete",
+    "seal_status": "accepted"
+  },
+  "model_cost": {
+    "amount": null,
+    "currency": null,
+    "status": "unknown"
+  },
+  "prepared_input_scope": {
+    "description": "Prepared inputs from the existing corpus; workflow reproducibility only, not a fresh blind quality benchmark.",
+    "fresh_blind_test": false,
+    "purpose": "workflow_reproducibility_validation_of_existing_corpus"
+  },
+  "purpose": "workflow_integrity_projection",
+  "schema_version": 1,
+  "source_ab_summary": {
+    "adjudicated_case_count": 0,
+    "run_count": 0
+  },
+  "status": "failed",
+  "strict_ab_eval": {
+    "build_status": "not_generated",
+    "run_records_created": 0,
+    "score_status": "not_applicable",
+    "validate_status": "not_applicable"
+  },
+  "workflow": {
+    "eligible_pairs": 0,
+    "evidence_valid_slots": 0,
+    "failed_slots": 1,
+    "host_completed_slots": 0,
+    "launched_slots": 1,
+    "not_started_slots": 11,
+    "pair_status_counts": {
+      "pair_incomplete_missing_run_record": 6
+    },
+    "pairs": [
+      {
+        "case_id": "case0002",
+        "eligible": false,
+        "replicate": 1,
+        "slots": [
+          "case0002:A:replicate-1",
+          "case0002:B:replicate-1"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      },
+      {
+        "case_id": "case0002",
+        "eligible": false,
+        "replicate": 2,
+        "slots": [
+          "case0002:A:replicate-2",
+          "case0002:B:replicate-2"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      },
+      {
+        "case_id": "case0003",
+        "eligible": false,
+        "replicate": 1,
+        "slots": [
+          "case0003:A:replicate-1",
+          "case0003:B:replicate-1"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      },
+      {
+        "case_id": "case0003",
+        "eligible": false,
+        "replicate": 2,
+        "slots": [
+          "case0003:A:replicate-2",
+          "case0003:B:replicate-2"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      },
+      {
+        "case_id": "case0006",
+        "eligible": false,
+        "replicate": 1,
+        "slots": [
+          "case0006:A:replicate-1",
+          "case0006:B:replicate-1"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      },
+      {
+        "case_id": "case0006",
+        "eligible": false,
+        "replicate": 2,
+        "slots": [
+          "case0006:A:replicate-2",
+          "case0006:B:replicate-2"
+        ],
+        "status": "pair_incomplete_missing_run_record"
+      }
+    ],
+    "planned_pairs": 6,
+    "planned_slots": 12,
+    "slots": [
+      {
+        "case_id": "case0002",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": true,
+        "outcome": "failure",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 1,
+        "slot_id": "case0002:A:replicate-1",
+        "status": "adapter_failure_without_slot_result"
+      },
+      {
+        "case_id": "case0003",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 2,
+        "slot_id": "case0003:B:replicate-1",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0006",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 3,
+        "slot_id": "case0006:A:replicate-1",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0003",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 4,
+        "slot_id": "case0003:A:replicate-1",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0002",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 5,
+        "slot_id": "case0002:B:replicate-1",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0006",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 1,
+        "run_order": 6,
+        "slot_id": "case0006:B:replicate-1",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0002",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 7,
+        "slot_id": "case0002:B:replicate-2",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0003",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 8,
+        "slot_id": "case0003:A:replicate-2",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0006",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 9,
+        "slot_id": "case0006:B:replicate-2",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0003",
+        "condition": "B",
+        "condition_name": "current_skill",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 10,
+        "slot_id": "case0003:B:replicate-2",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0002",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 11,
+        "slot_id": "case0002:A:replicate-2",
+        "status": "not_started"
+      },
+      {
+        "case_id": "case0006",
+        "condition": "A",
+        "condition_name": "same_host_direct",
+        "evidence_valid": false,
+        "host_completed": false,
+        "launched": false,
+        "outcome": "not_started",
+        "planned": true,
+        "replicate": 2,
+        "run_order": 12,
+        "slot_id": "case0006:A:replicate-2",
+        "status": "not_started"
+      }
+    ],
+    "status": "failed"
+  }
+}

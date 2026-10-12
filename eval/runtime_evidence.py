@@ -17,7 +17,7 @@ else:
     from runtime_trace import normalizer_identity, parse_raw_trace
 
 
-NORMALIZER_VERSION = "2"
+NORMALIZER_VERSION = "3"
 COMMON_BINDING_NAMES = (
     "review_manifest",
     "common_prompt",
@@ -110,7 +110,7 @@ def validate_sidecar_shape(value: Any) -> None:
         or set(normalizer) != {"version", "source"}
         or normalizer.get("version") != NORMALIZER_VERSION
     ):
-        raise RuntimeEvidenceError("supervisor_events.normalizer must bind version 2")
+        raise RuntimeEvidenceError(f"supervisor_events.normalizer must bind version {NORMALIZER_VERSION}")
     _validate_ref(normalizer.get("source"), "supervisor_events.normalizer.source")
     if supervisor["source_raw_trace"] != value["raw_trace"]:
         raise RuntimeEvidenceError("normalized supervisor events must bind the raw trace reference")

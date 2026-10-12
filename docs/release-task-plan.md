@@ -8,6 +8,7 @@
 - PR1 的本地 hermetic fixture、包外 smoke 和三 scope 验收已通过；相关测试为 225 passed、4 skipped。代码提交 `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 [Standalone Skill CI run](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/37810529329) 已完成，Linux/Windows × Python 3.10/3.11 四个 job 全部成功。
 - PR2 核心、Skill、统一入口、固定历史资源和 Codex 新会话恢复验收已通过；Skill 资源 `latest` 链接漂移 P1 已修复并独立复验，核心定向测试为 39 passed。首次恢复命令因 `python` 不存在返回 127，改用 `/usr/bin/python3 -S` 后通过。
 - PR3 的宿主中立输入契约、run-record schema、11 个真实案例的 23 次 A/B pilot 和便携报告已完成；人工 labels、模型/宿主/Skill 加载元数据、独立覆盖审计和严格可比的 A/B 对照仍未完成。PR3 的质量评估仍未完成，C 组待 PR4 实现并补足可比较基线后追加。
+- 2026-10-12 的 workflow-validation v2 批次失败：12 个 slot 中 1 个启动、0 个宿主完成、0 个证据有效、11 个未启动，没有 host output 或 run record。seal `accepted` 仅表示依赖、冻结计划和 runtime-config 一致；artifact 检查为 0 个引用、12 个 slot result 不可用，完整性为 `incomplete`。首 slot 的 schema、artifact 枚举和 trace 故障及导出核验见 [v2 失败报告](../eval/results/2026-10-12-ab-workflow-v2.md)。后续批处理修复已通过测试与导出检查；v3 (`2026-10-12-ab-workflow-validation-v3`) 目录已准备，但输入尚未冻结、批次尚未执行，也没有质量结论。
 - 当前三个 seed 是验收准备器生成的合成隔离夹具，不是真实项目盲测。真实 WorkBuddy 验收仍为 `not_run`，PR 输入接入和评论发布尚未开展。
 - 2026-10-09 的独立 Codex 前向运行在合成 case-01 上生成 1 条 `confirmed` finding，首轮 finalize 成功；这只证明一次本地流程前向运行，不是 WorkBuddy 验收、盲测或 Skill 增益比较。记录见[前向运行日志](</root/project/Session Skill 前向运行 20261009/session/run-log.md>)。
 - 旧的 `eval/metrics.py` 与 `eval/run_eval.py` 面向服务端 `Finding`/`pr_url` 数据；它们不消费新契约下的 23 次 A/B pilot 运行，也不覆盖覆盖率、失败状态、复查判定或成本。新 run records 构成首批宿主运行集，但因人工标注和严格可比条件未齐，仍不能声称 Skill 质量已被评测。
@@ -18,7 +19,7 @@
 |---|---|---|---|
 | PR1 自动验收基础 | 本地 fixture、包 smoke 和定向测试通过（225 passed、4 skipped）；代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的 Linux/Windows × Python 3.10/3.11 远端 CI 四项通过 | `skill_ci` | 当前打包器和 Skill 测试 |
 | PR2 统一入口与会话记录 | 本地定向测试、固定历史资源和 Codex 新会话恢复通过；WorkBuddy 未实测 | `review_session` | 当前 `review_core` 输入、报告和复查契约 |
-| PR3 宿主中立评测基线 | 11 个真实案例 / 23 次 A/B pilot 已记录；人工标注、完整元数据和严格可比评估待完成 | `eval_tasks` | 已保存真实宿主运行；人工标注和覆盖审计 |
+| PR3 宿主中立评测基线 | 11 个真实案例 / 23 次 A/B pilot 已记录；workflow v2 失败，修复回归通过，v3 准备但未执行；人工标注、完整元数据和严格可比评估待完成 | `eval_tasks` | 已保存真实宿主运行；人工标注和覆盖审计 |
 | PR4 上下文候选选择器 | 排队中（queued），未分派 | 未分派 | PR3 可比较的基线；稳定的快照输入 |
 | PR5 历史报告与发布规划 | 后置排队（queued），未分派 | 未分派 | PR2 会话关联；稳定的校验结果与复查契约 |
 
@@ -40,7 +41,7 @@
 
 - **范围：** 使用 [评测输入契约](../eval/README.md)、[seed 索引](../eval/data/seed-cases.json) 和 [run-record schema](../eval/schemas/run-record.schema.json)，分开保存宿主原始输出、oracle/人工标注及脚本判分。先在同一宿主和固定案例上比较直接审查 `same_host_direct` 与当前 Skill `current_skill`；上下文选择器条件 `context_selector_skill` 在 PR4 实现后追加，不作为启动 A/B 的前置条件。首批目标为 10–12 个有独立标注的真实案例，再逐步扩展。
 - **验收：** 每个运行有唯一条件、宿主/环境、确切快照指纹、原始转录和导出路径；标注不进入宿主输入；失败、未覆盖、工具缺失和人工介入单独保留；脚本分数可由保存的输出和标注重算；未知模型、token、成本写 `null`，不能写成零。
-- **当前进度：** 输入契约、schema、真实案例索引和 23 条保存运行均已校验；A 有 12 次尝试、11 次完成，B 有 11 次尝试、11 次完成。历史描述性 replay 已完成：23/23 raw host-output hash 与原记录一致，并由 findings 数组重算 workflow 统计。Agent grader v2 为 A 4 条 supported/1 条 unresolved，B 3 条 supported/2 条 unresolved；两个冻结候选都有 agent prediction 覆盖，但这不是 human recall。case 10 的 incident 保留通用 `actor: agent` 和 host-output hash，并注明协调/finisher agent 于 review 结束后恢复模板；角色/阶段说明不是新增运行事件，host-output 内容及 SHA 不变。23 条旧记录缺少同期 `input.review_manifest_sha256`，所以当前 reviewer-input hash 只用于导出时审计；严格 rescore/summary replay blocked，旧 score 仅保留 hash，不作缓存，历史 scoring `verified` 单独标记为 `not_replayed`。本轮全量测试 266 passed、4 skipped，Ruff、`pip check`、导出 `check` 通过。model identity/configuration 与 Skill loaded digest 仍未知。
+- **当前进度：** 输入契约、schema、真实案例索引和 23 条保存运行均已校验；A 有 12 次尝试、11 次完成，B 有 11 次尝试、11 次完成。历史描述性 replay 已完成：23/23 raw host-output hash 与原记录一致，并由 findings 数组重算 workflow 统计。Agent grader v2 为 A 4 条 supported/1 条 unresolved，B 3 条 supported/2 条 unresolved；两个冻结候选都有 agent prediction 覆盖，但这不是 human recall。case 10 的 incident 保留通用 `actor: agent` 和 host-output hash，并注明协调/finisher agent 于 review 结束后恢复模板；角色/阶段说明不是新增运行事件，host-output 内容及 SHA 不变。23 条旧记录缺少同期 `input.review_manifest_sha256`，所以当前 reviewer-input hash 只用于导出时审计；严格 rescore/summary replay blocked，旧 score 仅保留 hash，不作缓存，历史 scoring `verified` 单独标记为 `not_replayed`。此次全量测试 325 passed、4 skipped：3 个 Semgrep 测试因该次 `PATH` 未包含 Semgrep 而跳过，之后使用现有 `.venv/bin` 补跑 Semgrep 检查 9 passed；1 个 PostgreSQL 测试因未设置 `TEST_DATABASE_URL` 跳过。独立重点回归 54 passed；Ruff、`pip check`、`git diff --check` 和 exporter CLI `check` 通过。model identity/configuration 与 Skill loaded digest 仍未知。workflow-validation v2 于 2026-10-12 失败，未产生 host output 或 run record；seal 的 `accepted` 只覆盖依赖、计划和 runtime-config 一致性，0 个 artifact references 被检查且 12 个 slot results 不可用。修复已通过测试与导出检查，但 v3 目录虽已准备，输入尚未冻结、批次尚未执行，也没有质量结论。
 - **未覆盖边界：** 11 个真实案例仍未人工标注或认证为盲测，缺少独立覆盖审计，且宿主身份/Skill 加载证据不足，不能得出严格 A/B 质量比较或 Skill 增益结论。人工 precision、recall、clean-case false alarms 和 wrong-resolution 仍为 null。先完成人工标注、补全元数据并审计 coverage，再重复同快照 A/B；上下文选择器 C 组只有在 PR4 实现且上下文缺口有证据支持后再排入。WorkBuddy 暂不可用时使用其他宿主不构成 WorkBuddy 验收。此任务不加入 Promptfoo 运行时、模型 API 接入或大规模评测框架。
 
 ### PR4：上下文候选选择器
@@ -59,4 +60,4 @@
 
 PR1 与 PR2 可并行；PR2 本地验收和 Codex 新会话恢复已通过，WorkBuddy 验收仍待执行。PR1 本地验收与远端 Linux/Windows CI 矩阵均已通过；这不代表 WorkBuddy 宿主验收完成。PR3 的 11-case/23-attempt A/B pilot 已完成，但必须先取得人工 labels、补齐 host/model/Skill-load 元数据并审计 coverage，才能判断是否具备可比较基线或是否需要重复 A/B。PR4 实现后且 context-omission 证据支持时，再对同一宿主、同一案例追加 C；PR4、PR5 均继续排队。PR5 依赖稳定 session 与结果契约，外部 PR 获取和评论发布继续单独排期。
 
-当前可发布的结论是：PR2 本地定向验证与 Codex case-01 新会话恢复通过；PR1 本地 fixture、包 smoke 和测试通过，代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的远端 Linux/Windows × Python 3.10/3.11 CI 四项均成功。PR3 已记录 11 个真实案例、23 次 A/B pilot 尝试和 agent-only v2 证据，但人工标注、严格可比的对照和质量结论仍未完成。该 pilot 不是 WorkBuddy 实测或认证盲测；WorkBuddy 安装/运行仍为 `not_run`，PR 输入接入未开始。PR4 上下文候选选择器与 PR5 历史报告/发布规划继续排队，未分派。固定 `0.2.1` 发布包未重建，ZIP/manifest 哈希仍分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。
+当前可发布的结论是：PR2 本地定向验证与 Codex case-01 新会话恢复通过；PR1 本地 fixture、包 smoke 和测试通过，代码 SHA `116e47e3ff62ef7213f48e81849392a37dfed72b` 的远端 Linux/Windows × Python 3.10/3.11 CI 四项均成功。PR3 已记录 11 个真实案例、23 次 A/B pilot 尝试和 agent-only v2 证据；workflow-validation v2 批次失败，相关批处理修复回归通过（全套 325 passed、4 skipped；独立重点回归 54 passed），v3 目录已准备但尚未冻结输入或执行。人工标注、严格可比的对照和质量结论仍未完成；该 pilot 不是 WorkBuddy 实测或认证盲测，WorkBuddy 安装/运行仍为 `not_run`，PR 输入接入未开始。此次验收只覆盖代码、导出和会话流程，不评定评测质量。PR4 上下文候选选择器与 PR5 历史报告/发布规划继续排队，未分派。固定 `0.2.1` 发布包未重建，ZIP/manifest 哈希仍分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。

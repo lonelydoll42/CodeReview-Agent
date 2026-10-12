@@ -1,0 +1,32 @@
+{
+  "export_id": "2026-10-12-ab-workflow-v2",
+  "exporter": {
+    "name": "eval.export_workflow_batch",
+    "version": "1.0.0"
+  },
+  "schema_version": 1,
+  "source_hashes": {
+    "ab_summary_sha256": "27fff54bb1527104c043ad00b99c0c2eebadef4b2dc1e3d7a22b14ea444b6654",
+    "dependency_snapshot_file_sha256": "4898d099734b4964bb8c3a8744eab0340a354f225a8636d7bf7c3e0c640bce3b",
+    "plan_sha256": "50dfd7d0f48b4720424521f9e611260d509e44b68e083c6777090fdedebe4268",
+    "runtime_config_sha256": "6488d53483e83ec9b9ce7b6688063c3f66d3e3e7730ca1f7ba028270468b8f22",
+    "seal_report_sha256": "d4b906458da7d58b52472beed0b4eca53bb4d45bcb6965eac26580e8523faba3"
+  },
+  "source_names": {
+    "ab_summary": "ab-summary-final-v2.json",
+    "dependency_snapshot": "dependencies-before-v2.json",
+    "seal_report": "workflow-report-v2.json"
+  },
+  "summary_binding": {
+    "projection_sha256": "77d259a14e62affc90eaca35104fd6b8d7a33a788001466ad8a2846edfb1c239",
+    "sha256": "77d259a14e62affc90eaca35104fd6b8d7a33a788001466ad8a2846edfb1c239"
+  },
+  "tool_versions": {
+    "ab_eval": "0.2.0",
+    "exporter": "1.0.0",
+    "runtime_normalizer": "2",
+    "workflow_seal_helper_sha256": "e8188ea3660adfe2b38b057da73446b1f0468be4e2dec1845deb215d0d8e3d1d",
+    "workflow_seal_schema_version": 1
+  },
+  "type": "workflow_batch_export_evidence"
+}

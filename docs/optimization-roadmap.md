@@ -46,7 +46,7 @@
 
 ## 质量与成本
 
-宿主中立评测的 pilot、输入契约和发布任务见[后续发布任务](release-task-plan.md)、[评测输入说明](../eval/README.md)及[2026-10-09 报告](../eval/results/2026-10-09-ab-pilot.md)。三个 seed 仍是合成隔离夹具；另有 11 个真实案例和 23 次保存尝试，但案例集尚未人工标注或认证盲测，WorkBuddy 仍为 `not_run`。8 组虽匹配输入但 host identity 不完整且 Skill loading 未验证，另有 2 组因 host 名称不同而不比较、1 组因协议事件 inconclusive。agent-only 覆盖和 workflow 数值不能解释为人类质量或 Skill 增益。先人工标注、补齐元数据并审计 coverage，再重复 A/B；PR4 仍排队，context-selector C 组等待 context omission 证据。20–30 个真实案例仍为后续积累目标。成本和令牌用量不可见时记录为 `null`；失败和未覆盖必须保留，不能当作空结果。PR5 历史报告与发布规划也继续排队。
+宿主中立评测的 pilot、输入契约和发布任务见[后续发布任务](release-task-plan.md)、[评测输入说明](../eval/README.md)及[2026-10-09 报告](../eval/results/2026-10-09-ab-pilot.md)。三个 seed 仍是合成隔离夹具；另有 11 个真实案例和 23 次保存尝试，但案例集尚未人工标注或认证盲测，WorkBuddy 仍为 `not_run`。8 组虽匹配输入但 host identity 不完整且 Skill loading 未验证，另有 2 组因 host 名称不同而不比较、1 组因协议事件 inconclusive。agent-only 覆盖和 workflow 数值不能解释为人类质量或 Skill 增益。2026-10-12 的 prepared-input workflow v2 另有 12-slot 流程复现尝试，1 个启动、0 个宿主完成、0 个证据有效、11 个未启动；`accepted` seal 只表示依赖、计划和 runtime-config 一致，artifact 检查为 0 个引用且 12 个 slot result 不可用，完整性为 `incomplete`。schema、artifact enumeration 和 trace 故障详见[v2 失败报告](../eval/results/2026-10-12-ab-workflow-v2.md)。批处理修复验收为全套 325 passed、4 skipped，独立重点回归 54 passed；v3（`2026-10-12-ab-workflow-validation-v3`）目录已准备，但输入尚未冻结且批次尚未运行，没有质量结论。旧 pilot 的人工标签仍 pending，`0.2.1` 夹具保持原基线。先完成人工标注、补齐元数据并审计 coverage，再重复 A/B；PR4 仍排队，context-selector C 组等待 context omission 证据。20–30 个真实案例仍为后续积累目标。成本和令牌用量不可见时记录为 `null`；失败和未覆盖必须保留，不能当作空结果。PR5 历史报告与发布规划也继续排队。
 
 ## 扩展边界
 
