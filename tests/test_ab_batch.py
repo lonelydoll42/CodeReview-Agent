@@ -17,6 +17,7 @@ from eval.run_ab_batch import (
     TRACE_NORMALIZER,
     build_runtime_evidence,
     build_slot_plan,
+    execute_plan,
     execute_slot,
     immutable_plan_sha256,
     normalized_supervisor_events,
@@ -505,6 +506,58 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
 
 
 class BatchExecutionAdapterTests(unittest.TestCase):
+    def test_execute_plan_records_failure_artifacts_and_continues(self) -> None:
+        index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
+        plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_root = root / "runs"
+            config_path = root / "runtime-config.json"
+            config_bytes = b"{}\n"
+            config_path.write_bytes(config_bytes)
+            run_roots = []
+            for slot in plan["slots"]:
+                condition = "same_host_direct" if slot["condition"] == "A" else "current_skill"
+                run_root = runs_root / slot["case_id"] / condition / f"repeat{slot['replicate']:02d}"
+                (run_root / "input").mkdir(parents=True)
+                (run_root / "input/runtime-config.json").write_bytes(config_bytes)
+                run_roots.append(run_root)
+
+            first_root = run_roots[0]
+
+            def run_slot(run_root: Path, _config: dict, *, go_authorized: bool) -> dict:
+                self.assertTrue(go_authorized)
+                if run_root == first_root:
+                    (run_root / "runtime").mkdir()
+                    (run_root / "runtime/strace.log").write_bytes(b"partial trace\n")
+                    raise RuntimeError("simulated adapter failure")
+                return {"run_status": "completed"}
+
+            with (
+                mock.patch("eval.run_ab_batch._runtime_config", return_value={}),
+                mock.patch("eval.run_ab_batch._preflight_codex_config"),
+                mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
+                mock.patch("eval.run_ab_batch.execute_slot", side_effect=run_slot) as execute,
+            ):
+                results = execute_plan(plan, runs_root, config_path)
+
+            self.assertEqual(len(results), 12)
+            self.assertEqual(results[0]["run_status"], "failed")
+            self.assertTrue(all(result["run_status"] == "completed" for result in results[1:]))
+            self.assertEqual(execute.call_count, 12)
+            ledger_path = first_root / "slot-failure-ledger.json"
+            ledger = json.loads(ledger_path.read_bytes())
+            self.assertEqual(ledger["run_order"], 1)
+            self.assertEqual(ledger["failure_reason"], "adapter_failure:RuntimeError")
+            self.assertEqual(
+                ledger["artifacts"]["runtime/strace.log"]["sha256"],
+                hashlib.sha256(b"partial trace\n").hexdigest(),
+            )
+            self.assertEqual(
+                ledger_path.with_suffix(".json.sha256").read_text(encoding="ascii"),
+                f"{hashlib.sha256(ledger_path.read_bytes()).hexdigest()}  {ledger_path.name}\n",
+            )
+
     def test_tool_call_id_comes_from_unique_matching_cli_command(self) -> None:
         host_path = "/tmp/pinned/skill/SKILL.md"
         raw_trace = (

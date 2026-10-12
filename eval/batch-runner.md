@@ -146,8 +146,11 @@ python3 eval/run_ab_batch.py \
 
 Execution writes raw CLI JSONL, raw model output, strace stderr, raw strace,
 normalized supervisor JSONL, exact exit/timing metadata, and a sealed slot
-result. All evidence files are mode 0600 under mode 0700 run directories. The
-adapter uses `strace -f -yy` with raw `read`, `pread64`, `readv`,
+result. Successful `slot-result.json` files bind every artifact digest; an
+adapter exception writes `slot-failure-ledger.json` and an adjacent SHA-256
+sidecar for the partial artifacts before the next planned slot starts. All
+evidence files are mode 0600 under mode 0700 run directories. The adapter uses
+`strace -f -yy` with raw `read`, `pread64`, `readv`,
 `preadv`, and `preadv2` buffers and an explicit syscall list that includes
 process creation, pipes, descriptor operations, and file mappings. It does not
 trace environment values or network payload syscalls. Host-reported model/version values are not proof of remote
