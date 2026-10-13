@@ -2368,16 +2368,21 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             results = execute_plan(plan, args.runs_root, args.runtime_config)
             blocked = any(item.get("execution_status") == "blocked" for item in results)
+            all_completed = all(item.get("run_status") == "completed" for item in results)
+            if blocked:
+                status, exit_code = "blocked", 3
+            elif all_completed:
+                status, exit_code = "completed", 0
+            else:
+                status, exit_code = "failed", 1
             response = {
-                "status": "blocked" if blocked else "completed",
+                "status": status,
                 "runs": results,
             }
             if blocked:
                 response["next_step"] = "adapter_validation"
             print(json.dumps(response, sort_keys=True))
-            return 3 if blocked else 0 if all(
-                item.get("run_status") == "completed" for item in results
-            ) else 1
+            return exit_code
         if args.plan_output is None:
             parser.error("plan-only operation requires --plan-output")
         index = json.loads(args.case_index.read_bytes())

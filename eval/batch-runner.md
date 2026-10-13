@@ -96,9 +96,13 @@ self-check, and CLI-to-process causal binding. A parser self-check or available
 tools do not establish that binding. The default strict CLI event path has no
 trusted OS PID or causal process identity, so the A/B runner reports `blocked`
 with `next_step: adapter_validation` and exit status 3, even when the local
-tools are installed. Alternate hook integrations remain unverified; tool
-availability alone cannot enable strict execution. This evidence gate applies
-to the A/B runner; it does not block the daily Skill or optional review service.
+tools are installed. Strict evaluation can resume only when the host integration
+provides verifiable call-ID-to-OS-process identity and execution-result
+association. A successful simple command, text matching, or installed tools
+alone are insufficient. If this requires maintaining a long-lived host fork or
+extending the syscall parser, keep strict evaluation paused. This evidence gate
+applies to the A/B runner; daily Skill trials and the optional review service
+remain available.
 
 The v2 runtime config is exact UTF-8 JSON with this shape:
 

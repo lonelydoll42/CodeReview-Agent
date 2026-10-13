@@ -717,6 +717,7 @@ def _fake_cli_slot(
     *,
     condition: str = "A",
     benchmark_id: str = BENCHMARK_ID,
+    bwrap_executable: str = "/fake/bwrap",
 ) -> tuple[Path, dict]:
     cases = [
         {
@@ -988,7 +989,7 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
         "schema_version": 3,
         "codex_executable": str(executable),
         "strace_executable": "/usr/bin/strace",
-        "bwrap_executable": str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
+        "bwrap_executable": bwrap_executable,
         "model": "gpt-6.1-sol",
         "provider_definition": {
             "name": "custom",
@@ -1006,7 +1007,63 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
     return run_root, config
 
 
+def _real_adapter_cli_slot(
+    tmp_path: Path,
+    *,
+    condition: str = "A",
+    benchmark_id: str = BENCHMARK_ID,
+) -> tuple[Path, dict]:
+    bwrap_executable = str(_find_bundled_bwrap(Path("/usr/bin/codex")))
+    return _fake_cli_slot(
+        tmp_path,
+        condition=condition,
+        benchmark_id=benchmark_id,
+        bwrap_executable=bwrap_executable,
+    )
+
+
 class BatchExecutionAdapterTests(unittest.TestCase):
+    def test_execute_cli_status_matches_exit_code(self) -> None:
+        case_index_path = Path(__file__).parents[1] / "eval/data/real-cases.json"
+        index = json.loads(case_index_path.read_bytes())
+        plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        successful = [{"run_status": "completed"} for _ in plan["slots"]]
+        failed = [dict(result) for result in successful]
+        failed[0]["run_status"] = "failed"
+        blocked = [dict(result) for result in successful]
+        blocked[0].update(run_status="not_run", execution_status="blocked")
+        blocked[1]["run_status"] = "failed"
+        cases = (
+            (successful, "completed", 0),
+            (failed, "failed", 1),
+            (blocked, "blocked", 3),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan_path = Path(temp_dir) / "plan.json"
+            plan_path.write_text(json.dumps(plan, sort_keys=True) + "\n", encoding="utf-8")
+            for results, expected_status, expected_exit_code in cases:
+                with self.subTest(expected_status=expected_status):
+                    with (
+                        mock.patch("eval.run_ab_batch.execute_plan", return_value=results),
+                        mock.patch("builtins.print") as output,
+                    ):
+                        exit_code = batch.main([
+                            "--case-index", str(case_index_path),
+                            "--plan", str(plan_path),
+                            "--execute",
+                            "--runs-root", str(Path(temp_dir) / "runs"),
+                            "--runtime-config", str(Path(temp_dir) / "runtime-config.json"),
+                        ])
+
+                    response = json.loads(output.call_args.args[0])
+                    self.assertEqual(response["status"], expected_status)
+                    self.assertEqual(exit_code, expected_exit_code)
+                    self.assertEqual(
+                        response.get("next_step"),
+                        "adapter_validation" if expected_status == "blocked" else None,
+                    )
+
     def test_preflight_without_runtime_config_reports_blocked_when_codex_is_missing(self) -> None:
         with (
             mock.patch("eval.run_ab_batch.shutil.which", return_value=None) as which,
@@ -1048,13 +1105,18 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
     def test_execute_slot_records_block_without_starting_a_process(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            run_root, config = _fake_cli_slot(Path(temp_dir))
             with (
+                mock.patch(
+                    "eval.run_ab_batch._find_bundled_bwrap",
+                    side_effect=AssertionError("pure blocking fixture must not inspect a Codex package"),
+                ) as find_bwrap,
                 mock.patch("eval.run_ab_batch.subprocess.Popen") as popen,
                 mock.patch("eval.run_ab_batch.subprocess.run") as run,
             ):
+                run_root, config = _fake_cli_slot(Path(temp_dir))
                 result = execute_slot(run_root, config, go_authorized=True)
 
+            find_bwrap.assert_not_called()
             self.assertEqual(result["run_status"], "not_run")
             self.assertFalse(result["launched"])
             self.assertEqual(result["outcome"], "not_started")
@@ -1590,7 +1652,9 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         if not Path("/usr/bin/codex").exists():
             self.skipTest("the Codex-bundled bwrap runtime is required for the adapter test")
         with tempfile.TemporaryDirectory() as temp_dir:
-            run_root, config = _fake_cli_slot(Path(temp_dir), benchmark_id="new-safe-batch.v3")
+            run_root, config = _real_adapter_cli_slot(
+                Path(temp_dir), benchmark_id="new-safe-batch.v3",
+            )
             fake_home = Path(temp_dir) / "host-home"
             _private_write(fake_home / ".codex" / "auth.json", b"test-only auth placeholder\n")
             with self.assertRaisesRegex(ValueError, "GO authorization gate"):
@@ -1768,7 +1832,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         if not Path("/usr/bin/codex").exists():
             self.skipTest("the Codex-bundled bwrap runtime is required for the adapter test")
         with tempfile.TemporaryDirectory() as temp_dir:
-            run_root, config = _fake_cli_slot(Path(temp_dir), condition="B")
+            run_root, config = _real_adapter_cli_slot(Path(temp_dir), condition="B")
             fake_home = Path(temp_dir) / "host-home"
             _private_write(fake_home / ".codex" / "auth.json", b"test-only auth placeholder\n")
             with mock.patch("pathlib.Path.home", return_value=fake_home):
