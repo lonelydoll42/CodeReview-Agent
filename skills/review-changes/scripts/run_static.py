@@ -198,7 +198,7 @@ def main() -> int:
                     "semgrep_not_installed",
                 ),
                 error_code="semgrep_not_installed",
-                error="Semgrep is not installed; semantic review can continue.",
+                error="Semgrep executable was not found on PATH; semantic review can continue",
             )
             _write_run(args.output, manifest, record)
             return 0
