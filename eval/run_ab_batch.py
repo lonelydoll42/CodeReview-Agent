@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import signal
 import shutil
 import stat
@@ -1191,40 +1190,11 @@ def _command_items(events: list[dict[str, Any]]) -> list[tuple[str, str]]:
         call_id = item.get("id") or event.get("call_id") or event.get("callId")
         command = item.get("command") or item.get("input")
         if isinstance(call_id, str) and isinstance(command, str):
+            previous = items.get(call_id)
+            if previous is not None and previous != command:
+                raise ValueError(f"CLI command ID maps to conflicting commands: {call_id}")
             items[call_id] = command
     return list(items.items())
-
-
-def _command_matches(argv: list[str], command: str) -> bool:
-    try:
-        wanted = shlex.split(command)
-    except ValueError:
-        return False
-    if argv == wanted or (
-        argv and wanted and Path(argv[0]).name == Path(wanted[0]).name and argv[1:] == wanted[1:]
-    ):
-        return True
-    if argv and Path(argv[0]).name in {"sh", "bash", "dash", "zsh"}:
-        for index, argument in enumerate(argv[:-1]):
-            if argument == "-c" or (argument.startswith("-") and argument.endswith("c")):
-                try:
-                    script_tokens = shlex.split(argv[index + 1])
-                except ValueError:
-                    return False
-                if script_tokens == wanted or (
-                    script_tokens
-                    and wanted
-                    and Path(script_tokens[0]).name == Path(wanted[0]).name
-                    and script_tokens[1:] == wanted[1:]
-                ):
-                    return True
-                if "&&" in script_tokens:
-                    boundary = len(script_tokens) - 1 - script_tokens[::-1].index("&&")
-                    try:
-                        return shlex.split(" ".join(script_tokens[boundary + 1 :])) == wanted
-                    except ValueError:
-                        return False
-    return False
 
 
 def normalized_supervisor_events(
@@ -1232,33 +1202,19 @@ def normalized_supervisor_events(
     codex_bytes: bytes,
     normalizer_source: Path,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Add observed CLI session/tool IDs to events from the trusted parser."""
+    """Preserve trace events; current CLI records do not bind commands to trace PIDs."""
     parsed = parse_raw_trace(raw_trace)
     cli_events = _codex_events(codex_bytes)
-    thread_ids = {
-        event.get("thread_id")
-        for event in cli_events
-        if event.get("type") == "thread.started" and isinstance(event.get("thread_id"), str)
-    }
-    thread_id = next(iter(thread_ids)) if len(thread_ids) == 1 else None
-    commands = _command_items(cli_events)
+    association_errors = ["cli_process_binding_unavailable"]
+    try:
+        _command_items(cli_events)
+    except ValueError:
+        association_errors.insert(0, "cli_command_id_conflict")
+    parsed["association_complete"] = False
+    parsed["association_errors"] = association_errors
     normalized = [build_supervisor_header(raw_trace, normalizer_source)]
-    pid_calls: dict[int, str] = {}
     for event in parsed["events"]:
-        pid = event.get("pid")
-        if event.get("event") == "exec" and isinstance(event.get("argv"), list):
-            argv = event["argv"]
-            matches = [call_id for call_id, command in commands if _command_matches(argv, command)]
-            if len(matches) == 1:
-                pid_calls[pid] = matches[0]
-            elif argv and Path(argv[0]).name in {"codex", "codex.exe"} and isinstance(thread_id, str):
-                pid_calls[pid] = thread_id
-            elif isinstance(thread_id, str):
-                pid_calls.setdefault(pid, thread_id)
-        call_id = pid_calls.get(pid, thread_id)
-        normalized.append({**event, **({"call_id": call_id} if isinstance(call_id, str) else {})})
-        if event.get("event") == "process_exit":
-            pid_calls.pop(pid, None)
+        normalized.append(event)
     return normalized, parsed
 
 
@@ -1920,6 +1876,8 @@ def execute_slot(
         "trace_complete": parsed_trace["complete"],
         "trace_reason": parsed_trace["reason"],
         "trace_unknown": parsed_trace["unknown"],
+        "trace_association_complete": parsed_trace["association_complete"],
+        "trace_association_errors": parsed_trace["association_errors"],
     }
 
     common_bindings = {

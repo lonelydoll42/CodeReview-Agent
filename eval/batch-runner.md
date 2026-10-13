@@ -178,11 +178,18 @@ to the exact raw trace SHA and to the normalizer version/source hash.
 The first supervisor JSONL line is the exact normalizer header. Its normalizer
 version and source SHA must match the checked-in trusted `eval/runtime_trace.py`.
 Run that parser over the preserved raw trace. The supervisor JSONL must contain
-the exact same ordered event objects, including every parser field, with only a
-non-empty `call_id` added to each event; missing, extra, reordered, or changed
-events leave the trace incomplete. Each event keeps the parser's observed PID
-and one-based `trace_line`. Bind `call_id` only from the matching CLI event; do
-not infer process IDs or descriptor paths in the adapter.
+the exact same ordered event objects, including every parser field. A command
+string match is only a candidate: current CLI JSONL has no process ID or causal
+process binding, so the adapter does not add `call_id` from command text or
+propagate it through trace descendants. A unique match, command suffix, or
+thread ID cannot establish command identity. The raw syscall parser's
+`trace_complete` status is separate from command association; absent a trusted
+CLI-to-PID binding, runtime evidence and the slot remain incomplete. Conflicting
+commands under one CLI item ID are rejected as ambiguous. Each event keeps the
+parser's observed PID and one-based `trace_line`; process-creation events also
+preserve the syscall return PID in the creator's namespace, which alone does
+not prove PID namespace identity. Do not infer process IDs or descriptor paths
+in the adapter.
 
 Capture with `strace -f --decode-pids=pidns -yy -s 65536 -e raw=read,pread64,readv,preadv,preadv2`, including `eventfd` and `eventfd2`, without buffer dumping; set
 `umask 077`, and verify all evidence files are mode 0600
@@ -198,9 +205,10 @@ readability, positive reads from unknown non-pipe descriptors, and readable
 mappings with unknown paths make runtime evidence incomplete. Unknown
 write-only opens remain attribution limitations but do not alone make evidence
 incomplete; known pipe traffic remains exempt. Path gaps never prove a B Skill
-load. A B Skill-load claim requires a unique CLI `cat` event, its successful
-same-PID and same-call ID read of the pinned path, and complete
-`aggregated_output` equality with the pinned ZIP member bytes. Any successful
+load. A B Skill-load claim requires a unique CLI `cat` event, a trusted
+command/PID binding, its successful same-PID and same-call ID read of the pinned
+path, and complete `aggregated_output` equality with the pinned ZIP member
+bytes. Any successful
 readable open, read, or mapping of the pinned path in A is a protocol violation,
 regardless of which CLI command made it.
 

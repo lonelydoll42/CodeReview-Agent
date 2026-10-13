@@ -392,6 +392,9 @@ def verify_runtime_evidence(
         raise RuntimeEvidenceError("normalizer header does not match raw trace and source bindings")
     events = supervisor_events[1:] if header == expected_header else []
     parsed_events = parsed_trace["events"]
+    has_unproven_pid_alias = any(
+        event.get("path_alias_status") == "unproven" for event in parsed_events
+    )
     has_association_gap = (
         header != expected_header
         or not parsed_trace["complete"]
@@ -591,6 +594,7 @@ def verify_runtime_evidence(
         "verified"
         if (
             not has_association_gap
+            and not has_unproven_pid_alias
             and not has_unattributed_readable_access
             and trace_status in {"success", "failed"}
         )
@@ -602,6 +606,8 @@ def verify_runtime_evidence(
     limitations = []
     if has_association_gap:
         limitations.append("runtime traces lack a complete PID/call-id association")
+    if has_unproven_pid_alias:
+        limitations.append("proc-self path aliases lack PID namespace identity proof")
     if has_unattributed_readable_access:
         limitations.append("trace has a successful readable access with unknown path attribution")
     if binding_status != "verified":
@@ -609,13 +615,6 @@ def verify_runtime_evidence(
     if parsed_trace["attribution_unknown"]:
         limitations.append(
             f"{len(parsed_trace['attribution_unknown'])} file descriptor path attribution(s) are unknown"
-        )
-    unproven_alias_count = sum(
-        event.get("path_alias_status") == "unproven" for event in parsed_events
-    )
-    if unproven_alias_count:
-        limitations.append(
-            f"{unproven_alias_count} proc-self path alias(es) lack PID namespace identity proof"
         )
     if skill_status == "unknown" and record.get("condition") == "current_skill":
         limitations.append("pinned Skill load was not proven by a traced cat read and exact ZIP-member output")

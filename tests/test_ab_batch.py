@@ -1297,7 +1297,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
                 f"{hashlib.sha256(ledger_path.read_bytes()).hexdigest()}  {ledger_path.name}\n",
             )
 
-    def test_tool_call_id_comes_from_unique_matching_cli_command(self) -> None:
+    def test_unique_cli_command_text_is_only_a_candidate(self) -> None:
         host_path = "/tmp/pinned/skill/SKILL.md"
         raw_trace = (
             f'424 execve("/usr/bin/cat", ["cat", "--", "{host_path}"], 0x0, 0x0) = 0\n'
@@ -1320,9 +1320,140 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         events, parsed = normalized_supervisor_events(raw_trace, cli, TRACE_NORMALIZER)
 
         self.assertTrue(parsed["complete"])
-        self.assertEqual([event.get("call_id") for event in events[1:]], ["tool-7"] * 4)
+        self.assertFalse(parsed["association_complete"])
+        self.assertEqual(parsed["association_errors"], ["cli_process_binding_unavailable"])
+        self.assertTrue(all("call_id" not in event for event in events[1:]))
         self.assertEqual(events[2]["event"], "open")
         self.assertEqual(events[3]["path"], host_path)
+
+    def test_tool_call_id_never_falls_back_to_thread_or_ambiguous_command(self) -> None:
+        host_path = "/tmp/pinned/skill/SKILL.md"
+        raw_trace = (
+            f'424 execve("/usr/bin/cat", ["cat", "--", "{host_path}"], 0x0, 0x0) = 0\n'
+            f'424 openat(AT_FDCWD, "{host_path}", O_RDONLY) = 3<{host_path}>\n'
+            "424 read(0x3, 0x7fff0000, 0x10) = 0x10\n"
+            "424 +++ exited with 0 +++\n"
+        ).encode()
+        thread = json.dumps({"type": "thread.started", "thread_id": "thread-1"}) + "\n"
+        command = {
+            "type": "command_execution",
+            "command": f"cat -- {host_path}",
+        }
+        cli_cases = (
+            thread.encode(),
+            (
+                thread
+                + json.dumps({"type": "item.completed", "item": {**command, "id": "tool-1"}})
+                + "\n"
+                + json.dumps({"type": "item.completed", "item": {**command, "id": "tool-2"}})
+                + "\n"
+            ).encode(),
+        )
+
+        for cli in cli_cases:
+            events, parsed = normalized_supervisor_events(raw_trace, cli, TRACE_NORMALIZER)
+            self.assertTrue(parsed["complete"])
+            self.assertFalse(parsed["association_complete"])
+            self.assertTrue(all("call_id" not in event for event in events[1:]))
+
+    def test_child_command_candidate_cannot_overwrite_parent_command_candidate(self) -> None:
+        raw_trace = (
+            '424 execve("/bin/sh", ["sh", "-c", "echo setup; cat /tmp/x"], 0x0, 0x0) = 0\n'
+            "424 clone(child_stack=NULL, flags=SIGCHLD) = 425\n"
+            '425 execve("/usr/bin/cat", ["cat", "/tmp/x"], 0x0, 0x0) = 0\n'
+            '425 openat(AT_FDCWD, "/tmp/x", O_RDONLY) = 3</tmp/x>\n'
+            '425 read(3</tmp/x>, 0x7fff0000, 0x10) = 0x10\n'
+            "425 close(3</tmp/x>) = 0\n"
+            "425 +++ exited with 0 +++\n"
+            "424 +++ exited with 0 +++\n"
+        ).encode()
+        cli = (
+            json.dumps({"type": "thread.started", "thread_id": "thread-1"}) + "\n"
+            + json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "id": "command-a",
+                    "type": "command_execution",
+                    "command": "sh -c 'echo setup; cat /tmp/x'",
+                },
+            }) + "\n"
+            + json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "id": "command-b",
+                    "type": "command_execution",
+                    "command": "cat /tmp/x",
+                },
+            }) + "\n"
+        ).encode()
+
+        events, parsed = normalized_supervisor_events(raw_trace, cli, TRACE_NORMALIZER)
+
+        self.assertTrue(parsed["complete"])
+        self.assertFalse(parsed["association_complete"])
+        child_events = [event for event in events[1:] if event.get("pid") == 425]
+        self.assertTrue(child_events)
+        self.assertTrue(all("call_id" not in event for event in events[1:]))
+        self.assertTrue(all("call_id" not in event for event in child_events))
+
+    def test_later_cli_text_match_cannot_bind_an_earlier_trace_process(self) -> None:
+        raw_trace = (
+            '424 execve("/usr/bin/cat", ["cat", "/tmp/later"], 0x0, 0x0) = 0\n'
+            '424 openat(AT_FDCWD, "/tmp/later", O_RDONLY) = 3</tmp/later>\n'
+            "424 +++ exited with 0 +++\n"
+        ).encode()
+        cli = (
+            json.dumps({"type": "thread.started", "thread_id": "thread-1"}) + "\n"
+            + json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "id": "later-command",
+                    "type": "command_execution",
+                    "command": "cat /tmp/later",
+                },
+            }) + "\n"
+        ).encode()
+
+        events, parsed = normalized_supervisor_events(raw_trace, cli, TRACE_NORMALIZER)
+
+        self.assertTrue(parsed["complete"])
+        self.assertFalse(parsed["association_complete"])
+        self.assertEqual(parsed["association_errors"], ["cli_process_binding_unavailable"])
+        self.assertTrue(all("call_id" not in event for event in events[1:]))
+
+    def test_conflicting_duplicate_cli_command_id_is_rejected(self) -> None:
+        raw_trace = b'424 execve("/usr/bin/cat", ["cat", "/tmp/b"], 0x0, 0x0) = 0\n'
+        cli = (
+            json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "id": "same-id",
+                    "type": "command_execution",
+                    "command": "cat /tmp/a",
+                },
+            }) + "\n"
+            + json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "id": "same-id",
+                    "type": "command_execution",
+                    "command": "cat /tmp/b",
+                },
+            }) + "\n"
+        ).encode()
+
+        with self.assertRaisesRegex(ValueError, "conflicting commands"):
+            batch._command_items(batch._codex_events(cli))
+
+        events, parsed = normalized_supervisor_events(raw_trace, cli, TRACE_NORMALIZER)
+
+        self.assertTrue(parsed["complete"])
+        self.assertFalse(parsed["association_complete"])
+        self.assertEqual(
+            parsed["association_errors"],
+            ["cli_command_id_conflict", "cli_process_binding_unavailable"],
+        )
+        self.assertTrue(all("call_id" not in event for event in events[1:]))
 
     def test_fake_cli_is_wrapped_and_all_outputs_are_sealed(self) -> None:
         if not Path("/usr/bin/strace").is_file():
@@ -1342,12 +1473,13 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertTrue(result["host_output_json_object"])
             self.assertEqual(
                 result["runtime_evidence"]["status"],
-                "verified",
+                "incomplete",
                 result.get("runtime_evidence_verification_error"),
             )
+            self.assertFalse(result["evidence_valid"])
             self.assertFalse(result["runtime_evidence"]["protocol_violation"])
             self.assertIsNone(result["runtime_evidence"]["verified_loaded"])
-            self.assertEqual(result["runtime_evidence"]["supervisor_exit_code"], 0)
+            self.assertIsNone(result["runtime_evidence"]["supervisor_exit_code"])
             self.assertEqual(result["runtime_evidence"]["common_binding_status"], "verified")
             start = json.loads((run_root / "runtime/adapter-start.json").read_bytes())
             self.assertEqual(start["benchmark_id"], result["benchmark_id"])
@@ -1378,6 +1510,11 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             execution = json.loads((run_root / "runtime/execution.json").read_bytes())
             self.assertEqual(execution["argv"], argv)
             self.assertIn("--decode-pids=pidns", execution["argv"])
+            self.assertFalse(execution["trace_association_complete"])
+            self.assertEqual(
+                execution["trace_association_errors"],
+                ["cli_process_binding_unavailable"],
+            )
             for relative in (
                 "runtime/codex-events.jsonl",
                 "runtime/supervisor-events.jsonl",
@@ -1425,7 +1562,11 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             )
             trace_path = run_root / "runtime/strace.log"
             parsed_trace = parse_raw_trace(trace_path.read_bytes())
-            self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
+            self.assertFalse(parsed_trace["complete"])
+            self.assertTrue(any(
+                item["reason"] == "open_request_and_fd_path_disagree"
+                for item in parsed_trace["unknown"]
+            ))
             prompt_open = next(
                 event for event in parsed_trace["events"]
                 if event["event"] == "open"
@@ -1506,24 +1647,42 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertEqual(result["run_status"], "completed")
             self.assertEqual(
                 result["runtime_evidence"]["status"],
-                "verified",
+                "incomplete",
                 result.get("runtime_evidence_verification_error"),
             )
-            self.assertTrue(result["runtime_evidence"]["verified_loaded"])
-            self.assertEqual(result["runtime_evidence"]["skill_load_status"], "verified_loaded")
+            self.assertFalse(result["evidence_valid"])
+            self.assertIsNone(result["runtime_evidence"]["verified_loaded"])
+            self.assertEqual(result["runtime_evidence"]["skill_load_status"], "unknown")
             self.assertFalse(result["runtime_evidence"]["protocol_violation"])
             parsed_trace = parse_raw_trace((run_root / "runtime/strace.log").read_bytes())
-            self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
-            assert any(
+            self.assertFalse(parsed_trace["complete"])
+            self.assertTrue(any(
+                item["reason"] == "open_request_and_fd_path_disagree"
+                for item in parsed_trace["unknown"]
+            ))
+            cat_reads = [
                 event["event"] == "read"
                 and event.get("path") == str(SANDBOX_SKILL_PATH)
-                and event.get("bytes_read", 0) > 0
+                and isinstance(event.get("bytes_read"), int)
+                and event["bytes_read"] > 0
                 for event in parsed_trace["events"]
+            ]
+            self.assertTrue(any(cat_reads))
+            supervisor_events = [
+                json.loads(line)
+                for line in (run_root / "runtime/supervisor-events.jsonl").read_text().splitlines()[1:]
+            ]
+            skill_read = next(
+                event for event in supervisor_events
+                if event.get("event") == "read"
+                and event.get("path") == str(SANDBOX_SKILL_PATH)
+                and event.get("bytes_read", 0) > 0
             )
+            self.assertNotIn("call_id", skill_read)
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
-    def test_v10_parser_keeps_v7_sidecar_untrusted(self) -> None:
+    def test_v11_parser_keeps_v7_sidecar_untrusted(self) -> None:
         raw_trace = (
             b'701 open("/synthetic/legacy", O_RDONLY) = 3\n'
             b"701 close(3) = 0\n"
@@ -1531,7 +1690,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
         )
         parsed = parse_raw_trace(raw_trace)
         closes = [event for event in parsed["events"] if event["event"] == "close"]
-        self.assertEqual(parsed["normalizer"]["version"], "10")
+        self.assertEqual(parsed["normalizer"]["version"], "11")
         self.assertTrue(closes[1]["known_closed"])
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1558,7 +1717,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
             }
             batch._write_json(root / "runtime-evidence.json", sidecar)
 
-            with self.assertRaisesRegex(ValueError, "normalizer must bind version 10"):
+            with self.assertRaisesRegex(ValueError, "normalizer must bind version 11"):
                 batch.verify_runtime_evidence(root, "runtime-evidence.json", {"run_status": "completed"})
 
     def test_sidecar_hashes_raw_trace_and_binds_normalizer_source(self) -> None:

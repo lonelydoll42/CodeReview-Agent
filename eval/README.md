@@ -74,6 +74,14 @@ v4 公开 export 固定在提交 `25d35c6`，source commit 为 `c80ab00`，runti
 - [evidence](results/2026-10-12-ab-workflow-validation-v4-evidence.json)：`c27f808b9c2491efe328811223dade78053ea3e9f746eadaa41afdda1612fe14`
 - [check](results/2026-10-12-ab-workflow-validation-v4-check.json)：`4ebd68195a205d3c0de478597fa7387efdf6c76d6fe7d61f44fb0426f5032112`
 
+### 2026-10-13 单案 A/B 尝试
+
+本次在源码 `c49ec52970f61260bf14d97320ed18c056f6fcb5`、normalizer v10 下，仅授权 `case0006` 的 A/B replicate 1。实际启动 1 次宿主审查：A 完成输出，wrapper exit code 为 0，但 `evidence_valid=false`；B 和其余 10 个槽位未启动。失败后停止，没有重试或进入评分，证据有效配对仍为 0。此记录独立于旧 v4 closure，不构成审查质量或 Skill 增益结论；10 条历史匿名预测的人工判定仍为 `PENDING`。
+
+失败涉及请求路径与 trace 返回路径的差异，以及 namespace PID 身份和唯一命令关联证据不足。路径字符串、PID 数值一致性和会话级 `thread_id` 均不能补足这些证明。现有产物不足以核实运行时别名，不能用事后主机状态、路径字符串规则或新解析器将旧 A 追认为有效。
+
+独立复验确认冻结输入文件、源码依赖和 case0006 Git index 未漂移，首次启动和 A 后的 checkpoint 及 sidecar 均已保存。原产物和诊断保留在仓库外，没有新的公开评分导出。GO receipt 引用的一份临时预检报告已被清理，无法复验其原字节；独立最终核验报告和真实首次启动报告仍保留，此缺口不回填。
+
 ## 记录和产物
 
 每个条件/案例各有一份符合 [run-record.schema.json](schemas/run-record.schema.json) 的 `run.json`。路径相对该记录文件所在目录，实际产物分开放置：

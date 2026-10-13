@@ -108,7 +108,7 @@ def test_repeated_close_ebadf_is_known_only_after_same_pid_close_without_reopen(
     ])
 
     closes = [event for event in parsed["events"] if event["event"] == "close"]
-    assert parsed["normalizer"]["version"] == "10"
+    assert parsed["normalizer"]["version"] == "11"
     assert closes[1]["known_closed"] is True
     assert closes[2]["known_closed"] is False
     assert closes[4]["known_closed"] is False
@@ -147,6 +147,9 @@ def test_pid_namespace_clone_translation_preserves_shared_fd_table() -> None:
     read = next(event for event in parsed["events"] if event["event"] == "read")
     assert read["pid"] == 12002
     assert read["path"] == "/synthetic/shared"
+    created = next(event for event in parsed["events"] if event["event"] == "process_create")
+    assert created["child_pid"] == 12002
+    assert created["child_pid_in_parent_namespace"] == 2
 
 
 def test_clone_without_pid_namespace_translation_rejects_unobserved_child_pid() -> None:
@@ -444,7 +447,7 @@ def test_open_fd_annotation_does_not_erase_normalized_request_path() -> None:
         "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.10.4",
     ),
 ])
-def test_known_open_path_aliases_do_not_create_trace_conflicts(
+def test_open_path_aliases_require_captured_symlink_evidence(
     requested: str,
     observed: str,
 ) -> None:
@@ -457,12 +460,34 @@ def test_known_open_path_aliases_do_not_create_trace_conflicts(
     assert opened["requested_path"] == requested
     assert opened["returned_path"] == observed
     assert opened["path_disagreement"] is True
-    assert opened["path_conflict"] is False
-    assert opened["path_alias_status"] == "known"
+    assert opened["path_conflict"] is True
+    assert opened["path_alias_status"] == "conflict"
     assert read["tracked_path"] == read["path"] == observed
     assert read["path_conflict"] is False
-    assert parsed["unknown"] == []
+    assert parsed["complete"] is False
+    assert parsed["unknown"] == [{
+        "trace_line": 1,
+        "reason": "open_request_and_fd_path_disagree",
+        "pid": 822,
+        "operation": "open",
+    }]
     assert parsed["attribution_unknown"] == []
+
+
+def test_filesystem_symlink_does_not_prove_trace_path_alias(tmp_path: Path) -> None:
+    link = tmp_path / "libmpdec.so.3"
+    target = tmp_path / "libmpdec.so.2.5.1"
+    target.write_bytes(b"synthetic library")
+    link.symlink_to(target.name)
+    parsed = _parse([
+        f'822 open("{link}", O_RDONLY) = 3<{target}>',
+    ])
+
+    opened = parsed["events"][0]
+    assert link.is_symlink()
+    assert opened["path_alias_status"] == "conflict"
+    assert opened["path_conflict"] is True
+    assert parsed["complete"] is False
 
 
 def test_proc_self_numeric_pid_annotation_is_preserved_as_unproven() -> None:
@@ -480,6 +505,21 @@ def test_proc_self_numeric_pid_annotation_is_preserved_as_unproven() -> None:
     assert all(event["path_conflict"] is False for event in opens)
     assert parsed["complete"] is True
     assert parsed["unknown"] == []
+
+
+def test_proc_self_alias_with_mismatched_namespace_pid_stays_unproven() -> None:
+    parsed = _parse([
+        "900 clone3({flags=CLONE_VM|CLONE_FILES|CLONE_THREAD}, 88) = 97 /* 109299 in strace's PID NS */",
+        '109299 open("/proc/self/fd", O_RDONLY) = 3</proc/98/fd>',
+    ])
+
+    created = next(event for event in parsed["events"] if event["event"] == "process_create")
+    opened = next(event for event in parsed["events"] if event["event"] == "open")
+    assert created["child_pid"] == 109299
+    assert created["child_pid_in_parent_namespace"] == 97
+    assert opened["path_alias_status"] == "unproven"
+    assert opened["path_conflict"] is False
+    assert parsed["complete"] is True
 
 
 def test_eventfd_read_is_a_known_non_file_descriptor() -> None:
@@ -709,8 +749,56 @@ def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
     assert identity["name"] == "eval.runtime_trace"
-    assert identity["version"] == "10"
+    assert identity["version"] == "11"
     assert identity["source_sha256"] == hashlib.sha256(module_path.read_bytes()).hexdigest()
+
+
+def test_real_bwrap_strace_records_pid_namespace_child_mapping(tmp_path: Path) -> None:
+    strace = shutil.which("strace")
+    bwrap = shutil.which("bwrap")
+    shell = shutil.which("sh")
+    if strace is None or bwrap is None or shell is None:
+        pytest.skip("strace, bubblewrap, and sh are required")
+
+    trace_path = tmp_path / "bwrap-pidns.log"
+    run = subprocess.run(
+        _build_trace_argv(
+            strace,
+            trace_path,
+            [
+                bwrap, "--die-with-parent", "--unshare-pid", "--proc", "/proc",
+                "--dev", "/dev", "--ro-bind", "/", "/", "--", shell, "-c",
+                'printf "%s\\n" "$$"',
+            ],
+        ),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={"LC_ALL": "C", "PATH": os.defpath},
+        check=False,
+        timeout=15,
+    )
+
+    assert run.returncode == 0, run.stderr.decode("utf-8", errors="replace")
+    inner_pid = int(run.stdout.strip())
+    parsed = parse_raw_trace(trace_path.read_bytes())
+    shell_exec = next(
+        event for event in parsed["events"]
+        if event["event"] == "exec"
+        and event.get("success") is True
+        and Path(event["argv"][0]).name == "sh"
+    )
+    creates = [
+        event for event in parsed["events"]
+        if event["event"] == "process_create"
+        and event.get("child_pid") == shell_exec["pid"]
+    ]
+    assert len(creates) == 1
+    assert creates[0]["child_pid_in_parent_namespace"] == inner_pid
+    assert any(
+        item["reason"] == "open_request_and_fd_path_disagree"
+        for item in parsed["unknown"]
+    )
 
 
 @pytest.mark.parametrize("program,arguments", [("cat", ["--"]), ("head", ["-c", "1"])])
@@ -841,7 +929,11 @@ def test_real_strace_tracks_shell_opened_stdin_lifecycle(tmp_path: Path) -> None
 
     assert run.returncode == 0
     parsed = parse_raw_trace(trace_path.read_bytes())
-    assert parsed["complete"] is True, parsed["unknown"]
+    assert parsed["complete"] is False
+    assert any(
+        item["reason"] == "open_request_and_fd_path_disagree"
+        for item in parsed["unknown"]
+    )
     prompt_open = next(
         event for event in parsed["events"]
         if event["event"] == "open"

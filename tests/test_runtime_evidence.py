@@ -267,6 +267,28 @@ def test_missing_call_id_is_incomplete_and_does_not_verify_skill_load(tmp_path: 
     assert evidence["verified_loaded"] is None
 
 
+def test_unassociated_trace_cannot_produce_complete_runtime_evidence(tmp_path: Path) -> None:
+    run_dir, record, _manifest = _runtime_fixture(tmp_path)
+    sidecar_path = run_dir / "runtime-evidence.json"
+    sidecar = json.loads(sidecar_path.read_bytes())
+    supervisor_path = run_dir / sidecar["supervisor_events"]["path"]
+    events = [json.loads(line) for line in supervisor_path.read_text().splitlines()]
+    for event in events[1:]:
+        event.pop("call_id", None)
+    supervisor_path.write_text(
+        "".join(json.dumps(event, sort_keys=True) + "\n" for event in events),
+        encoding="utf-8",
+    )
+    sidecar["supervisor_events"]["sha256"] = _sha(supervisor_path.read_bytes())
+    _write_json(sidecar_path, sidecar)
+
+    evidence = verify_runtime_evidence(run_dir, "runtime-evidence.json", record)
+
+    assert evidence["status"] == "incomplete"
+    assert evidence["supervisor_trace_status"] == "unknown"
+    assert evidence["verified_loaded"] is None
+
+
 def test_raw_trace_digest_mismatch_rejects_runtime_scoring(tmp_path: Path) -> None:
     run_dir, record, _manifest = _runtime_fixture(tmp_path)
     with (run_dir / "runtime/strace.log").open("ab") as trace:
@@ -529,7 +551,7 @@ def test_unproven_proc_self_alias_cannot_prove_pinned_skill_load(tmp_path: Path)
     assert proc_open["path_alias_status"] == "unproven"
     assert proc_open["requested_path"] == "/proc/self/maps"
     assert proc_open["returned_path"] == "/proc/3/maps"
-    assert evidence["status"] == "verified"
+    assert evidence["status"] == "incomplete"
     assert evidence["verified_loaded"] is None
     assert evidence["skill_load_status"] == "unknown"
     assert any("PID namespace identity proof" in item for item in evidence["limitations"])

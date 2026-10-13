@@ -17,7 +17,7 @@ from typing import Any
 
 
 NORMALIZER_NAME = "eval.runtime_trace"
-NORMALIZER_VERSION = "10"
+NORMALIZER_VERSION = "11"
 STRACE_STRING_LIMIT = 65536
 NORMALIZER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -116,13 +116,14 @@ def _return(result: str) -> tuple[int, str | None]:
     return _integer(match.group(1)), match.group(2)
 
 
-def _clone_child_trace_pid(result: str) -> tuple[int, str | None, bool]:
+def _clone_child_trace_pid(result: str) -> tuple[int, str | None, int, bool]:
     child_pid, error = _return(result)
     translated = _STRACE_NAMESPACE_PID.search(result)
+    child_pid_in_parent_namespace = child_pid
     if error is None:
         if translated is not None:
             child_pid = int(translated.group("pid"))
-    return child_pid, error, translated is not None
+    return child_pid, error, child_pid_in_parent_namespace, translated is not None
 
 
 def _unavailable_syscall_result(result: str) -> tuple[bool, str | None]:
@@ -176,7 +177,7 @@ def _fd_path(
         state = None
     tracked = state.get("path") if state is not None else None
     disagreement = tracked is not None and annotated is not None and tracked != annotated
-    conflict = disagreement and not _known_path_equivalent(tracked, annotated)
+    conflict = disagreement and not _unproven_proc_alias(tracked, annotated)
     return tracked or annotated, tracked, annotated, disagreement, conflict
 
 
@@ -187,34 +188,6 @@ def _unproven_proc_alias(left: str, right: str) -> bool:
             continue
         match = re.fullmatch(r"/proc/[1-9][0-9]*(?P<suffix>/.*)?", observed)
         if match is not None and (match.group("suffix") or "") == requested[len(proc_self):]:
-            return True
-    return False
-
-
-def _known_path_equivalent(requested: str, observed: str) -> bool:
-    if requested == observed:
-        return True
-
-    requested_candidates = [requested]
-    for alias, target in (("/lib", "/usr/lib"), ("/lib64", "/usr/lib64")):
-        if requested == alias or requested.startswith(alias + "/"):
-            resolved = target + requested[len(alias):]
-            if resolved == observed:
-                return True
-            requested_candidates.append(resolved)
-
-    observed_parent, observed_name = posixpath.split(observed)
-    library_roots = ("/lib/", "/lib64/", "/usr/lib/", "/usr/lib64/")
-    for candidate in requested_candidates:
-        requested_parent, requested_name = posixpath.split(candidate)
-        soname = re.fullmatch(r"lib[^/]+\.so(?:\.\d+)*", requested_name)
-        if (
-            requested_parent == observed_parent
-            and requested_parent.startswith(library_roots)
-            and soname is not None
-            and observed_name.startswith(requested_name + ".")
-            and re.fullmatch(r"(?:\d+\.)*\d+", observed_name[len(requested_name) + 1:])
-        ):
             return True
     return False
 
@@ -269,7 +242,6 @@ def _observed_open_path(
     )
     result_path_conflict = (
         result_path_disagreement
-        and not _known_path_equivalent(requested_path, returned_path)
         and not _unproven_proc_alias(requested_path, returned_path)
     )
     path_conflict = dirfd_path_conflict or result_path_conflict
@@ -344,7 +316,6 @@ def _fd_observed_path(
     )
     conflict = (
         disagreement
-        and not _known_path_equivalent(tracked_path, annotated_path)
         and not _unproven_proc_alias(tracked_path, annotated_path)
     )
     if state is None and annotated_path is not None:
@@ -577,7 +548,12 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             continue
         try:
             call_args = _call_args(call.group("name"), call.group("args"))
-            child_pid, error, namespace_pid = _clone_child_trace_pid(call.group("result"))
+            (
+                child_pid,
+                error,
+                child_pid_in_parent_namespace,
+                namespace_pid_translated,
+            ) = _clone_child_trace_pid(call.group("result"))
         except (SyntaxError, ValueError):
             continue
         if error is None and child_pid > 0:
@@ -585,7 +561,8 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             process_starts[start_index] = {
                 "parent_pid": pid,
                 "child_pid": child_pid,
-                "namespace_pid": namespace_pid,
+                "child_pid_in_parent_namespace": child_pid_in_parent_namespace,
+                "namespace_pid_translated": namespace_pid_translated,
                 "syscall": call.group("name"),
                 "shares_fds": _clone_shares_fds(call.group("name"), call_args),
                 "line": record.get("call_start_line", record["line"]),
@@ -619,7 +596,7 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
                     operation=relation["syscall"],
                 )
                 relation = None
-            elif not relation["namespace_pid"]:
+            elif not relation["namespace_pid_translated"]:
                 child_records = record_indices_by_pid.get(child_pid, [])
                 if bisect_right(child_records, index) == len(child_records):
                     mark_unknown(
@@ -643,7 +620,9 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             successfully_closed[child_pid] = set()
             events.append(_event(
                 "process_create", pid, relation["line"],
-                child_pid=child_pid, syscall=relation["syscall"],
+                child_pid=child_pid,
+                child_pid_in_parent_namespace=relation["child_pid_in_parent_namespace"],
+                syscall=relation["syscall"],
             ))
 
         table = fd_tables.setdefault(pid, {})
@@ -710,7 +689,8 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             if returned < 0:
                 events.append(_event(
                     "process_create", pid, line_number,
-                    child_pid=None, syscall=name, success=False, result=returned, error=error,
+                    child_pid=None, child_pid_in_parent_namespace=None,
+                    syscall=name, success=False, result=returned, error=error,
                 ))
             elif returned > 0 and record.get("call_start_index", index) not in process_starts:
                 mark_unknown(line_number, "process_creation_child_unavailable", pid=pid, operation=name)
