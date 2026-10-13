@@ -19,7 +19,7 @@ Before import, calculate the archive hash on the machine running WorkBuddy and c
 Transfer the release directory and [preparation helper](../scripts/prepare_workbuddy_acceptance.py) to the WorkBuddy machine; no service checkout is needed. Run preparation there so repositories and snapshots use their final host paths. Do not reuse Linux manifests after moving the kit or changing OS. The helper pins the source revision and release SHA-256 values, verifies all package entries, then creates three independent repositories and their baseline snapshots.
 
 ```sh
-python3 -S /path/to/prepare_workbuddy_acceptance.py prepare \
+python3 -X utf8 -S /path/to/prepare_workbuddy_acceptance.py prepare \
   --release-dir /path/to/review-changes-0.2.1 \
   --output '/path/to/WorkBuddy 验收 0.2.1'
 ```
@@ -37,9 +37,9 @@ These are synthetic isolated fixtures for checking package import and the review
 After each initial review and export, explicitly apply the prepared follow-up from the transferred helper. Replace the output path with the same absolute path used for `prepare`:
 
 ```sh
-python3 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case runtime-missing-record
-python3 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case safe-authorization-move
-python3 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case cross-file-contract
+python3 -X utf8 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case runtime-missing-record
+python3 -X utf8 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case safe-authorization-move
+python3 -X utf8 -S /path/to/prepare_workbuddy_acceptance.py apply-fix --output '/path/to/WorkBuddy 验收 0.2.1' --case cross-file-contract
 ```
 
 The helper verifies the recorded repository, patch, and snapshot paths stay inside this prepared output; it refuses changed `HEAD`, index, tracked worktree, or untracked-file state and refuses a repeated patch. On success it runs the fixture tests and writes `apply-results/case-NN.json` plus `snapshots/case-NN/current-initial.json` and `current-manifest.json`. The apply record contains project-test and, for case 01, operator-probe results; keep the whole record operator-only. For the `safe-authorization-move` operator case (`case-02` to WorkBuddy), the follow-up is a behavior-preserving helper extraction, not a bug fix; never describe an empty prior finding list as resolved.
@@ -99,4 +99,4 @@ Operator notes and unresolved issues:
 
 ## Keep host acceptance separate
 
-The project's unit tests, package builder, `python -S` checks, and isolated fixture runs establish script/package behavior only. They do not establish that WorkBuddy can import the package, expose its resources, execute scripts, preserve context across a new conversation, or export the required files. Mark WorkBuddy acceptance complete only after the record above contains the host version, pinned package verification, all three case artifacts, and original WorkBuddy transcripts.
+The project's unit tests, package builder, `python3 -X utf8 -S` checks, and isolated fixture runs establish script/package behavior only. They do not establish that WorkBuddy can import the package, expose its resources, execute scripts, preserve context across a new conversation, or export the required files. Mark WorkBuddy acceptance complete only after the record above contains the host version, pinned package verification, all three case artifacts, and original WorkBuddy transcripts.

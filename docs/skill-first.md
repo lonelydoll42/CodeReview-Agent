@@ -10,12 +10,12 @@ From a clean output directory, use Python 3.10 or newer:
 
 ```bash
 REVIEW_DIST="$(mktemp -d /tmp/review-changes-dist.XXXXXX)"
-python -S scripts/build_review_skill.py --output "$REVIEW_DIST"
+python3 -X utf8 -S scripts/build_review_skill.py --output "$REVIEW_DIST"
 ```
 
 The output contains an unpacked `review-changes/` package, `review-changes.zip`, a version manifest with every package file hash and the archive hash, and a `.sha256` checksum for the manifest. The builder copies `review_core/` from its single repository source and extracts the optional Semgrep YAML from `tools/semgrep_runner.py`; neither is maintained as a second source copy. The output path must not already contain these artifact names.
 
-The package scripts can be run from outside this checkout. For example, run `python -S "$REVIEW_DIST/review-changes/scripts/collect_changes.py" ...` while your current directory is a different Git repository. `-S` disables Python site initialization, so it also verifies that the scripts do not rely on installed site packages.
+The package scripts can be run from outside this checkout. For example, run `python3 -X utf8 -S "$REVIEW_DIST/review-changes/scripts/collect_changes.py" ...` while your current directory is a different Git repository. `-X utf8` enables UTF-8 filesystem and standard stream handling; `-S` disables Python site initialization, so it also verifies that the scripts do not rely on installed site packages.
 
 ## Isolated Repository Check
 
@@ -89,21 +89,21 @@ PY
 Capture each scope from the packaged scripts, not from project modules in this checkout:
 
 ```bash
-python -S "$REVIEW_SKILL/scripts/collect_changes.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/collect_changes.py" \
   --repo "$REVIEW_REPO" --scope staged \
   --output "$REVIEW_TMP/staged-initial.json"
 
-python -S "$REVIEW_SKILL/scripts/collect_changes.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/collect_changes.py" \
   --repo "$REVIEW_REPO" --scope staged \
   --context app.py tests/test_permissions.py \
   --compare-to "$REVIEW_TMP/staged-initial.json" \
   --output "$REVIEW_TMP/staged-final.json"
 
-python -S "$REVIEW_SKILL/scripts/collect_changes.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/collect_changes.py" \
   --repo "$REVIEW_REPO" --scope worktree \
   --output "$REVIEW_TMP/worktree.json"
 
-python -S "$REVIEW_SKILL/scripts/collect_changes.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/collect_changes.py" \
   --repo "$REVIEW_REPO" --scope branch --base main \
   --output "$REVIEW_TMP/branch.json"
 ```
@@ -113,7 +113,7 @@ Check that staged, worktree, and branch manifests contain `is_admin`, `is_authen
 Run the optional static step and inspect its status, `rules_version`, `covered_files`, and `uncovered_files`:
 
 ```bash
-python -S "$REVIEW_SKILL/scripts/run_static.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/run_static.py" \
   --input "$REVIEW_TMP/staged-final.json" \
   --output "$REVIEW_TMP/tool-runs.json"
 ```
@@ -123,14 +123,14 @@ Depending on the environment, Semgrep is `missing`, `failed`, or `completed`. A 
 Finally, install the package in a disposable assistant test environment, ask it to review each manifest's corresponding scope, and check that the branch case reports the missing authorization with evidence from captured source/context. Have the assistant create a schema-version-2 result tied to the final manifest fingerprint and run:
 
 ```bash
-python -S "$REVIEW_SKILL/scripts/finalize_review.py" \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/finalize_review.py" \
   --input "$REVIEW_TMP/staged-final.json" \
   --result "$REVIEW_TMP/result.json" \
   --output "$REVIEW_TMP/review.md" \
   --validated-output "$REVIEW_TMP/validated-result.json"
 ```
 
-The finalizer must reject evidence paths, sides, fingerprints, or line numbers that are not present in the captured manifest. It saves the normalized result so aggregate status in JSON and Markdown agrees; for example, a claimed `completed` result with uncovered changed files is persisted and rendered as `partial`. A failed validation is not a clean review. The tests `tests/test_review_skill_runtime.py` exercise package execution from outside the repository under `python -S`, differing index/worktree snapshots, captured context, live scope-drift rejection, static-tool missing/failure/coverage states, evidence validation, and normalized status persistence.
+The finalizer must reject evidence paths, sides, fingerprints, or line numbers that are not present in the captured manifest. It saves the normalized result so aggregate status in JSON and Markdown agrees; for example, a claimed `completed` result with uncovered changed files is persisted and rendered as `partial`. A failed validation is not a clean review. The tests `tests/test_review_skill_runtime.py` exercise package execution from outside the repository under `python3 -X utf8 -S`, differing index/worktree snapshots, captured context, live scope-drift rejection, static-tool missing/failure/coverage states, evidence validation, and normalized status persistence.
 
 ## Recheck a previous report
 
@@ -175,7 +175,7 @@ Before running the example, replace every fingerprint placeholder with the exact
 Run the packaged deterministic association and renderer with the prior manifest/result and the new manifest/result:
 
 ```bash
-python -S "$REVIEW_DIST/review-changes/scripts/recheck_review.py" \
+python3 -X utf8 -S "$REVIEW_DIST/review-changes/scripts/recheck_review.py" \
   --previous-manifest "$REVIEW_TMP/previous-manifest.json" \
   --previous-result "$REVIEW_TMP/previous-result.json" \
   --current-manifest "$REVIEW_TMP/current-manifest.json" \

@@ -5,7 +5,7 @@ import importlib
 import sys
 from pathlib import Path
 
-from _runtime import import_review_core, load_json, write_json
+from _runtime import import_review_core, load_json, require_utf8_filesystem, write_json
 
 
 def _arguments() -> argparse.Namespace:
@@ -20,6 +20,8 @@ def _arguments() -> argparse.Namespace:
 
 
 def main() -> int:
+    if not require_utf8_filesystem():
+        return 2
     args = _arguments()
     try:
         import_review_core()

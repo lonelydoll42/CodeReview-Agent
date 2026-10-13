@@ -5,7 +5,7 @@ import importlib
 import sys
 from pathlib import Path
 
-from _runtime import import_review_core
+from _runtime import import_review_core, require_utf8_filesystem
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -68,6 +68,8 @@ def _configure_cli_encoding() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if not require_utf8_filesystem():
+        return 2
     _configure_cli_encoding()
     args = _parser().parse_args(argv)
     try:

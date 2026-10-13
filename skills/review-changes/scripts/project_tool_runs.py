@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from _runtime import require_utf8_filesystem
+
 
 RUN_FIELDS = (
     "tool",
@@ -168,6 +170,8 @@ def project_tool_runs(payload: Any) -> list[dict[str, Any]]:
 
 
 def main() -> int:
+    if not require_utf8_filesystem():
+        return 2
     parser = argparse.ArgumentParser(
         description="Project run_static JSON into the closed A/B host-output tool_runs format."
     )

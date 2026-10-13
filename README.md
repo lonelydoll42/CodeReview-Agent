@@ -51,7 +51,7 @@ For rechecks, a resolved status requires valid repair evidence from the current 
 Build from this repository with Python 3.10+ and Git. The build uses the standard library and writes only to the selected output directory; it does not install the Skill into the host's default skills directory.
 
 ```bash
-python scripts/build_review_skill.py --output /tmp/review-changes-dist
+python3 -X utf8 -S scripts/build_review_skill.py --output /tmp/review-changes-dist
 ```
 
 The output directory contains `review-changes.zip`, an unpacked `review-changes/` package, a version manifest with per-file and archive SHA-256 hashes, and a checksum for that manifest. Install the package using the Skill import flow for your assistant. Do not copy the source repository's service dependencies into a target project. No published download is available yet.

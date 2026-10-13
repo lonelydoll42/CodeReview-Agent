@@ -9,7 +9,7 @@ Review the requested local Git changes from scope selection through a verified r
 
 Use `scripts/review_changes.py` as the normal entrypoint for snapshot capture, context, resume, finalization, and recheck. Read [references/session.md](references/session.md) for its session contract and commands. The session records workflow progress separately from semantic coverage; its generated draft is always `uncovered`.
 
-Before invoking the helper, select an available Python 3.10+ interpreter (`python3`, `python`, Windows `py -3`, or a configured absolute path) and use it for the reference commands. Do not require package installation, global `PATH` changes, or model credentials.
+Before invoking the helper, select an available Python 3.10+ interpreter and start it with UTF-8 mode enabled: `python3 -X utf8 -S` (Windows: `py -3 -X utf8 -S`), or use an equivalent configured interpreter command. Do not require package installation, global `PATH` changes, or model credentials.
 
 Use this skill when the user asks to review working-tree changes, staged changes, a local branch, or a follow-up check against a prior local report. The current package does not fetch remote pull requests; treat remote PR input as unsupported and say so plainly.
 

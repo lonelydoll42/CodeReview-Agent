@@ -46,14 +46,18 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 def _build_package(destination: Path) -> Path:
-    _run([sys.executable, "-S", str(BUILDER), "--output", str(destination)], cwd=destination.parent)
+    _run(
+        [sys.executable, "-X", "utf8", "-S", str(BUILDER), "--output", str(destination)],
+        cwd=destination.parent,
+    )
     return destination / "review-changes"
 
 
 def _run_skill(package: Path, script: str, *args: str, cwd: Path, env: dict[str, str] | None = None,
-               check: bool = True) -> subprocess.CompletedProcess[str]:
+               check: bool = True, utf8_mode: bool = True) -> subprocess.CompletedProcess[str]:
+    utf8_flag = "utf8" if utf8_mode else "utf8=0"
     return _run(
-        [sys.executable, "-S", str(package / "scripts" / script), *args],
+        [sys.executable, "-X", utf8_flag, "-S", str(package / "scripts" / script), *args],
         cwd=cwd,
         env=env,
         check=check,
@@ -119,6 +123,29 @@ def _init_repository(path: Path) -> None:
         "    return bool(user) and can_read(user, record)\n",
         encoding="utf-8",
     )
+
+
+def _semantic_result(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "2",
+        "input_fingerprint": manifest["content_fingerprint"],
+        "rules_version": "unicode-path-regression",
+        "review_status": "completed",
+        "findings": [],
+        "coverage": [
+            {
+                "file": item["filename"],
+                "semantic_status": "completed",
+                "static_status": "not_run",
+                "reason": "",
+                "context_gaps": [],
+            }
+            for item in manifest["files"]
+        ],
+        "tool_runs": [],
+        "limits": manifest["limits"],
+        "measurements": {"host": None, "model": None, "tokens": None, "cost": None},
+    }
 
 
 def _manifest(package: Path, repository: Path, scope: str, output: Path, *extra: str) -> dict[str, Any]:
@@ -832,3 +859,213 @@ def test_real_semgrep_scans_the_captured_source_when_available(tmp_path: Path) -
     assert scan["rules_version"]
     assert "src/query.py" in scan["covered_files"]
     assert any("sql-injection" in finding["rule_id"] for finding in scan["findings"])
+
+
+def test_utf8_mode_preserves_unicode_paths_and_rejects_ascii_filesystem_startup(
+    tmp_path: Path,
+) -> None:
+    install_root = tmp_path / "安装 资源 中文"
+    install_root.mkdir()
+    package = _build_package(install_root / "skill dist")
+
+    repository = tmp_path / "中文 空格仓库"
+    repository.mkdir()
+    _git(repository, "init", "--initial-branch=main")
+    _git(repository, "config", "user.name", "UTF-8 Path Test")
+    _git(repository, "config", "user.email", "utf8-path-test@example.invalid")
+    (repository / "src").mkdir()
+    (repository / "tests").mkdir()
+    changed_source = repository / "src" / "中文 文件.py"
+    changed_source.write_text("def value():\n    return 1\n", encoding="utf-8")
+    context_source = repository / "tests" / "调用 背景.py"
+    context_source.write_text("def caller():\n    return value()\n", encoding="utf-8")
+    _git(repository, "add", ".")
+    _git(repository, "commit", "-m", "baseline")
+    changed_source.write_text("def value():\n    return 2\n", encoding="utf-8")
+
+    utf8_env = dict(os.environ)
+    utf8_env.update(
+        {"LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+    )
+    session_root = tmp_path / "会话 输出 中文"
+    session_root.mkdir()
+    previous_session = session_root / "第一次 会话"
+    _run_skill(
+        package,
+        "review_changes.py",
+        "start",
+        "--repo",
+        str(repository),
+        "--scope",
+        "worktree",
+        "--session-dir",
+        str(previous_session),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    _run_skill(
+        package,
+        "review_changes.py",
+        "context",
+        "--session",
+        str(previous_session),
+        "--context",
+        "tests/调用 背景.py",
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    _run_skill(
+        package,
+        "review_changes.py",
+        "resume",
+        "--session",
+        str(previous_session),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+
+    previous_record = json.loads(
+        (previous_session / "session.json").read_text(encoding="utf-8")
+    )
+    previous_manifest_path = previous_session / previous_record["references"]["manifest"]
+    previous_manifest = json.loads(previous_manifest_path.read_text(encoding="utf-8"))
+    assert previous_manifest["files"][0]["filename"] == "src/中文 文件.py"
+    assert previous_manifest["context_files"][0]["filename"] == "tests/调用 背景.py"
+
+    result_root = tmp_path / "语义 结果 文件"
+    result_root.mkdir()
+    previous_result = result_root / "第一次 结果.json"
+    _write_json(previous_result, _semantic_result(previous_manifest))
+    _run_skill(
+        package,
+        "review_changes.py",
+        "finalize",
+        "--session",
+        str(previous_session),
+        "--result",
+        str(previous_result),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    previous_record = json.loads(
+        (previous_session / "session.json").read_text(encoding="utf-8")
+    )
+    previous_report = previous_session / previous_record["references"]["report"]
+    assert "src/中文 文件.py" in previous_report.read_text(encoding="utf-8")
+
+    current_session = session_root / "第二次 会话"
+    _run_skill(
+        package,
+        "review_changes.py",
+        "start",
+        "--repo",
+        str(repository),
+        "--scope",
+        "worktree",
+        "--previous-session",
+        str(previous_session),
+        "--session-dir",
+        str(current_session),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    _run_skill(
+        package,
+        "review_changes.py",
+        "context",
+        "--session",
+        str(current_session),
+        "--context",
+        "tests/调用 背景.py",
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    current_record = json.loads(
+        (current_session / "session.json").read_text(encoding="utf-8")
+    )
+    current_manifest = json.loads(
+        (current_session / current_record["references"]["manifest"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    current_result = result_root / "第二次 结果.json"
+    _write_json(current_result, _semantic_result(current_manifest))
+    _run_skill(
+        package,
+        "review_changes.py",
+        "finalize",
+        "--session",
+        str(current_session),
+        "--result",
+        str(current_result),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    _run_skill(
+        package,
+        "review_changes.py",
+        "recheck",
+        "--session",
+        str(current_session),
+        cwd=tmp_path,
+        env=utf8_env,
+    )
+    current_record = json.loads(
+        (current_session / "session.json").read_text(encoding="utf-8")
+    )
+    recheck_report = current_session / current_record["references"]["recheck_report"]
+    recheck_result = json.loads(
+        (current_session / current_record["references"]["recheck_result"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert recheck_report.is_file()
+    assert recheck_result["previous_input_fingerprint"] == previous_manifest[
+        "content_fingerprint"
+    ]
+
+    non_utf8_env = dict(utf8_env)
+    non_utf8_env.update(
+        {"PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0", "LC_ALL": "C"}
+    )
+    rejected_session = session_root / "拒绝创建的会话"
+    failure = _run_skill(
+        package,
+        "review_changes.py",
+        "start",
+        "--repo",
+        str(repository),
+        "--scope",
+        "worktree",
+        "--session-dir",
+        str(rejected_session),
+        cwd=tmp_path,
+        env=non_utf8_env,
+        check=False,
+        utf8_mode=False,
+    )
+    assert failure.returncode == 2
+    assert "non-UTF-8 filesystem encoding" in failure.stderr
+    assert "python3 -X utf8 -S" in failure.stderr
+    assert "No files were written" in failure.stderr
+    assert not rejected_session.exists()
+
+    for script in (
+        "collect_changes.py",
+        "finalize_review.py",
+        "run_static.py",
+        "project_tool_runs.py",
+        "recheck_review.py",
+    ):
+        cli_failure = _run_skill(
+            package,
+            script,
+            "--invalid-option",
+            cwd=tmp_path,
+            env=non_utf8_env,
+            check=False,
+            utf8_mode=False,
+        )
+        assert cli_failure.returncode == 2
+        assert "non-UTF-8 filesystem encoding" in cli_failure.stderr
+        assert "usage:" not in cli_failure.stderr

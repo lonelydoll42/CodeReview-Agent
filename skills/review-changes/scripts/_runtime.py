@@ -18,6 +18,17 @@ def load_json(path: str | Path) -> Any:
         raise ValueError(f"cannot read valid UTF-8 JSON from {source}: {exc}") from exc
 
 
+def require_utf8_filesystem() -> bool:
+    if sys.getfilesystemencoding().lower().replace("-", "") == "utf8":
+        return True
+    print(
+        "Python is using a non-UTF-8 filesystem encoding. Restart this command with "
+        "`python3 -X utf8 -S ...` (Windows: `py -3 -X utf8 -S ...`). No files were written.",
+        file=sys.stderr,
+    )
+    return False
+
+
 def write_json(path: str | Path, value: Any) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)

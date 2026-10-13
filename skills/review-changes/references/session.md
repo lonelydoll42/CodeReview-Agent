@@ -2,14 +2,14 @@
 
 Use `scripts/review_changes.py` to keep local review artifacts tied to one Git worktree and one selected snapshot. Session files are stored outside the reviewed repository by default. An explicit `--session-dir` or `--session-root` inside the repository is rejected to avoid adding review artifacts to the worktree.
 
-The scripts require Python 3.10+ and Git. Choose a Python 3.10+ interpreter already available to the host, such as `python3`, `python`, Windows `py -3`, or a configured absolute interpreter path. The examples use `python` as shorthand; replace that command prefix with the selected interpreter (for Windows, use `py -3 -S`). These commands use the standard library and do not require installing Python packages, changing global `PATH`, or configuring a model key.
+The scripts require Python 3.10+ and Git. Start Python with UTF-8 mode enabled so repository, filename, and session paths round-trip correctly: use `python3 -X utf8 -S` (Windows: `py -3 -X utf8 -S`), or the equivalent flags with a configured interpreter. These commands use the standard library and do not require installing Python packages, changing global `PATH`, or configuring a model key.
 
 ## Start and Context
 
 Start a session before reading changed source. The initial manifest pins the requested scope and the generated draft is bound to its `content_fingerprint`; all changed-file coverage is `uncovered` until the host records semantic review.
 
 ```sh
-python -S "$REVIEW_SKILL/scripts/review_changes.py" start \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" start \
   --repo "$REPOSITORY" --scope worktree --include-untracked \
   --session-dir "$SESSION_DIRECTORY"
 ```
@@ -19,7 +19,7 @@ For `staged`, omit `--include-untracked`; this captures the Git index, so unstag
 After identifying supporting paths, capture them into a final manifest:
 
 ```sh
-python -S "$REVIEW_SKILL/scripts/review_changes.py" context \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" context \
   --session "$SESSION_DIRECTORY" --context src/caller.py tests/test_contract.py
 ```
 
@@ -28,9 +28,9 @@ Each context capture retains the initial snapshot, records a new fingerprinted f
 ## Resume and Finalize
 
 ```sh
-python -S "$REVIEW_SKILL/scripts/review_changes.py" resume \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" resume \
   --session "$SESSION_DIRECTORY"
-python -S "$REVIEW_SKILL/scripts/review_changes.py" finalize \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" finalize \
   --session "$SESSION_DIRECTORY" --result "$SEMANTIC_RESULT_JSON"
 ```
 
@@ -43,11 +43,11 @@ Resume checks the resolved repository root, worktree-specific Git directory, and
 Link a previous finalized session when starting the new snapshot:
 
 ```sh
-python -S "$REVIEW_SKILL/scripts/review_changes.py" start \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" start \
   --repo "$REPOSITORY" --scope worktree \
   --previous-session "$PREVIOUS_SESSION_DIRECTORY" \
   --session-dir "$CURRENT_SESSION_DIRECTORY"
-python -S "$REVIEW_SKILL/scripts/review_changes.py" recheck \
+python3 -X utf8 -S "$REVIEW_SKILL/scripts/review_changes.py" recheck \
   --session "$CURRENT_SESSION_DIRECTORY" \
   --current-result "$CURRENT_SEMANTIC_RESULT_JSON"
 ```

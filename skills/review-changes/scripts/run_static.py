@@ -13,7 +13,7 @@ import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
-from _runtime import SKILL_ROOT, load_json, write_json
+from _runtime import SKILL_ROOT, load_json, require_utf8_filesystem, write_json
 
 
 def _rules_content() -> str | None:
@@ -168,6 +168,8 @@ def _arguments() -> argparse.Namespace:
 
 
 def main() -> int:
+    if not require_utf8_filesystem():
+        return 2
     args = _arguments()
     try:
         manifest = load_json(args.input)
