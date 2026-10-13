@@ -17,7 +17,7 @@ import tempfile
 import time
 import urllib.parse
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
@@ -57,13 +57,16 @@ TRACE_NORMALIZER = Path(__file__).with_name("runtime_trace.py")
 DEFAULT_SKILL_SOURCE = Path(__file__).resolve().parents[1] / "skills" / "review-changes"
 TRACE_SYSCALLS = (
     "execve,execveat,open,openat,openat2,creat,close,read,pread64,readv,preadv,preadv2,"
-    "mmap,mmap2,pipe,pipe2,eventfd,eventfd2,dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork"
+    "mmap,mmap2,pipe,pipe2,eventfd,eventfd2,signalfd,signalfd4,inotify_init,inotify_init1,"
+    "dup,dup2,dup3,fcntl,close_range,clone,clone3,fork,vfork"
 )
 SANDBOX_INPUT = Path("/slot/input")
 SANDBOX_OUTPUT = Path("/slot/raw-model-output.txt")
 SANDBOX_CODEX_HOME = Path("/codex-home")
 SANDBOX_SKILL_PATH = SANDBOX_INPUT / "pinned-skill" / "review-changes" / "SKILL.md"
 SANDBOX_PATH = "/usr/bin:/bin"
+SANDBOX_TZ = "UTC0"
+SANDBOX_EFFECTIVE_TIMEZONE = "UTC"
 
 
 def _build_trace_argv(strace_executable: str, trace_path: Path, command: list[str]) -> list[str]:
@@ -84,6 +87,163 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _git_output(repository: Path, *args: str) -> bytes:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("GIT_")
+    }
+    environment.update({
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+    })
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repository), *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValueError("Git is required to verify the selected base-to-head patch") from exc
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise ValueError(f"Git could not verify the selected base-to-head patch: {detail}")
+    return result.stdout
+
+
+def _scoped_patch(case: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
+    """Verify the source snapshot and return a deterministic base-to-head patch."""
+    repository = Path(case["repository_source"]).resolve(strict=True)
+    if not repository.is_dir():
+        raise ValueError(f"repository source is not a directory: {repository}")
+
+    base = case.get("base")
+    head = case.get("head")
+    oid_pattern = r"(?:[0-9a-f]{40}|[0-9a-f]{64})"
+    if not isinstance(base, str) or re.fullmatch(oid_pattern, base) is None:
+        raise ValueError("case base must be a full Git object id")
+    if not isinstance(head, str) or re.fullmatch(oid_pattern, head) is None:
+        raise ValueError("case head must be a full Git object id")
+
+    scope_paths = case.get("scope_paths")
+    if (
+        not isinstance(scope_paths, list)
+        or not scope_paths
+        or any(
+            not isinstance(path, str)
+            or not path
+            or "\0" in path
+            or "\n" in path
+            or "\r" in path
+            or "\\" in path
+            or PurePosixPath(path).is_absolute()
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            for path in scope_paths
+        )
+        or scope_paths != sorted(set(scope_paths))
+    ):
+        raise ValueError("case scope_paths must be sorted, unique repository-relative paths")
+
+    for oid in (base, head):
+        _git_output(repository, "cat-file", "-e", f"{oid}^{{commit}}")
+        resolved = _git_output(repository, "rev-parse", "--verify", f"{oid}^{{commit}}").decode().strip()
+        if resolved != oid:
+            raise ValueError(f"Git object id does not resolve exactly as declared: {oid}")
+
+    current_head = _git_output(repository, "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+    if current_head != head:
+        raise ValueError("repository HEAD does not match the selected head commit")
+    parents = _git_output(repository, "show", "-s", "--format=%P", head).decode("ascii").split()
+    if base not in parents:
+        raise ValueError("selected base must be a direct parent of the selected head")
+
+    status = _git_output(
+        repository, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching",
+    )
+    if status:
+        raise ValueError("repository source contains changes outside the selected head commit")
+
+    snapshot = case.get("snapshot")
+    if not isinstance(snapshot, dict):
+        raise ValueError("case snapshot metadata is missing")
+    base_tree = _git_output(repository, "rev-parse", f"{base}^{{tree}}").decode().strip()
+    head_tree = _git_output(repository, "rev-parse", f"{head}^{{tree}}").decode().strip()
+    if snapshot.get("base_tree") != base_tree or snapshot.get("head_tree") != head_tree:
+        raise ValueError("Git base/head tree ids do not match the selected case snapshot")
+
+    changed_paths = _git_output(
+        repository,
+        "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z",
+        base, head, "--",
+    ).split(b"\0")
+    changed = {os.fsdecode(path) for path in changed_paths if path}
+    if not set(scope_paths) <= changed:
+        raise ValueError("case scope_paths contain paths outside the selected base-to-head change")
+
+    patch = _git_output(
+        repository,
+        "-c", "core.quotepath=false",
+        "-c", "diff.algorithm=myers",
+        "-c", "diff.indentHeuristic=false",
+        "--literal-pathspecs", "diff", "--binary", "--no-ext-diff", "--no-textconv",
+        "--no-color", "--no-renames", "--no-indent-heuristic", "--no-abbrev",
+        "--src-prefix=a/", "--dst-prefix=b/",
+        base, head, "--", *scope_paths,
+    )
+    if not patch:
+        raise ValueError("selected scope produced an empty base-to-head patch")
+
+    patch_record = {
+        "path": "input/scoped-diff.patch",
+        "base": base,
+        "head": head,
+        "base_tree": base_tree,
+        "head_tree": head_tree,
+        "scope_paths": list(scope_paths),
+        "sha256": sha256_bytes(patch),
+        "bytes": len(patch),
+    }
+    return patch, patch_record
+
+
+def _reviewer_input_bytes(source: Path, case: dict[str, Any], patch_record: dict[str, Any]) -> bytes:
+    try:
+        reviewer = json.loads(source.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"reviewer input must be readable UTF-8 JSON: {source}") from exc
+    if not isinstance(reviewer, dict):
+        raise ValueError("reviewer input must be a JSON object")
+    for field in ("base", "head", "scope_paths"):
+        if reviewer.get(field) != case[field]:
+            raise ValueError(f"reviewer input {field} does not match the selected case")
+    if reviewer.get("snapshot") != case["snapshot"]:
+        raise ValueError("reviewer input snapshot does not match the selected case")
+    if "scoped_patch" in reviewer and reviewer["scoped_patch"] != patch_record:
+        raise ValueError("reviewer input contains a different scoped patch record")
+    reviewer["scoped_patch"] = patch_record
+    return (json.dumps(reviewer, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _case_common_prompt(common_prompt: bytes, patch_record: dict[str, Any]) -> bytes:
+    paths = json.dumps(patch_record["scope_paths"], ensure_ascii=True, separators=(",", ":"))
+    details = (
+        "\n\nScoped patch (authoritative base-to-head input):\n"
+        f"- Base: {patch_record['base']}\n"
+        f"- Head: {patch_record['head']}\n"
+        f"- Paths: {paths}\n"
+        "- Patch file: /slot/input/scoped-diff.patch\n"
+        f"- Complete patch SHA-256: {patch_record['sha256']}\n"
+        f"- Patch bytes: {patch_record['bytes']}\n"
+        "Review only these scoped changes. Read the patch file as the exact base-to-head diff.\n"
+    ).encode("utf-8")
+    return common_prompt.rstrip(b"\n") + details
 
 
 def build_slot_plan(case_index: dict[str, Any]) -> dict[str, Any]:
@@ -523,10 +683,15 @@ def _runtime_config(data: bytes) -> dict[str, Any]:
         raise ValueError("runtime config must be UTF-8 JSON") from exc
     required = {
         "schema_version", "codex_executable", "strace_executable", "bwrap_executable",
-        "model", "provider_definition", "reasoning_effort", "timeout_seconds",
+        "model", "provider_definition", "reasoning_effort", "timeout_seconds", "sandbox_identity",
     }
-    if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 2:
+    if not isinstance(value, dict) or set(value) != required or value.get("schema_version") != 3:
         raise ValueError("runtime config has an unsupported shape")
+    if value.get("sandbox_identity") != {
+        "environment": {"TZ": SANDBOX_TZ},
+        "effective_timezone": SANDBOX_EFFECTIVE_TIMEZONE,
+    }:
+        raise ValueError("runtime config sandbox identity must bind TZ=UTC0 with effective UTC")
     for name in ("codex_executable", "strace_executable", "bwrap_executable"):
         executable = value.get(name)
         if (
@@ -643,7 +808,7 @@ def _freeze_runtime_config(
         "requires_openai_auth": provider_source.get("requires_openai_auth"),
     }
     value = {
-        "schema_version": 2,
+        "schema_version": 3,
         "codex_executable": str(codex_executable.resolve(strict=True)),
         "strace_executable": str(strace_executable.resolve(strict=True)),
         "bwrap_executable": str(
@@ -653,6 +818,10 @@ def _freeze_runtime_config(
         "provider_definition": provider_definition,
         "reasoning_effort": selected_effort,
         "timeout_seconds": timeout_seconds,
+        "sandbox_identity": {
+            "environment": {"TZ": SANDBOX_TZ},
+            "effective_timezone": SANDBOX_EFFECTIVE_TIMEZONE,
+        },
     }
     return _runtime_config(_canonical_bytes(value))
 
@@ -741,6 +910,7 @@ def _copy_source_tree(
     destination: Path,
     *,
     manifest_base: Path | None = None,
+    include_git: bool = False,
 ) -> list[dict[str, Any]]:
     source = source.resolve(strict=True)
     if not source.is_dir():
@@ -750,7 +920,7 @@ def _copy_source_tree(
     files: list[dict[str, Any]] = []
     for root_text, dirs, names in os.walk(source, topdown=True, followlinks=False):
         root = Path(root_text)
-        dirs[:] = sorted(name for name in dirs if name != ".git")
+        dirs[:] = sorted(name for name in dirs if include_git or name != ".git")
         for name in dirs:
             child = root / name
             if child.is_symlink():
@@ -758,7 +928,7 @@ def _copy_source_tree(
             _mkdir_private(destination / child.relative_to(source))
         for name in sorted(names):
             child = root / name
-            if name == ".git":
+            if name == ".git" and not include_git:
                 continue
             if child.is_symlink():
                 raise ValueError(f"source tree contains a symlink: {child}")
@@ -798,8 +968,8 @@ def _read_prompt(common_prompt: bytes, skill_prompt_path: str | None) -> bytes:
         prompt += (
             b"\nFor condition B, read and follow the pinned Skill source at "
             + skill_prompt_path.encode("utf-8")
-            + b" using cat -- <path>. The input is presealed and has no .git; "
-            b"do not claim a Git-based Skill preparation workflow ran.\n"
+            + b" using cat -- <path>. Use the pinned scoped patch above as the authoritative change input. "
+            b"Do not claim a Git-based session or preparation workflow ran unless its recorded artifacts show that it did.\n"
         )
     else:
         prompt += b"\n"
@@ -825,6 +995,8 @@ def preseal_plan(
     runs_root: Path,
     runtime_config_path: Path,
     skill_source: Path = DEFAULT_SKILL_SOURCE,
+    *,
+    repository_git_cases: set[str] | None = None,
 ) -> list[Path]:
     """Freeze model-visible bytes for all slots without starting Codex."""
     validate_plan(plan)
@@ -834,6 +1006,16 @@ def preseal_plan(
         raise ValueError("plan bytes must contain the supplied valid plan") from exc
     if plan_from_bytes != plan:
         raise ValueError("plan bytes do not match the supplied plan object")
+    if (
+        repository_git_cases is not None and not isinstance(repository_git_cases, set)
+    ):
+        raise ValueError("repository_git_cases must identify case ids in the frozen plan")
+    repository_git_cases = set() if repository_git_cases is None else repository_git_cases
+    if (
+        any(not isinstance(case_id, str) for case_id in repository_git_cases)
+        or not repository_git_cases <= set(plan["cases"])
+    ):
+        raise ValueError("repository_git_cases must identify case ids in the frozen plan")
     schema_bytes = HOST_SCHEMA.read_bytes()
     _validate_host_output_schema_bytes(schema_bytes, str(HOST_SCHEMA))
     config_bytes = runtime_config_path.read_bytes()
@@ -852,12 +1034,17 @@ def preseal_plan(
     ):
         raise ValueError("pinned Skill source must contain scripts/project_tool_runs.py")
     projector_bytes = projector_source.read_bytes()
+    scoped_patches = {
+        case_id: _scoped_patch(case)
+        for case_id, case in plan["cases"].items()
+    }
 
     with _set_umask(0o077):
         _mkdir_private(runs_root)
         prepared: list[Path] = []
         for slot in plan["slots"]:
             case = plan["cases"][slot["case_id"]]
+            patch_bytes, patch_record = scoped_patches[slot["case_id"]]
             run_root = runs_root / _slot_key(slot)
             if run_root.exists():
                 raise ValueError(f"refusing to overwrite an existing run slot: {run_root}")
@@ -867,18 +1054,27 @@ def preseal_plan(
             _mkdir_private(input_root)
             _mkdir_private(artifacts)
             _mkdir_private(run_root / "runtime")
-            repo_files = _copy_source_tree(Path(case["repository_source"]), input_root / "repository")
+            repo_files = _copy_source_tree(
+                Path(case["repository_source"]),
+                input_root / "repository",
+                include_git=slot["case_id"] in repository_git_cases,
+            )
             manifest_files = list(repo_files)
 
-            reviewer_data = Path(case["reviewer_input_source"]).read_bytes()
+            reviewer_data = _reviewer_input_bytes(
+                Path(case["reviewer_input_source"]), case, patch_record,
+            )
             _write_private(input_root / "reviewer-input.json", reviewer_data)
-            _write_private(input_root / "common-prompt.md", common_prompt)
+            case_prompt = _case_common_prompt(common_prompt, patch_record)
+            _write_private(input_root / "common-prompt.md", case_prompt)
+            _write_private(input_root / patch_record["path"].removeprefix("input/"), patch_bytes)
             _write_private(input_root / "runtime-config.json", config_bytes)
             _write_private(input_root / "protocol" / "host-output.schema.json", schema_bytes)
             _write_private(input_root / "protocol" / "project_tool_runs.py", projector_bytes)
             for relative, payload in (
                 ("input/reviewer-input.json", reviewer_data),
-                ("input/common-prompt.md", common_prompt),
+                ("input/common-prompt.md", case_prompt),
+                (patch_record["path"], patch_bytes),
                 ("input/runtime-config.json", config_bytes),
                 ("input/protocol/host-output.schema.json", schema_bytes),
                 ("input/protocol/project_tool_runs.py", projector_bytes),
@@ -915,7 +1111,7 @@ def preseal_plan(
                 if condition == "B"
                 else None
             )
-            prompt_bytes = _read_prompt(common_prompt, skill_prompt_path)
+            prompt_bytes = _read_prompt(case_prompt, skill_prompt_path)
             _write_private(input_root / "prompt.txt", prompt_bytes)
             manifest_files.append({
                 "path": "input/prompt.txt",
@@ -929,6 +1125,7 @@ def preseal_plan(
                 "condition": condition,
                 "plan_sha256": sha256_bytes(plan_bytes),
                 "immutable_plan_sha256": immutable_plan_sha256(plan),
+                "scoped_patch": patch_record,
                 "files": sorted(manifest_files, key=lambda item: item["path"]),
             }
             manifest["skill_resource"] = skill_resource
@@ -960,6 +1157,7 @@ def preseal_plan(
                 "attempt_kind": slot["attempt_kind"],
                 "plan_sha256": sha256_bytes(plan_bytes),
                 "immutable_plan_sha256": immutable_plan_sha256(plan),
+                "scoped_patch": patch_record,
                 "source_bundle_manifest": make_artifact_ref(run_root, artifacts / "source-bundle-manifest.json"),
             })
             prepared.append(run_root)
@@ -1363,6 +1561,76 @@ def _preseal_status(
     for field, expected in manifest_fields.items():
         if manifest.get(field) != expected:
             raise ValueError(f"prepared source manifest does not match the frozen plan: {run_root}")
+    case = plan["cases"][expected_slot["case_id"]]
+    patch_record = manifest.get("scoped_patch")
+    expected_patch_fields = {
+        "path": "input/scoped-diff.patch",
+        "base": case["base"],
+        "head": case["head"],
+        "base_tree": case["snapshot"].get("base_tree"),
+        "head_tree": case["snapshot"].get("head_tree"),
+        "scope_paths": case["scope_paths"],
+    }
+    if not isinstance(patch_record, dict) or any(
+        patch_record.get(field) != expected for field, expected in expected_patch_fields.items()
+    ):
+        raise ValueError(f"prepared source manifest does not bind the selected scoped patch: {run_root}")
+    patch_path = run_root / patch_record["path"]
+    patch_bytes = patch_path.read_bytes() if patch_path.is_file() else b""
+    if (
+        not patch_bytes
+        or patch_record.get("bytes") != len(patch_bytes)
+        or patch_record.get("sha256") != sha256_bytes(patch_bytes)
+    ):
+        raise ValueError(f"prepared scoped patch content or digest does not match: {run_root}")
+    patch_entries = [
+        entry for entry in manifest.get("files", [])
+        if isinstance(entry, dict) and entry.get("path") == patch_record["path"]
+    ]
+    if len(patch_entries) != 1 or any(
+        patch_entries[0].get(field) != expected
+        for field, expected in (
+            ("sha256", patch_record["sha256"]),
+            ("bytes", patch_record["bytes"]),
+        )
+    ):
+        raise ValueError(f"prepared source manifest does not bind complete scoped patch bytes: {run_root}")
+    reviewer_path = run_root / "input" / "reviewer-input.json"
+    try:
+        reviewer = json.loads(reviewer_path.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"prepared reviewer input is invalid: {run_root}") from exc
+    if (
+        not isinstance(reviewer, dict)
+        or reviewer.get("base") != case["base"]
+        or reviewer.get("head") != case["head"]
+        or reviewer.get("scope_paths") != case["scope_paths"]
+        or reviewer.get("snapshot") != case["snapshot"]
+        or reviewer.get("scoped_patch") != patch_record
+    ):
+        raise ValueError(f"prepared reviewer input does not bind the selected scoped patch: {run_root}")
+    common_prompt_path = run_root / "input" / "common-prompt.md"
+    common_prompt_bytes = common_prompt_path.read_bytes()
+    common_identity_bytes = COMMON_PROMPT.read_bytes().rstrip(b"\n")
+    if not common_prompt_bytes.startswith(common_identity_bytes):
+        raise ValueError(f"prepared common prompt does not preserve the common review identity: {run_root}")
+    patch_prompt_markers = (
+        b"Scoped patch (authoritative base-to-head input):",
+        f"- Base: {patch_record['base']}\n".encode("ascii"),
+        f"- Head: {patch_record['head']}\n".encode("ascii"),
+        json.dumps(patch_record["scope_paths"], ensure_ascii=True, separators=(",", ":")).encode("ascii"),
+        b"- Patch file: /slot/input/scoped-diff.patch\n",
+        f"- Complete patch SHA-256: {patch_record['sha256']}\n".encode("ascii"),
+        b"Review only these scoped changes. Read the patch file as the exact base-to-head diff.",
+    )
+    if any(marker not in common_prompt_bytes for marker in patch_prompt_markers):
+        raise ValueError(f"prepared common prompt does not identify the selected scoped patch: {run_root}")
+    prompt_path = run_root / "input" / "prompt.txt"
+    prompt_bytes = prompt_path.read_bytes()
+    skill_prompt_path = str(SANDBOX_SKILL_PATH) if expected_slot["condition"] == "B" else None
+    expected_prompt = _read_prompt(common_prompt_bytes, skill_prompt_path)
+    if prompt_bytes != expected_prompt or any(marker not in prompt_bytes for marker in patch_prompt_markers):
+        raise ValueError(f"prepared prompt does not preserve common identity and scoped patch instructions: {run_root}")
     if metadata.get("group_id") != (
         f"{plan['benchmark_id']}:{expected_slot['case_id']}:replicate-{expected_slot['replicate']}"
     ):
@@ -1376,6 +1644,7 @@ def _preseal_status(
         "case_id": expected_slot["case_id"],
         "condition": expected_slot["condition"],
         "run_order": expected_slot["run_order"],
+        "scoped_patch": patch_record,
     }
     if any(preseal.get(field) != expected for field, expected in preseal_fields.items()):
         raise ValueError(f"prepared preseal record does not match the frozen plan: {run_root}")
@@ -1475,6 +1744,7 @@ def _bwrap_argv(
         "--setenv", "CODEX_HOME", str(SANDBOX_CODEX_HOME),
         "--setenv", "TMPDIR", "/tmp",
         "--setenv", "LC_CTYPE", "C.UTF-8",
+        "--setenv", "TZ", config["sandbox_identity"]["environment"]["TZ"],
         "--chdir", str(SANDBOX_INPUT),
         "--", *codex_argv,
     ]
@@ -1537,9 +1807,13 @@ def execute_slot(
         "--cd", str(SANDBOX_INPUT),
     ]
     codex_argv.append("-")
+    prompt_stdin_argv = [
+        "/bin/sh", "-c", 'exec "$@" < /slot/input/prompt.txt',
+        "ab-prompt-stdin", *codex_argv,
+    ]
     bwrap_argv = _bwrap_argv(
         config,
-        codex_argv=codex_argv,
+        codex_argv=prompt_stdin_argv,
         input_root=input_root,
         raw_output=raw_output,
         codex_home=codex_home,
@@ -1564,7 +1838,7 @@ def execute_slot(
         try:
             process = subprocess.Popen(
                 strace_argv,
-                stdin=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
                 stdout=stdout_stream,
                 stderr=stderr_stream,
                 env={"PATH": SANDBOX_PATH},
@@ -1572,10 +1846,7 @@ def execute_slot(
                 close_fds=True,
             )
             try:
-                process.communicate(
-                    input=(run_root / "input" / "prompt.txt").read_bytes(),
-                    timeout=config["timeout_seconds"],
-                )
+                process.wait(timeout=config["timeout_seconds"])
                 wrapper_exit = process.returncode
             except subprocess.TimeoutExpired:
                 timed_out = True
@@ -1588,7 +1859,7 @@ def execute_slot(
                         os.killpg(process.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                process.communicate()
+                process.wait()
                 wrapper_exit = process.returncode
         except OSError as exc:
             failure_reason = f"supervisor_start_failed:{exc.__class__.__name__}"

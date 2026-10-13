@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,42 @@ from eval.run_ab_batch import (
     write_runtime_config,
 )
 from eval.runtime_trace import STRACE_STRING_LIMIT, parse_raw_trace
+
+
+def _git_case_repository(repository: Path) -> dict[str, str]:
+    repository.mkdir(parents=True)
+    (repository / "src.py").write_text("value = 'base'\n", encoding="utf-8")
+    commands = (
+        ["git", "init", "--quiet", str(repository)],
+        ["git", "-C", str(repository), "config", "user.name", "Test Fixture"],
+        ["git", "-C", str(repository), "config", "user.email", "fixture@example.invalid"],
+        ["git", "-C", str(repository), "add", "src.py"],
+        ["git", "-C", str(repository), "commit", "--quiet", "-m", "base"],
+    )
+    for command in commands:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    base = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+    (repository / "src.py").write_text("value = 'head'\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "--quiet", "-am", "head"],
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    head = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+    base_tree = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", f"{base}^{{tree}}"],
+        check=True, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+    head_tree = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", f"{head}^{{tree}}"],
+        check=True, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+    return {"base": base, "head": head, "base_tree": base_tree, "head_tree": head_tree}
 
 
 class AbBatchPlanTests(unittest.TestCase):
@@ -234,13 +271,37 @@ class AbBatchPlanTests(unittest.TestCase):
         authorized = dict(plan, plan_state="go", execution_authorized=True)
         validate_plan(authorized, require_go=True)
 
+    def test_scoped_patch_requires_available_base_and_head_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = Path(temp_dir) / "repository"
+            git_case = _git_case_repository(repository)
+            case = {
+                "repository_source": str(repository),
+                "base": git_case["base"],
+                "head": git_case["head"],
+                "snapshot": {
+                    "base_tree": git_case["base_tree"],
+                    "head_tree": git_case["head_tree"],
+                },
+                "scope_paths": ["src.py"],
+            }
+            patch_bytes, record = batch._scoped_patch(case)
+            self.assertEqual(hashlib.sha256(patch_bytes).hexdigest(), record["sha256"])
+
+            missing_base = dict(case, base="0" * 40)
+            with self.assertRaisesRegex(ValueError, "Git could not verify"):
+                batch._scoped_patch(missing_base)
+
     def test_preseal_binds_same_inputs_and_excludes_git(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = root / "source"
-            (source / ".git").mkdir(parents=True)
-            (source / ".git/config").write_text("must not be copied", encoding="utf-8")
-            (source / "src.py").write_text("print('fixture')\n", encoding="utf-8")
+            git_case = _git_case_repository(source)
+            snapshot = {
+                "base_tree": git_case["base_tree"],
+                "head_tree": git_case["head_tree"],
+                "scoped_diff_sha256": "legacy-full-diff-hash",
+            }
             skill = root / "skill"
             skill.mkdir()
             (skill / "SKILL.md").write_text("Pinned test-only Skill.\n", encoding="utf-8")
@@ -251,15 +312,16 @@ class AbBatchPlanTests(unittest.TestCase):
             for case_id in ("case0002", "case0003", "case0006"):
                 reviewer = root / f"{case_id}.json"
                 reviewer.write_text(json.dumps({
-                    "base": f"{case_id}-base",
-                    "head": f"{case_id}-head",
+                    "base": git_case["base"],
+                    "head": git_case["head"],
                     "scope_paths": ["src.py"],
+                    "snapshot": snapshot,
                 }), encoding="utf-8")
                 cases.append({
                     "case_id": case_id,
-                    "base": f"{case_id}-base",
-                    "head": f"{case_id}-head",
-                    "snapshot": {"base_tree": "b", "head_tree": "h", "scoped_diff_sha256": "d"},
+                    "base": git_case["base"],
+                    "head": git_case["head"],
+                    "snapshot": snapshot,
                     "scope_paths": ["src.py"],
                     "reviewer_input": str(reviewer),
                     "repositories": {"same_host_direct": str(source)},
@@ -272,7 +334,7 @@ class AbBatchPlanTests(unittest.TestCase):
             plan_bytes = (json.dumps(plan, sort_keys=True) + "\n").encode()
             runtime_config = root / "runtime-config.json"
             config = {
-                "schema_version": 2,
+                "schema_version": 3,
                 "codex_executable": "/usr/bin/codex",
                 "strace_executable": "/usr/bin/strace",
                 "bwrap_executable": str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
@@ -285,18 +347,49 @@ class AbBatchPlanTests(unittest.TestCase):
                 },
                 "reasoning_effort": "high",
                 "timeout_seconds": 30,
+                "sandbox_identity": {
+                    "environment": {"TZ": "UTC0"},
+                    "effective_timezone": "UTC",
+                },
             }
             runtime_config.write_text(json.dumps(config) + "\n", encoding="utf-8")
 
             with mock.patch("eval.run_ab_batch._preflight_codex_config"):
-                prepared = preseal_plan(plan, plan_bytes, root / "runs", runtime_config, skill)
+                prepared = preseal_plan(
+                    plan,
+                    plan_bytes,
+                    root / "runs",
+                    runtime_config,
+                    skill,
+                    repository_git_cases={"case0006"},
+                )
 
             self.assertEqual(len(prepared), 12)
             case2_a = prepared[0]
             case3_b = prepared[1]
             case2_b = prepared[4]
+            by_identity = {
+                (slot["case_id"], slot["condition"]): run_root
+                for slot, run_root in zip(plan["slots"], prepared, strict=True)
+            }
+            case6_a = by_identity[("case0006", "A")]
+            case6_b = by_identity[("case0006", "B")]
             self.assertFalse((case2_a / "input/repository/.git").exists())
             self.assertFalse((case3_b / "input/repository/.git").exists())
+            self.assertTrue((case6_a / "input/repository/.git").is_dir())
+            self.assertTrue((case6_b / "input/repository/.git").is_dir())
+            manifest6_a = json.loads((case6_a / "artifacts/source-bundle-manifest.json").read_bytes())
+            manifest6_b = json.loads((case6_b / "artifacts/source-bundle-manifest.json").read_bytes())
+            git_files_a = [
+                item for item in manifest6_a["files"]
+                if item["path"].startswith("input/repository/.git/")
+            ]
+            git_files_b = [
+                item for item in manifest6_b["files"]
+                if item["path"].startswith("input/repository/.git/")
+            ]
+            self.assertTrue(git_files_a)
+            self.assertEqual(git_files_a, git_files_b)
             self.assertEqual(
                 (case2_a / "input/repository/src.py").read_bytes(),
                 (case2_b / "input/repository/src.py").read_bytes(),
@@ -309,15 +402,43 @@ class AbBatchPlanTests(unittest.TestCase):
                 (case2_a / "input/common-prompt.md").read_bytes(),
                 (case2_b / "input/common-prompt.md").read_bytes(),
             )
+            patch_bytes = (case2_a / "input/scoped-diff.patch").read_bytes()
+            self.assertEqual(patch_bytes, (case2_b / "input/scoped-diff.patch").read_bytes())
+            self.assertIn(b"value = 'base'", patch_bytes)
+            self.assertIn(b"value = 'head'", patch_bytes)
             self.assertNotEqual(
                 (case2_a / "input/prompt.txt").read_bytes(),
                 (case2_b / "input/prompt.txt").read_bytes(),
             )
             manifest = json.loads((case3_b / "artifacts/source-bundle-manifest.json").read_bytes())
             manifest_a = json.loads((case2_a / "artifacts/source-bundle-manifest.json").read_bytes())
+            manifest_case2_b = json.loads((case2_b / "artifacts/source-bundle-manifest.json").read_bytes())
             self.assertEqual(manifest["skill_resource"]["member_sha256"], hashlib.sha256(b"Pinned test-only Skill.\n").hexdigest())
             self.assertEqual(manifest["skill_resource"]["zip_path"], "skill-bundle.zip")
             self.assertEqual(manifest["skill_resource"]["path"], str(SANDBOX_SKILL_PATH))
+            self.assertEqual(manifest["scoped_patch"], manifest_a["scoped_patch"])
+            self.assertEqual(manifest["scoped_patch"]["sha256"], hashlib.sha256(patch_bytes).hexdigest())
+            self.assertEqual(manifest["scoped_patch"]["scope_paths"], ["src.py"])
+            self.assertEqual(manifest_a["scoped_patch"], manifest_case2_b["scoped_patch"])
+            reviewer_payload = json.loads((case2_a / "input/reviewer-input.json").read_bytes())
+            self.assertEqual(reviewer_payload["scoped_patch"], manifest_a["scoped_patch"])
+            common_prompt = (case2_a / "input/common-prompt.md").read_bytes()
+            self.assertTrue(common_prompt.startswith(batch.COMMON_PROMPT.read_bytes().rstrip(b"\n")))
+            self.assertIn(manifest_a["scoped_patch"]["sha256"].encode(), common_prompt)
+            for run_root in (case2_a, case2_b):
+                prompt = (run_root / "input/prompt.txt").read_bytes()
+                self.assertTrue(prompt.startswith(common_prompt.rstrip(b"\n")))
+                self.assertIn(b"Review the branch change in repository from base to head", prompt)
+                self.assertIn(b"Review only these scoped changes. Read the patch file as the exact base-to-head diff.", prompt)
+                self.assertIn(b"/slot/input/scoped-diff.patch", prompt)
+                self.assertIn(manifest_a["scoped_patch"]["sha256"].encode(), prompt)
+                self.assertIn(manifest_a["scoped_patch"]["base"].encode(), prompt)
+                self.assertIn(manifest_a["scoped_patch"]["head"].encode(), prompt)
+                self.assertIn(b'["src.py"]', prompt)
+                self.assertNotIn(b"has no .git", prompt)
+            case6_b_prompt = (case6_b / "input/prompt.txt").read_bytes()
+            self.assertTrue((case6_b / "input/repository/.git").is_dir())
+            self.assertNotIn(b"has no .git", case6_b_prompt)
             self.assertTrue(manifest["skill_resource"]["mounted"])
             self.assertNotEqual(
                 manifest["skill_resource"]["host_path"],
@@ -363,6 +484,26 @@ class AbBatchPlanTests(unittest.TestCase):
                     batch._preseal_status(prepared_root, immutable_sha)["metadata"],
                     metadata,
                 )
+
+            prompt_path = case2_a / "input/prompt.txt"
+            original_prompt = prompt_path.read_bytes()
+            prompt_path.write_bytes(original_prompt.replace(
+                manifest_a["scoped_patch"]["sha256"].encode(), b"0" * 64,
+            ))
+            with self.assertRaisesRegex(ValueError, "prepared prompt does not preserve"):
+                batch._preseal_status(case2_a, plan, plan["slots"][0])
+            prompt_path.write_bytes(original_prompt)
+
+            patch_path = case2_a / "input/scoped-diff.patch"
+            original_patch = patch_path.read_bytes()
+            patch_path.write_bytes(original_patch + b"tampered\n")
+            with self.assertRaisesRegex(ValueError, "scoped patch content or digest"):
+                batch._preseal_status(case2_a, plan, plan["slots"][0])
+            patch_path.write_bytes(original_patch)
+            patch_path.unlink()
+            with self.assertRaisesRegex(ValueError, "scoped patch content or digest"):
+                batch._preseal_status(case2_a, plan, plan["slots"][0])
+            patch_path.write_bytes(original_patch)
 
             drift_root = prepared[0]
             drift_slot = plan["slots"][0]
@@ -463,7 +604,11 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertNotIn("api_key_env", json.dumps(config))
         self.assertNotIn("MUST_NOT_BE_COPIED", json.dumps(config))
         self.assertNotIn("ignored.example", json.dumps(config))
-        self.assertEqual(config["schema_version"], 2)
+        self.assertEqual(config["schema_version"], 3)
+        self.assertEqual(config["sandbox_identity"], {
+            "environment": {"TZ": "UTC0"},
+            "effective_timezone": "UTC",
+        })
         self.assertTrue(Path(config["bwrap_executable"]).is_file())
 
     def test_missing_effort_requires_an_explicit_choice(self) -> None:
@@ -484,7 +629,7 @@ class RuntimeConfigTests(unittest.TestCase):
                 reasoning_effort="high",
             )
         self.assertEqual(config["reasoning_effort"], "high")
-        self.assertEqual(config["schema_version"], 2)
+        self.assertEqual(config["schema_version"], 3)
         self.assertEqual(
             config["bwrap_executable"],
             str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
@@ -601,17 +746,31 @@ def _fake_cli_slot(
     run_root.chmod(0o700)
     (run_root / "input").chmod(0o700)
 
-    reviewer = b'{"base":"abc","head":"def","scope_paths":["src.py"]}\n'
-    prompt = (
-        b"synthetic prompt\n"
-        if condition == "A"
-        else f"synthetic prompt\nRead {SANDBOX_SKILL_PATH}\n".encode()
-    )
+    patch_bytes = b"diff --git a/src.py b/src.py\nsynthetic patch\n"
+    patch_record = {
+        "path": "input/scoped-diff.patch",
+        "base": "abc",
+        "head": "def",
+        "base_tree": "b",
+        "head_tree": "h",
+        "scope_paths": ["src.py"],
+        "sha256": hashlib.sha256(patch_bytes).hexdigest(),
+        "bytes": len(patch_bytes),
+    }
+    reviewer = (json.dumps({
+        "base": "abc",
+        "head": "def",
+        "scope_paths": ["src.py"],
+        "snapshot": plan["cases"]["case0002"]["snapshot"],
+        "scoped_patch": patch_record,
+    }) + "\n").encode()
+    common_prompt = batch._case_common_prompt(batch.COMMON_PROMPT.read_bytes(), patch_record)
+    prompt = batch._read_prompt(common_prompt, str(SANDBOX_SKILL_PATH) if condition == "B" else None)
     schema = batch.HOST_SCHEMA.read_bytes()
-    config_bytes = b'{"schema_version":2,"codex_executable":"/fake/codex","strace_executable":"/usr/bin/strace","bwrap_executable":"/fake/bwrap","model":"gpt-6.1-sol","provider_definition":{"name":"custom","base_url":"http://127.0.0.1:8080/v1","wire_api":"responses","requires_openai_auth":true},"reasoning_effort":"high","timeout_seconds":30}\n'
+    config_bytes = b'{"schema_version":3,"codex_executable":"/fake/codex","strace_executable":"/usr/bin/strace","bwrap_executable":"/fake/bwrap","model":"gpt-6.1-sol","provider_definition":{"name":"custom","base_url":"http://127.0.0.1:8080/v1","wire_api":"responses","requires_openai_auth":true},"reasoning_effort":"high","timeout_seconds":30,"sandbox_identity":{"environment":{"TZ":"UTC0"},"effective_timezone":"UTC"}}\n'
     binding_payloads = {
         "input/reviewer-input.json": reviewer,
-        "input/common-prompt.md": prompt,
+        "input/common-prompt.md": common_prompt,
         "input/protocol/host-output.schema.json": schema,
         "input/protocol/project_tool_runs.py": (
             Path(__file__).parents[1] / "skills/review-changes/scripts/project_tool_runs.py"
@@ -620,13 +779,21 @@ def _fake_cli_slot(
     }
     for relative, payload in binding_payloads.items():
         _private_write(run_root / relative, payload)
+    _private_write(run_root / "input/scoped-diff.patch", patch_bytes)
     _private_write(run_root / "input/prompt.txt", prompt)
     skill_text = b"Pinned test-only Skill.\n"
     skill_resource = {
         "path": str(SANDBOX_SKILL_PATH),
         "mounted": condition == "B",
     }
-    extra_files = [{"path": "input/prompt.txt", "sha256": hashlib.sha256(prompt).hexdigest()}]
+    extra_files = [
+        {
+            "path": "input/scoped-diff.patch",
+            "sha256": hashlib.sha256(patch_bytes).hexdigest(),
+            "bytes": len(patch_bytes),
+        },
+        {"path": "input/prompt.txt", "sha256": hashlib.sha256(prompt).hexdigest()},
+    ]
     if condition == "B":
         skill_host_path = run_root / "input/pinned-skill/review-changes/SKILL.md"
         _private_write(skill_host_path, skill_text)
@@ -662,6 +829,7 @@ def _fake_cli_slot(
         "condition": slot["condition"],
         "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
         "immutable_plan_sha256": immutable_plan_sha256(plan),
+        "scoped_patch": patch_record,
         "files": [
             {"path": relative, "sha256": hashlib.sha256(payload).hexdigest()}
             for relative, payload in binding_payloads.items()
@@ -699,8 +867,11 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 args = sys.argv[1:]
+time.tzset()
+prompt_data = sys.stdin.buffer.read()
 output_path = Path(args[args.index("--output-last-message") + 1])
 input_path = Path.cwd()
 auth_path = Path(os.environ["CODEX_HOME"]) / "auth.json"
@@ -713,14 +884,17 @@ checks = {{
     "auth_read_only": bool(os.statvfs(auth_path).f_flag & readonly),
     "output_writable": not bool(os.statvfs(output_path).f_flag & readonly),
     "environment_cleared": set(os.environ) == {
-        "PATH", "HOME", "CODEX_HOME", "TMPDIR", "LC_CTYPE", "PWD",
+        "PATH", "HOME", "CODEX_HOME", "TMPDIR", "LC_CTYPE", "TZ", "PWD",
     },
+    "timezone_value_is_pinned": os.environ.get("TZ") == "UTC0",
+    "timezone_effective_utc": time.localtime(0) == time.gmtime(0),
     "sibling_hidden": not Path(__SIBLING_CANARY__).exists(),
     "operator_hidden": not Path(__OPERATOR_CANARY__).exists(),
     "checkout_hidden": not Path(__CHECKOUT_CANARY__).exists(),
     "skill_read_expected": __SKILL_READ_CHECK__,
     "auth_write_denied": False,
     "input_write_denied": False,
+    "prompt_stdin_received": prompt_data.startswith(b"Review the branch change in repository from base to head"),
 }}
 try:
     os.open(auth_path, os.O_WRONLY | os.O_APPEND)
@@ -804,13 +978,14 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
             "attempt_kind": slot["attempt_kind"],
             "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
             "immutable_plan_sha256": immutable_plan_sha256(plan),
+            "scoped_patch": patch_record,
             "source_bundle_manifest": batch.make_artifact_ref(
                 run_root, run_root / "artifacts/source-bundle-manifest.json",
             ),
         }, sort_keys=True) + "\n"
     ).encode())
     config = {
-        "schema_version": 2,
+        "schema_version": 3,
         "codex_executable": str(executable),
         "strace_executable": "/usr/bin/strace",
         "bwrap_executable": str(_find_bundled_bwrap(Path("/usr/bin/codex"))),
@@ -823,6 +998,10 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
         },
         "reasoning_effort": "high",
         "timeout_seconds": 30,
+        "sandbox_identity": {
+            "environment": {"TZ": "UTC0"},
+            "effective_timezone": "UTC",
+        },
     }
     return run_root, config
 
@@ -837,6 +1016,11 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         self.assertIn("--decode-pids=pidns", argv)
         self.assertNotIn("-v", argv)
         self.assertIn("raw=read,pread64,readv,preadv,preadv2", argv)
+        captured_syscalls = argv[argv.index("-e", argv.index("-e") + 1) + 1]
+        self.assertIn("signalfd", captured_syscalls)
+        self.assertIn("signalfd4", captured_syscalls)
+        self.assertIn("inotify_init", captured_syscalls)
+        self.assertIn("inotify_init1", captured_syscalls)
         self.assertEqual(argv[-2:], ["--", "/usr/bin/true"])
 
     def test_execute_slot_rejects_open_presealed_schema_before_adapter_start(self) -> None:
@@ -1178,6 +1362,12 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             self.assertIn("--share-net", argv)
             self.assertIn("--ro-bind", argv)
             self.assertIn("--clearenv", argv)
+            setenv_arguments = [
+                argv[index:index + 3]
+                for index, value in enumerate(argv)
+                if value == "--setenv"
+            ]
+            self.assertIn(["--setenv", "TZ", "UTC0"], setenv_arguments)
             self.assertIn("--ignore-user-config", argv)
             self.assertIn("--ignore-rules", argv)
             self.assertIn('model_providers.custom.name="custom"', argv)
@@ -1226,6 +1416,9 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             )
             checks = json.loads((run_root / "runtime/codex-home/sandbox-check.json").read_bytes())
             self.assertTrue(all(checks.values()))
+            self.assertTrue(checks["prompt_stdin_received"])
+            self.assertTrue(checks["timezone_value_is_pinned"])
+            self.assertTrue(checks["timezone_effective_utc"])
             self.assertEqual(
                 stat.S_IMODE((run_root / "runtime/codex-home/installation_id").stat().st_mode),
                 0o600,
@@ -1233,6 +1426,46 @@ class BatchExecutionAdapterTests(unittest.TestCase):
             trace_path = run_root / "runtime/strace.log"
             parsed_trace = parse_raw_trace(trace_path.read_bytes())
             self.assertTrue(parsed_trace["complete"], parsed_trace["reason"])
+            prompt_open = next(
+                event for event in parsed_trace["events"]
+                if event["event"] == "open"
+                and event.get("path") == "/slot/input/prompt.txt"
+                and event.get("success") is True
+            )
+            prompt_dup2 = next(
+                event for event in parsed_trace["events"]
+                if event["event"] == "fd_operation"
+                and event.get("syscall") == "dup2"
+                and event.get("result") == 0
+                and event["pid"] == prompt_open["pid"]
+                and event["trace_line"] > prompt_open["trace_line"]
+            )
+            codex_exec = next(
+                event for event in parsed_trace["events"]
+                if event["event"] == "exec"
+                and event.get("success") is True
+                and event.get("argv", [None])[0] == "/slot/input/codex"
+                and event["pid"] == prompt_open["pid"]
+                and event["trace_line"] > prompt_dup2["trace_line"]
+            )
+            prompt_read = next(
+                event for event in parsed_trace["events"]
+                if event["event"] == "read"
+                and event.get("fd") == 0
+                and event.get("path") == "/slot/input/prompt.txt"
+                and event.get("bytes_read", 0) > 0
+                and event["pid"] == prompt_open["pid"]
+                and event["trace_line"] > codex_exec["trace_line"]
+            )
+            self.assertLess(
+                prompt_open["trace_line"], prompt_dup2["trace_line"],
+            )
+            self.assertLess(
+                prompt_dup2["trace_line"], codex_exec["trace_line"],
+            )
+            self.assertLess(
+                codex_exec["trace_line"], prompt_read["trace_line"],
+            )
             assert any(
                 event["event"] == "open"
                 and event.get("path") == str(SANDBOX_SKILL_PATH)
@@ -1290,7 +1523,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
-    def test_v9_parser_keeps_v7_sidecar_untrusted(self) -> None:
+    def test_v10_parser_keeps_v7_sidecar_untrusted(self) -> None:
         raw_trace = (
             b'701 open("/synthetic/legacy", O_RDONLY) = 3\n'
             b"701 close(3) = 0\n"
@@ -1298,7 +1531,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
         )
         parsed = parse_raw_trace(raw_trace)
         closes = [event for event in parsed["events"] if event["event"] == "close"]
-        self.assertEqual(parsed["normalizer"]["version"], "9")
+        self.assertEqual(parsed["normalizer"]["version"], "10")
         self.assertTrue(closes[1]["known_closed"])
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1325,7 +1558,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
             }
             batch._write_json(root / "runtime-evidence.json", sidecar)
 
-            with self.assertRaisesRegex(ValueError, "normalizer must bind version 9"):
+            with self.assertRaisesRegex(ValueError, "normalizer must bind version 10"):
                 batch.verify_runtime_evidence(root, "runtime-evidence.json", {"run_status": "completed"})
 
     def test_sidecar_hashes_raw_trace_and_binds_normalizer_source(self) -> None:

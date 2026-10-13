@@ -17,7 +17,7 @@ from typing import Any
 
 
 NORMALIZER_NAME = "eval.runtime_trace"
-NORMALIZER_VERSION = "9"
+NORMALIZER_VERSION = "10"
 STRACE_STRING_LIMIT = 65536
 NORMALIZER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -35,10 +35,10 @@ _FD = re.compile(rf"^\s*({_NUMBER})\b")
 _FD_ANNOTATION = re.compile(
     rf"^\s*(?:AT_FDCWD|{_NUMBER})<(?P<path>/[^<>]*)>\s*$"
 )
-_FD_KIND_ANNOTATION = re.compile(rf"^\s*({_NUMBER})<(?P<kind>[^<>]+)>\s*$")
 _READ_SYSCALLS = {"read", "pread64", "readv", "preadv", "preadv2"}
 _RELEVANT = re.compile(
-    r"^(?:execve(?:at)?|open(?:at2?|at)?|creat|close|read|pread64|readv|preadv2?|mmap2?|pipe2?|eventfd2?|dup2?|dup3|fcntl|close_range|clone3?|fork|vfork)\("
+    r"^(?:execve(?:at)?|open(?:at2?|at)?|creat|close|read|pread64|readv|preadv2?|mmap2?|pipe2?|eventfd2?|"
+    r"signalfd4?|inotify_init1?|dup2?|dup3|fcntl|close_range|clone3?|fork|vfork)\("
 )
 _EXITED = re.compile(r"^\+\+\+ exited with (\d+) \+\+\+$")
 _SIGNALED = re.compile(r"^\+\+\+ killed by ([A-Z0-9]+)(?: \(.*\))? \+\+\+$")
@@ -163,20 +163,6 @@ def _absolute_fd_path(value: str) -> str | None:
     if not path.isascii() or "\\" in path or path.endswith(" (deleted)"):
         return None
     return path
-
-
-def _fd_annotation_kind(value: str) -> str | None:
-    match = _FD_KIND_ANNOTATION.fullmatch(value.strip())
-    if match is None:
-        return None
-    annotation = match.group("kind")
-    if annotation.startswith("pipe:["):
-        return "pipe"
-    if annotation.startswith("anon_inode:"):
-        return "anon_inode"
-    if annotation.startswith("socket:["):
-        return "socket"
-    return None
 
 
 def _fd_path(
@@ -344,6 +330,13 @@ def _fd_observed_path(
     state = table.get(fd_number)
     tracked_path = state.get("path") if state is not None else None
     annotated_path = _absolute_fd_path(value)
+    # An annotation can refine a live file descriptor, but cannot establish missing state.
+    if (
+        state is not None and state.get("kind") == "file"
+        and tracked_path is None and annotated_path is not None
+    ):
+        state = _remember_fd_path(table, fd_number, annotated_path)
+        tracked_path = state["path"]
     disagreement = (
         annotated_path is not None
         and tracked_path is not None
@@ -354,14 +347,9 @@ def _fd_observed_path(
         and not _known_path_equivalent(tracked_path, annotated_path)
         and not _unproven_proc_alias(tracked_path, annotated_path)
     )
-    if annotated_path is not None and tracked_path is None:
-        state = _remember_fd_path(table, fd_number, annotated_path)
-    elif state is None:
-        kind = _fd_annotation_kind(value)
-        if kind is not None:
-            state = {"kind": kind, "path": None, "cloexec": None, "readable": None}
-            table[fd_number] = state
-    if conflict:
+    if state is None and annotated_path is not None:
+        alias_status = "untracked"
+    elif conflict:
         alias_status = "conflict"
     elif disagreement and _unproven_proc_alias(tracked_path, annotated_path):
         alias_status = "unproven"
@@ -370,7 +358,8 @@ def _fd_observed_path(
     else:
         alias_status = "same"
     paths = [path for path in (tracked_path, annotated_path) if path is not None]
-    return state, annotated_path or tracked_path, tracked_path, disagreement, conflict, alias_status, paths
+    path = (annotated_path or tracked_path) if state is not None and state.get("kind") == "file" else None
+    return state, path, tracked_path, disagreement, conflict, alias_status, paths
 
 
 def _event(event: str, pid: int, line: int, **fields: Any) -> dict[str, Any]:
@@ -470,9 +459,9 @@ def _anonymous_mapping(flags: str) -> bool | None:
 def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
     """Parse raw strace bytes without inferring call IDs or unknown FD paths.
 
-    Forked descriptors inherit their observed state. Pipes are known non-file
-    descriptors; reads from other descriptors without an observed absolute
-    path are reported separately as path-attribution gaps.
+    Forked descriptors inherit captured state. An annotation may refine a live
+    file path, but it cannot establish or restore a missing descriptor state.
+    Reads from untracked file descriptors are reported as path-attribution gaps.
     """
     result: dict[str, Any] = {
         "schema_version": 1,
@@ -695,7 +684,8 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
         if name not in {
             "execve", "execveat", "open", "openat", "openat2", "creat",
             "close", *_READ_SYSCALLS, "mmap", "mmap2", "pipe", "pipe2", "dup", "dup2", "dup3", "fcntl",
-            "eventfd", "eventfd2", "close_range", "clone", "clone3", "fork", "vfork",
+            "eventfd", "eventfd2", "signalfd", "signalfd4", "inotify_init", "inotify_init1",
+            "close_range", "clone", "clone3", "fork", "vfork",
         }:
             continue
         try:
@@ -746,17 +736,45 @@ def parse_raw_trace(raw_trace: bytes) -> dict[str, Any]:
             ))
             continue
 
-        if name in {"eventfd", "eventfd2"}:
+        if name in {
+            "eventfd", "eventfd2", "signalfd", "signalfd4", "inotify_init", "inotify_init1",
+        }:
+            cloexec: bool | None
+            if name == "eventfd":
+                cloexec = False
+            elif name == "eventfd2":
+                cloexec = len(args) > 1 and "EFD_CLOEXEC" in args[1]
+            elif name == "signalfd":
+                source_fd = _fd(args[0]) if args else -1
+                previous = table.get(source_fd) if source_fd >= 0 else None
+                cloexec = (
+                    previous.get("cloexec") if previous is not None else None
+                ) if source_fd >= 0 else False
+            elif name == "signalfd4":
+                source_fd = _fd(args[0]) if args else -1
+                flags = args[3] if len(args) > 3 else ""
+                previous = table.get(source_fd) if source_fd >= 0 else None
+                cloexec = (
+                    previous.get("cloexec") if previous is not None else None
+                ) if source_fd >= 0 else "SFD_CLOEXEC" in flags
+            elif name == "inotify_init":
+                cloexec = False
+            else:
+                flags = args[0] if args else ""
+                cloexec = "IN_CLOEXEC" in flags
             if returned >= 0:
                 table[returned] = {
                     "kind": "anon_inode", "path": None,
-                    "cloexec": name == "eventfd2" and len(args) > 1 and "EFD_CLOEXEC" in args[1],
+                    "cloexec": cloexec,
                     "readable": None,
                 }
                 clear_closed_markers(table, returned)
                 invalidate_uncertain_parent_fd(pid, returned)
             events.append(_event(
-                "fd_operation", pid, line_number, syscall=name, result=returned, error=error,
+                "fd_operation", pid, line_number, syscall=name, initializer=name,
+                fd=returned if returned >= 0 else None,
+                fd_kind="anon_inode", cloexec=cloexec,
+                success=returned >= 0, result=returned, error=error,
             ))
             continue
 

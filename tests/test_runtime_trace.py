@@ -6,10 +6,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from eval.run_ab_batch import _build_trace_argv
 from eval.runtime_trace import STRACE_STRING_LIMIT, normalizer_identity, parse_raw_trace
 
 
@@ -106,7 +108,7 @@ def test_repeated_close_ebadf_is_known_only_after_same_pid_close_without_reopen(
     ])
 
     closes = [event for event in parsed["events"] if event["event"] == "close"]
-    assert parsed["normalizer"]["version"] == "9"
+    assert parsed["normalizer"]["version"] == "10"
     assert closes[1]["known_closed"] is True
     assert closes[2]["known_closed"] is False
     assert closes[4]["known_closed"] is False
@@ -337,9 +339,37 @@ def test_relative_openat_uses_traced_dirfd_and_read_fd_annotations() -> None:
         "/synthetic/root/sub", "/synthetic/root/sub/input.txt",
     ]
     assert [event["path"] for event in reads] == [
-        "/synthetic/root/sub/input.txt", "/synthetic/unobserved",
+        "/synthetic/root/sub/input.txt", None,
     ]
-    assert parsed["attribution_unknown"] == []
+    assert reads[1]["path_candidates"] == ["/synthetic/unobserved"]
+    assert reads[1]["path_alias_status"] == "untracked"
+    assert reads[1]["unknown_reason"] == "fd_not_opened_absolutely_in_same_pid"
+    assert parsed["attribution_unknown"] == [{
+        "trace_line": 4,
+        "reason": "fd_not_opened_absolutely_in_same_pid",
+        "pid": 817,
+        "operation": "read",
+    }]
+
+
+def test_fd_annotations_cannot_restore_closed_or_unobserved_file_producers() -> None:
+    parsed = _parse([
+        '817 open("/synthetic/closed", O_RDONLY) = 3',
+        "817 close(3) = 0",
+        "817 read(3</synthetic/closed>, 0x7fff0000, 0x1) = 0x1",
+        "818 read(9</synthetic/unobserved>, 0x7fff0000, 0x1) = 0x1",
+    ])
+
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert [event["path"] for event in reads] == [None, None]
+    assert [event["fd_kind"] for event in reads] == ["unknown", "unknown"]
+    assert [event["path_candidates"] for event in reads] == [
+        ["/synthetic/closed"], ["/synthetic/unobserved"],
+    ]
+    assert [event["path_alias_status"] for event in reads] == ["untracked", "untracked"]
+    assert [(item["pid"], item["operation"]) for item in parsed["attribution_unknown"]] == [
+        (817, "read"), (818, "read"),
+    ]
 
 
 def test_relative_openat_dirfd_conflict_keeps_both_path_candidates() -> None:
@@ -464,6 +494,69 @@ def test_eventfd_read_is_a_known_non_file_descriptor() -> None:
     assert read["path"] is None
     assert "unknown_reason" not in read
     assert parsed["attribution_unknown"] == []
+
+
+def test_anon_inode_initializers_are_tracked_and_inherited_but_not_guessed() -> None:
+    parsed = _parse([
+        "823 signalfd4(-1, [], 8, SFD_CLOEXEC) = 4",
+        "823 inotify_init1(IN_CLOEXEC) = 5",
+        "823 clone(child_stack=NULL, flags=SIGCHLD) = 824",
+        "824 read(0x4, 0x7fff0000, 0x8) = 0x0",
+        "824 read(0x5, 0x7fff0000, 0x8) = 0x0",
+        "824 read(0x6, 0x7fff0000, 0x8) = 0x1",
+    ])
+
+    creators = [event for event in parsed["events"] if event["event"] == "fd_operation"]
+    assert [(event["initializer"], event["fd"], event["cloexec"]) for event in creators] == [
+        ("signalfd4", 4, True), ("inotify_init1", 5, True),
+    ]
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert [(event["fd"], event["fd_kind"], event.get("unknown_reason")) for event in reads] == [
+        (4, "anon_inode", None),
+        (5, "anon_inode", None),
+        (6, "unknown", "fd_not_opened_absolutely_in_same_pid"),
+    ]
+    assert parsed["attribution_unknown"] == [{
+        "trace_line": 6,
+        "reason": "fd_not_opened_absolutely_in_same_pid",
+        "pid": 824,
+        "operation": "read",
+    }]
+
+
+def test_signalfd_and_inotify_initializers_expose_legacy_forms() -> None:
+    parsed = _parse([
+        "825 signalfd(-1, [], 8) = 3",
+        "825 inotify_init() = 4",
+        "825 read(0x3, 0x7fff0000, 0x8) = -1 EAGAIN (Resource temporarily unavailable)",
+        "825 read(0x4, 0x7fff0000, 0x8) = -1 EAGAIN (Resource temporarily unavailable)",
+    ])
+
+    creators = [event for event in parsed["events"] if event["event"] == "fd_operation"]
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert [(event["initializer"], event["cloexec"]) for event in creators] == [
+        ("signalfd", False), ("inotify_init", False),
+    ]
+    assert all(event["fd_kind"] == "anon_inode" for event in reads)
+    assert parsed["attribution_unknown"] == []
+
+
+def test_anon_inode_cloexec_descriptors_do_not_survive_exec() -> None:
+    parsed = _parse([
+        "826 signalfd4(-1, [], 8, SFD_CLOEXEC) = 3",
+        "826 inotify_init1(IN_CLOEXEC) = 4",
+        "826 inotify_init1(0) = 5",
+        '826 execve("/usr/bin/true", ["true"], 0x0, 0x0) = 0',
+        "826 read(3<anon_inode:[signalfd]>, 0x7fff0000, 0x8) = 0x1",
+        "826 read(4<anon_inode:inotify>, 0x7fff0000, 0x8) = 0x1",
+        "826 read(5<anon_inode:inotify>, 0x7fff0000, 0x8) = 0x0",
+    ])
+
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert [(event["fd"], event["fd_kind"]) for event in reads] == [
+        (3, "unknown"), (4, "unknown"), (5, "anon_inode"),
+    ]
+    assert [item["operation"] for item in parsed["attribution_unknown"]] == ["read", "read"]
 
 
 def test_read_fd_annotation_does_not_erase_tracked_path() -> None:
@@ -616,7 +709,7 @@ def test_normalizer_identity_hashes_current_module_source() -> None:
     module_path = Path(__import__("eval.runtime_trace", fromlist=["__file__"]).__file__)
     identity = normalizer_identity()
     assert identity["name"] == "eval.runtime_trace"
-    assert identity["version"] == "9"
+    assert identity["version"] == "10"
     assert identity["source_sha256"] == hashlib.sha256(module_path.read_bytes()).hexdigest()
 
 
@@ -664,6 +757,123 @@ def test_real_strace_raw_read_preflight(tmp_path: Path, program: str, arguments:
         r"\bread\(0x[0-9a-fA-F]+, 0x[0-9a-fA-F]+, 0x[0-9a-fA-F]+\)\s*=\s*0x[0-9a-fA-F]+",
         trace_text,
     )
+
+
+def test_real_strace_tracks_signalfd_and_inotify_initializers(tmp_path: Path) -> None:
+    strace = shutil.which("strace")
+    if strace is None:
+        pytest.skip("strace is required")
+
+    script = "\n".join((
+        "import ctypes, os, signal",
+        "libc = ctypes.CDLL(None, use_errno=True)",
+        "mask = (ctypes.c_ulong * 16)()",
+        "assert libc.sigemptyset(ctypes.byref(mask)) == 0",
+        "assert libc.sigaddset(ctypes.byref(mask), signal.SIGUSR1) == 0",
+        "libc.signalfd.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_int]",
+        "libc.signalfd.restype = ctypes.c_int",
+        "sfd = libc.signalfd(-1, ctypes.byref(mask), os.O_NONBLOCK)",
+        "assert sfd >= 0, ctypes.get_errno()",
+        "libc.inotify_init1.argtypes = [ctypes.c_int]",
+        "libc.inotify_init1.restype = ctypes.c_int",
+        "ifd = libc.inotify_init1(os.O_NONBLOCK)",
+        "assert ifd >= 0, ctypes.get_errno()",
+        "libc.read.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t]",
+        "buffer = ctypes.create_string_buffer(8)",
+        "assert libc.read(sfd, buffer, 8) == -1",
+        "assert libc.read(ifd, buffer, 8) == -1",
+        "os.close(sfd)",
+        "os.close(ifd)",
+    ))
+    trace_path = tmp_path / "anon-inode-creators.log"
+    strace_argv = _build_trace_argv(
+        strace, trace_path, [sys.executable, "-c", script],
+    )
+    run = subprocess.run(
+        strace_argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env={"LC_ALL": "C", "PATH": os.defpath},
+        check=False,
+        timeout=15,
+    )
+
+    assert run.returncode == 0
+    parsed = parse_raw_trace(trace_path.read_bytes())
+    creators = [event for event in parsed["events"] if event.get("initializer")]
+    assert [event["initializer"] for event in creators] == ["signalfd4", "inotify_init1"]
+    reads = [event for event in parsed["events"] if event["event"] == "read"]
+    assert all(any(
+        event["pid"] == creator["pid"]
+        and event["fd"] == creator["fd"]
+        and event["trace_line"] > creator["trace_line"]
+        and event["fd_kind"] == "anon_inode"
+        and "unknown_reason" not in event
+        for event in reads
+    ) for creator in creators)
+
+
+def test_real_strace_tracks_shell_opened_stdin_lifecycle(tmp_path: Path) -> None:
+    strace = shutil.which("strace")
+    shell = shutil.which("sh")
+    cat = shutil.which("cat")
+    if strace is None or shell is None or cat is None:
+        pytest.skip("strace, sh, and cat are required")
+
+    prompt = tmp_path / "synthetic-prompt.txt"
+    prompt.write_bytes(b"synthetic prompt bytes\n")
+    trace_path = tmp_path / "prompt-stdin.log"
+    strace_argv = _build_trace_argv(
+        strace,
+        trace_path,
+        [shell, "-c", 'exec "$3" < "$1"', "prompt-stdin", str(prompt), "--", cat],
+    )
+    run = subprocess.run(
+        strace_argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env={"LC_ALL": "C", "PATH": os.defpath},
+        check=False,
+        timeout=15,
+    )
+
+    assert run.returncode == 0
+    parsed = parse_raw_trace(trace_path.read_bytes())
+    assert parsed["complete"] is True, parsed["unknown"]
+    prompt_open = next(
+        event for event in parsed["events"]
+        if event["event"] == "open"
+        and event.get("path") == str(prompt)
+        and event["success"]
+    )
+    prompt_dup2 = next(
+        event for event in parsed["events"]
+        if event["event"] == "fd_operation"
+        and event.get("syscall") == "dup2"
+        and event.get("result") == 0
+        and event["pid"] == prompt_open["pid"]
+        and event["trace_line"] > prompt_open["trace_line"]
+    )
+    cat_exec = next(
+        event for event in parsed["events"]
+        if event["event"] == "exec"
+        and event.get("success") is True
+        and event.get("argv", [None])[0] == cat
+        and event["pid"] == prompt_open["pid"]
+        and event["trace_line"] > prompt_dup2["trace_line"]
+    )
+    prompt_read = next(
+        event for event in parsed["events"]
+        if event["event"] == "read"
+        and event.get("fd") == 0
+        and event.get("path") == str(prompt)
+        and event.get("bytes_read", 0) > 0
+        and event["pid"] == prompt_open["pid"]
+        and event["trace_line"] > cat_exec["trace_line"]
+    )
+    assert prompt_open["trace_line"] < prompt_dup2["trace_line"] < cat_exec["trace_line"] < prompt_read["trace_line"]
 
 
 def test_real_strace_finite_limit_keeps_long_argv_and_abbreviates_environment(
