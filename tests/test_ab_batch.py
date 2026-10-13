@@ -1007,6 +1007,29 @@ print(json.dumps({"type": "turn.completed"}), flush=True)
 
 
 class BatchExecutionAdapterTests(unittest.TestCase):
+    def test_preflight_without_runtime_config_reports_blocked_when_codex_is_missing(self) -> None:
+        with (
+            mock.patch("eval.run_ab_batch.shutil.which", return_value=None) as which,
+            mock.patch("eval.run_ab_batch._find_bundled_bwrap") as find_bwrap,
+            mock.patch("eval.run_ab_batch.subprocess.Popen") as popen,
+            mock.patch("eval.run_ab_batch.subprocess.run") as run,
+            mock.patch("builtins.print") as output,
+        ):
+            exit_code = batch.main(["--preflight"])
+
+        status = json.loads(output.call_args.args[0])
+        self.assertEqual(exit_code, 3)
+        self.assertEqual(status["status"], "blocked")
+        self.assertEqual(status["runtime_config"], "not_provided")
+        self.assertEqual(status["tools"]["codex_executable"]["status"], "unavailable")
+        self.assertEqual(status["raw_trace_parser"]["status"], "available")
+        self.assertEqual(status["causal_binding"]["reason"], "cli_process_binding_unavailable")
+        self.assertEqual(status["next_step"], "adapter_validation")
+        self.assertEqual(which.call_args_list, [mock.call("codex"), mock.call("strace")])
+        find_bwrap.assert_not_called()
+        popen.assert_not_called()
+        run.assert_not_called()
+
     def test_trace_argv_uses_finite_limit_without_environment_expansion(self) -> None:
         argv = batch._build_trace_argv(
             "/usr/bin/strace", Path("/tmp/synthetic-trace.log"), ["/usr/bin/true"],
@@ -1022,6 +1045,109 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         self.assertIn("inotify_init", captured_syscalls)
         self.assertIn("inotify_init1", captured_syscalls)
         self.assertEqual(argv[-2:], ["--", "/usr/bin/true"])
+
+    def test_execute_slot_records_block_without_starting_a_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_root, config = _fake_cli_slot(Path(temp_dir))
+            with (
+                mock.patch("eval.run_ab_batch.subprocess.Popen") as popen,
+                mock.patch("eval.run_ab_batch.subprocess.run") as run,
+            ):
+                result = execute_slot(run_root, config, go_authorized=True)
+
+            self.assertEqual(result["run_status"], "not_run")
+            self.assertFalse(result["launched"])
+            self.assertEqual(result["outcome"], "not_started")
+            self.assertEqual(result["execution_status"], "blocked")
+            self.assertEqual(result["blocked_reason"], "cli_process_binding_unavailable")
+            self.assertFalse((run_root / "runtime/adapter-start.json").exists())
+            self.assertTrue((run_root / "runtime/adapter-preflight.json").is_file())
+            self.assertFalse((run_root / "host-output.json").exists())
+            self.assertFalse((run_root / "artifacts/raw-model-output.txt").exists())
+            popen.assert_not_called()
+            run.assert_not_called()
+
+    def test_execute_slot_preserves_preexisting_result_without_runtime_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_root, config = _fake_cli_slot(Path(temp_dir))
+            result_path = run_root / "slot-result.json"
+            original_result = b'{"legacy_status":"completed"}\n'
+            result_path.write_bytes(original_result)
+
+            with (
+                mock.patch("eval.run_ab_batch.subprocess.Popen") as popen,
+                mock.patch("eval.run_ab_batch.subprocess.run") as run,
+                self.assertRaisesRegex(ValueError, "already been attempted"),
+            ):
+                execute_slot(run_root, config, go_authorized=True)
+
+            self.assertEqual(result_path.read_bytes(), original_result)
+            popen.assert_not_called()
+            run.assert_not_called()
+
+    def test_execute_plan_records_blocked_slots_without_starting_processes(self) -> None:
+        index = json.loads((Path(__file__).parents[1] / "eval/data/real-cases.json").read_bytes())
+        plan = dict(build_slot_plan(index), plan_state="go", execution_authorized=True)
+        plan["benchmark_id"] = "blocked-capability-batch.v1"
+        config = {
+            "schema_version": 3,
+            "codex_executable": "/missing/codex",
+            "strace_executable": "/missing/strace",
+            "bwrap_executable": "/missing/bwrap",
+            "model": "gpt-6.1-sol",
+            "provider_definition": {
+                "name": "custom",
+                "base_url": "http://127.0.0.1:8080/v1",
+                "wire_api": "responses",
+                "requires_openai_auth": True,
+            },
+            "reasoning_effort": "high",
+            "timeout_seconds": 30,
+            "sandbox_identity": {
+                "environment": {"TZ": "UTC0"},
+                "effective_timezone": "UTC",
+            },
+        }
+        config_bytes = (json.dumps(config) + "\n").encode()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_root = root / "runs"
+            config_path = root / "runtime-config.json"
+            config_path.write_bytes(config_bytes)
+            for slot in plan["slots"]:
+                condition = "same_host_direct" if slot["condition"] == "A" else "current_skill"
+                run_root = runs_root / slot["case_id"] / condition / f"repeat{slot['replicate']:02d}"
+                input_root = run_root / "input"
+                input_root.mkdir(parents=True)
+                (input_root / "runtime-config.json").write_bytes(config_bytes)
+
+            with (
+                mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
+                mock.patch("eval.run_ab_batch._preflight_codex_config") as codex_preflight,
+                mock.patch("eval.run_ab_batch.subprocess.Popen") as popen,
+                mock.patch("eval.run_ab_batch.subprocess.run") as run,
+            ):
+                results = execute_plan(plan, runs_root, config_path)
+
+            self.assertEqual(len(results), len(plan["slots"]))
+            self.assertTrue(all(result["run_status"] == "not_run" for result in results))
+            self.assertTrue(all(not result["launched"] for result in results))
+            self.assertTrue(all(result["outcome"] == "not_started" for result in results))
+            self.assertTrue(all(result["execution_status"] == "blocked" for result in results))
+            self.assertTrue(all(
+                result["blocked_reason"] == "cli_process_binding_unavailable"
+                for result in results
+            ))
+            for slot in plan["slots"]:
+                condition = "same_host_direct" if slot["condition"] == "A" else "current_skill"
+                run_root = runs_root / slot["case_id"] / condition / f"repeat{slot['replicate']:02d}"
+                self.assertTrue((run_root / "runtime/adapter-preflight.json").is_file())
+                self.assertFalse((run_root / "runtime/adapter-start.json").exists())
+                self.assertFalse((run_root / "host-output.json").exists())
+                self.assertFalse((run_root / "artifacts/raw-model-output.txt").exists())
+            codex_preflight.assert_not_called()
+            popen.assert_not_called()
+            run.assert_not_called()
 
     def test_execute_slot_rejects_open_presealed_schema_before_adapter_start(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1093,6 +1219,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
             with (
                 mock.patch("eval.run_ab_batch._runtime_config", return_value={}),
+                mock.patch("eval.run_ab_batch._adapter_capability_status", return_value={"status": "available"}),
                 mock.patch("eval.run_ab_batch._preflight_codex_config"),
                 mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
                 mock.patch("eval.run_ab_batch._artifact_inventory", side_effect=inspect_ledger_then_collect),
@@ -1248,6 +1375,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
 
             with (
                 mock.patch("eval.run_ab_batch._runtime_config", return_value={}),
+                mock.patch("eval.run_ab_batch._adapter_capability_status", return_value={"status": "available"}),
                 mock.patch("eval.run_ab_batch._preflight_codex_config"),
                 mock.patch("eval.run_ab_batch._preseal_status", return_value={}),
                 mock.patch("eval.run_ab_batch._artifact_inventory") as inventory,
@@ -1455,6 +1583,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
         )
         self.assertTrue(all("call_id" not in event for event in events[1:]))
 
+    @unittest.skip("requires adapter validation and the Codex-bundled bwrap runtime before process launch")
     def test_fake_cli_is_wrapped_and_all_outputs_are_sealed(self) -> None:
         if not Path("/usr/bin/strace").is_file():
             self.skipTest("strace is required for the adapter trace test")
@@ -1632,6 +1761,7 @@ class BatchExecutionAdapterTests(unittest.TestCase):
                 sha256_file(run_root / "runtime/codex-events.jsonl"),
             )
 
+    @unittest.skip("requires adapter validation and the Codex-bundled bwrap runtime before process launch")
     def test_bwrap_allows_b_to_read_and_verifies_the_pinned_skill(self) -> None:
         if not Path("/usr/bin/strace").is_file():
             self.skipTest("strace is required for the adapter trace test")

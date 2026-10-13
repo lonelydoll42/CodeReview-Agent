@@ -82,6 +82,24 @@ preflight accepts model `gpt-6.1-sol`, provider
 `custom` at `http://127.0.0.1:8080/v1` using `responses` with auth required, and
 reasoning effort `max`.
 
+Run the non-launching adapter capability probe with or without a frozen runtime
+config:
+
+```sh
+python3 eval/run_ab_batch.py --preflight
+python3 eval/run_ab_batch.py --preflight \
+  --runtime-config /path/to/runtime-config-v3.json
+```
+
+The JSON report separates executable availability, the raw trace parser's
+self-check, and CLI-to-process causal binding. A parser self-check or available
+tools do not establish that binding. The default strict CLI event path has no
+trusted OS PID or causal process identity, so the A/B runner reports `blocked`
+with `next_step: adapter_validation` and exit status 3, even when the local
+tools are installed. Alternate hook integrations remain unverified; tool
+availability alone cannot enable strict execution. This evidence gate applies
+to the A/B runner; it does not block the daily Skill or optional review service.
+
 The v2 runtime config is exact UTF-8 JSON with this shape:
 
 ```json
@@ -141,6 +159,16 @@ must still match every presealed slot. The v2 command below is the historical
 authorization to retry v2. The separately frozen v3 batch has also run and is
 now `closed_incomplete`; see the execution status below. Do not retry either
 batch. No next-batch plan, runtime config, or model request has been issued.
+
+The capability gate runs before any model subprocess. If it blocks execution,
+each planned slot is recorded as `run_status=not_run`, `launched=false`,
+`outcome=not_started`, and `execution_status=blocked`; no adapter-start record
+or host output is created. The slot's `runtime/adapter-preflight.json` records
+the capability report. Such a batch is blocked, not started or failed, and
+cannot be retried in place. The required next step is adapter validation with
+non-model fixtures and a trusted CLI-to-process binding; only after that work
+and independent review may a new frozen execution be considered. Do not rerun
+a blocked batch.
 
 ```sh
 python3 eval/run_ab_batch.py \

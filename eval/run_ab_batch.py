@@ -675,7 +675,7 @@ def _load_plan(path: Path) -> tuple[dict[str, Any], bytes]:
     return validate_plan(json.loads(raw)), raw
 
 
-def _runtime_config(data: bytes) -> dict[str, Any]:
+def _runtime_config(data: bytes, *, require_executable_tools: bool = True) -> dict[str, Any]:
     try:
         value = json.loads(data)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -696,12 +696,13 @@ def _runtime_config(data: bytes) -> dict[str, Any]:
         if (
             not isinstance(executable, str)
             or not Path(executable).is_absolute()
-            or not os.access(executable, os.X_OK)
+            or (require_executable_tools and not os.access(executable, os.X_OK))
         ):
             raise ValueError(f"runtime config {name} must name an executable absolute path")
-    expected_bwrap = _find_bundled_bwrap(Path(value["codex_executable"]))
-    if Path(value["bwrap_executable"]).resolve(strict=True) != expected_bwrap:
-        raise ValueError("runtime config bwrap_executable must use the selected Codex package's bundled binary")
+    if require_executable_tools:
+        expected_bwrap = _find_bundled_bwrap(Path(value["codex_executable"]))
+        if Path(value["bwrap_executable"]).resolve(strict=True) != expected_bwrap:
+            raise ValueError("runtime config bwrap_executable must use the selected Codex package's bundled binary")
     model = value.get("model")
     if not isinstance(model, str) or not model.strip() or model != model.strip():
         raise ValueError("runtime config model must be a non-empty string")
@@ -738,6 +739,78 @@ def _runtime_config(data: bytes) -> dict[str, Any]:
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
         raise ValueError("runtime config timeout_seconds must be an integer from 1 to 86400")
     return value
+
+
+def _adapter_capability_status(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Report local prerequisites without treating them as proof of process identity."""
+    if config is None:
+        codex_executable = shutil.which("codex")
+        strace_executable = shutil.which("strace")
+        try:
+            bwrap_executable = (
+                str(_find_bundled_bwrap(Path(codex_executable)))
+                if codex_executable is not None
+                else None
+            )
+        except (OSError, ValueError):
+            bwrap_executable = None
+        tool_paths = {
+            "codex_executable": codex_executable,
+            "strace_executable": strace_executable,
+            "bwrap_executable": bwrap_executable,
+        }
+    else:
+        tool_paths = {name: config.get(name) for name in (
+            "codex_executable", "strace_executable", "bwrap_executable",
+        )}
+    tools = {}
+    for name in ("codex_executable", "strace_executable", "bwrap_executable"):
+        path = tool_paths[name]
+        available = (
+            isinstance(path, str)
+            and Path(path).is_absolute()
+            and Path(path).is_file()
+            and os.access(path, os.X_OK)
+        )
+        tools[name] = {"status": "available" if available else "unavailable"}
+
+    parser_probe = parse_raw_trace(
+        b'424 execve("/bin/true", ["true"], 0x0, 0x0) = 0\n'
+        b"424 +++ exited with 0 +++\n"
+    )
+    parser_available = (
+        parser_probe["complete"]
+        and not parser_probe["unknown"]
+        and [event.get("event") for event in parser_probe["events"]] == ["exec", "process_exit"]
+    )
+    raw_parser = {
+        "status": "available" if parser_available else "unavailable",
+        "version": parser_probe["normalizer"]["version"],
+    }
+    causal_binding = {
+        "status": "unavailable",
+        "reason": "cli_process_binding_unavailable",
+        "scope": "default_strict_cli_event_path",
+        "basis": "default strict CLI events contain no trusted OS PID or causal process binding",
+    }
+    blocking_reasons = [causal_binding["reason"]]
+    blocking_reasons.extend(
+        f"{name}_unavailable"
+        for name, state in tools.items()
+        if state["status"] != "available"
+    )
+    if raw_parser["status"] != "available":
+        blocking_reasons.append("raw_trace_parser_unavailable")
+    return {
+        "schema_version": 1,
+        "status": "blocked",
+        "runtime_config": "provided" if config is not None else "not_provided",
+        "tools": tools,
+        "raw_trace_parser": raw_parser,
+        "causal_binding": causal_binding,
+        "blocking_reasons": blocking_reasons,
+        "next_step": "adapter_validation",
+    }
 
 
 def _codex_config_overrides(config: dict[str, Any]) -> list[str]:
@@ -1237,6 +1310,19 @@ class ArtifactCollectionError(ValueError):
         self.slot_result = slot_result
 
 
+def _assert_slot_not_attempted(run_root: Path) -> None:
+    runtime = run_root / "runtime"
+    attempt_markers = (
+        runtime / "adapter-start.json",
+        runtime / "adapter-failure.json",
+        runtime / "execution.json",
+        runtime / "adapter-preflight.json",
+        run_root / "slot-result.json",
+    )
+    if any(os.path.lexists(path) for path in attempt_markers):
+        raise ValueError(f"slot has already been attempted; retries are disabled: {run_root}")
+
+
 def _artifact_inventory(run_root: Path) -> dict[str, Any]:
     run_root = run_root.resolve(strict=True)
     inventory: dict[str, Any] = {"artifacts": {}, "excluded_runtime_symlinks": []}
@@ -1620,9 +1706,7 @@ def _preseal_status(
     if preseal.get("source_bundle_manifest") != expected_manifest_ref:
         raise ValueError(f"prepared preseal manifest reference does not match: {run_root}")
 
-    runtime = run_root / "runtime"
-    if any((runtime / name).exists() for name in ("adapter-start.json", "adapter-failure.json", "execution.json")):
-        raise ValueError(f"slot has already been attempted; retries are disabled: {run_root}")
+    _assert_slot_not_attempted(run_root)
     for entry in manifest.get("files", []):
         path = (run_root / entry["path"]).resolve()
         try:
@@ -1653,6 +1737,66 @@ def _empty_runtime_evidence(run_status: str, reason: str) -> dict[str, Any]:
         "common_bindings": None,
         "limitations": [reason],
     }
+
+
+def _record_blocked_slot(
+    run_root: Path,
+    slot: dict[str, Any],
+    benchmark_id: str,
+    immutable_sha: str,
+    capability_status: dict[str, Any],
+) -> dict[str, Any]:
+    _assert_slot_not_attempted(run_root)
+    runtime = run_root / "runtime"
+    _mkdir_private(runtime)
+    reason = capability_status["blocking_reasons"][0]
+    preflight_path = runtime / "adapter-preflight.json"
+    _write_json(preflight_path, {
+        "schema_version": 1,
+        "benchmark_id": benchmark_id,
+        "immutable_plan_sha256": immutable_sha,
+        "case_id": slot["case_id"],
+        "condition": slot["condition"],
+        "replicate": slot["replicate"],
+        "attempt": slot["attempt"],
+        "attempt_kind": slot["attempt_kind"],
+        "checked_at": _utc_now(),
+        "status": "blocked",
+        "capabilities": capability_status,
+    })
+    inventory = _artifact_inventory(run_root)
+    result = {
+        "schema_version": 1,
+        "benchmark_id": benchmark_id,
+        "planned": True,
+        "launched": False,
+        "host_completed": False,
+        "evidence_valid": False,
+        "outcome": "not_started",
+        "case_id": slot["case_id"],
+        "condition": slot["condition"],
+        "run_order": slot["run_order"],
+        "replicate": slot["replicate"],
+        "attempt": slot["attempt"],
+        "attempt_kind": slot["attempt_kind"],
+        "run_status": "not_run",
+        "execution_status": "blocked",
+        "blocked_reason": reason,
+        "capability_preflight": capability_status,
+        "capability_preflight_artifact": make_artifact_ref(run_root, preflight_path),
+        "host_output_json_object": False,
+        "wrapper_exit_code": None,
+        "duration_seconds": 0.0,
+        "started_at": None,
+        "finished_at": _utc_now(),
+        "immutable_plan_sha256": immutable_sha,
+        "runtime_evidence": _empty_runtime_evidence("not_run", f"execution blocked: {reason}"),
+        "runtime_evidence_verification_error": None,
+        "artifacts": inventory["artifacts"],
+        "excluded_runtime_symlinks": inventory["excluded_runtime_symlinks"],
+    }
+    _write_json(run_root / "slot-result.json", result)
+    return result
 
 
 def _sandbox_codex_executable(executable: str, input_root: Path) -> str:
@@ -1731,8 +1875,16 @@ def execute_slot(
     manifest = json.loads(manifest_path.read_bytes())
     runtime = run_root / "runtime"
     artifacts = run_root / "artifacts"
-    if any((runtime / name).exists() for name in ("adapter-start.json", "adapter-failure.json", "execution.json")):
-        raise ValueError(f"slot has already been attempted; retries are disabled: {run_root}")
+    _assert_slot_not_attempted(run_root)
+    capability_status = _adapter_capability_status(config)
+    if capability_status["status"] == "blocked":
+        return _record_blocked_slot(
+            run_root,
+            expected_slot,
+            metadata["benchmark_id"],
+            metadata["immutable_plan_sha256"],
+            capability_status,
+        )
     _mkdir_private(runtime)
     raw_output = artifacts / "raw-model-output.txt"
     stdout_path = runtime / "codex-events.jsonl"
@@ -2024,7 +2176,19 @@ def execute_plan(plan: dict[str, Any], runs_root: Path, config_path: Path) -> li
         if (run_root / "input" / "runtime-config.json").read_bytes() != config_bytes:
             raise ValueError(f"runtime config differs from presealed bytes: {run_root}")
         run_roots.append(run_root)
-    config = _runtime_config(config_bytes)
+    config = _runtime_config(config_bytes, require_executable_tools=False)
+    capability_status = _adapter_capability_status(config)
+    if capability_status["status"] == "blocked":
+        return [
+            _record_blocked_slot(
+                run_root,
+                slot,
+                plan["benchmark_id"],
+                immutable_sha,
+                capability_status,
+            )
+            for slot, run_root in zip(plan["slots"], run_roots, strict=True)
+        ]
     _preflight_codex_config(config)
 
     results: list[dict[str, Any]] = []
@@ -2152,6 +2316,7 @@ def main(argv: list[str] | None = None) -> int:
     operations = parser.add_mutually_exclusive_group()
     operations.add_argument("--prepare", action="store_true", help="Preseal all fixed slots without model calls.")
     operations.add_argument("--execute", action="store_true", help="Run fixed slots only with an explicit GO plan.")
+    operations.add_argument("--preflight", action="store_true", help="Report adapter capabilities without starting Codex.")
     operations.add_argument("--write-runtime-config", action="store_true", help="Freeze the allowlisted active Codex model config after non-model preflight.")
     parser.add_argument("--plan", type=Path, help="Existing frozen plan for prepare/execute.")
     parser.add_argument("--plan-output", type=Path, help="Write a new waiting plan.")
@@ -2164,6 +2329,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skill-source", type=Path, default=DEFAULT_SKILL_SOURCE)
     args = parser.parse_args(argv)
     try:
+        if args.preflight:
+            config = None
+            if args.runtime_config is not None:
+                config = _runtime_config(
+                    args.runtime_config.read_bytes(),
+                    require_executable_tools=False,
+                )
+            capability_status = _adapter_capability_status(config)
+            print(json.dumps(capability_status, sort_keys=True))
+            return 3 if capability_status["status"] == "blocked" else 0
         if args.write_runtime_config:
             if args.runtime_config_output is None:
                 parser.error("--write-runtime-config requires --runtime-config-output")
@@ -2192,8 +2367,17 @@ def main(argv: list[str] | None = None) -> int:
                 preseal_plan(plan, plan_bytes, args.runs_root, args.runtime_config, args.skill_source)
                 return 0
             results = execute_plan(plan, args.runs_root, args.runtime_config)
-            print(json.dumps({"runs": results}, sort_keys=True))
-            return 0 if all(item.get("run_status") == "completed" for item in results) else 1
+            blocked = any(item.get("execution_status") == "blocked" for item in results)
+            response = {
+                "status": "blocked" if blocked else "completed",
+                "runs": results,
+            }
+            if blocked:
+                response["next_step"] = "adapter_validation"
+            print(json.dumps(response, sort_keys=True))
+            return 3 if blocked else 0 if all(
+                item.get("run_status") == "completed" for item in results
+            ) else 1
         if args.plan_output is None:
             parser.error("plan-only operation requires --plan-output")
         index = json.loads(args.case_index.read_bytes())
