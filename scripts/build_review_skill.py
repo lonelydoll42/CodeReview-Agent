@@ -96,7 +96,7 @@ def _create_archive(package: Path, archive: Path) -> None:
             output.writestr(info, path.read_bytes())
 
 
-def build(output_dir: Path) -> tuple[Path, Path, Path]:
+def build(output_dir: Path, *, versioned_artifacts: bool = False) -> tuple[Path, Path, Path]:
     if not SKILL_SOURCE.is_dir():
         raise FileNotFoundError(f"Skill source not found: {SKILL_SOURCE}")
     if not CORE_SOURCE.is_dir():
@@ -105,13 +105,18 @@ def build(output_dir: Path) -> tuple[Path, Path, Path]:
     version = version_file.read_text(encoding="utf-8").strip()
     if not version or any(char.isspace() for char in version):
         raise ValueError("skills/review-changes/VERSION must contain one non-empty version token")
+    if versioned_artifacts and any(
+        not (char.isascii() and (char.isalnum() or char in ".-+")) for char in version
+    ):
+        raise ValueError("versioned artifact names require an ASCII version token using .-+ only")
 
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     package_target = output_dir / PACKAGE_NAME
-    archive_target = output_dir / f"{PACKAGE_NAME}.zip"
-    manifest_target = output_dir / f"{PACKAGE_NAME}.manifest.json"
-    checksum_target = output_dir / f"{PACKAGE_NAME}.manifest.json.sha256"
+    artifact_suffix = f"-{version}" if versioned_artifacts else ""
+    archive_target = output_dir / f"{PACKAGE_NAME}{artifact_suffix}.zip"
+    manifest_target = output_dir / f"{PACKAGE_NAME}{artifact_suffix}.manifest.json"
+    checksum_target = output_dir / f"{PACKAGE_NAME}{artifact_suffix}.manifest.json.sha256"
     targets = (package_target, archive_target, manifest_target, checksum_target)
     conflicts = [path for path in targets if path.exists()]
     if conflicts:
@@ -173,9 +178,14 @@ def main() -> int:
         type=Path,
         help="Output directory for the package folder, zip, and version manifest",
     )
+    parser.add_argument(
+        "--versioned-artifacts",
+        action="store_true",
+        help="Include the package VERSION in the archive and manifest filenames",
+    )
     args = parser.parse_args()
     try:
-        package, archive, manifest = build(args.output)
+        package, archive, manifest = build(args.output, versioned_artifacts=args.versioned_artifacts)
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
         print(f"build_review_skill: {exc}", file=sys.stderr)
         return 2

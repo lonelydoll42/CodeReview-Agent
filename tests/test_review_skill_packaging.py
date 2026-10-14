@@ -123,6 +123,59 @@ def test_builder_refuses_to_overwrite_existing_artifacts(tmp_path: Path) -> None
     assert archive.read_bytes() == original
 
 
+def test_builder_can_version_trial_artifacts_in_unicode_output_path(tmp_path: Path) -> None:
+    output = tmp_path / "试用 输出 中文"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-X",
+            "utf8",
+            "-S",
+            str(BUILDER),
+            "--output",
+            str(output),
+            "--versioned-artifacts",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    version = (ROOT / "skills" / "review-changes" / "VERSION").read_text(
+        encoding="utf-8"
+    ).strip()
+    archive = output / f"review-changes-{version}.zip"
+    manifest_path = output / f"review-changes-{version}.manifest.json"
+    checksum_path = output / f"review-changes-{version}.manifest.json.sha256"
+    package = output / "review-changes"
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes)
+
+    assert archive.is_file()
+    assert package.is_dir()
+    assert manifest["version"] == version
+    assert manifest["archive"] == archive.name
+    assert manifest["source_revision"] == subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.strip()
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == manifest["archive_sha256"]
+    assert hashlib.sha256(manifest_bytes).hexdigest() == checksum_path.read_text(
+        encoding="ascii"
+    ).strip()
+    with zipfile.ZipFile(archive) as bundle:
+        assert bundle.testzip() is None
+        assert bundle.read("review-changes/VERSION").decode("utf-8").strip() == version
+
+
 def test_unpacked_skill_runs_from_an_external_unicode_repository(tmp_path: Path) -> None:
     build_output = tmp_path / "skill-build"
     build_result = subprocess.run(

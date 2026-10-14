@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="#quickstart">Skill quickstart</a> ·
+  <a href="docs/skill-trial.md">0.3.0-rc.1 trial guide</a> ·
   <a href="docs/example-report.md">报告示例</a> ·
   <a href="docs/guide.md">Server guide</a> ·
   <a href="docs/recruiter_brief.md">项目亮点</a> ·
@@ -48,13 +49,15 @@ For rechecks, a resolved status requires valid repair evidence from the current 
 <a id="quickstart"></a>
 ## Quick start: independent Skill package
 
-Build from this repository with Python 3.10+ and Git. The build uses the standard library and writes only to the selected output directory; it does not install the Skill into the host's default skills directory.
+Build the `0.3.0-rc.1` trial package from this repository with Python 3.10+ and Git. The build uses the standard library and writes only to the selected output directory; it does not install the Skill into the host's default skills directory.
 
 ```bash
-python3 -X utf8 -S scripts/build_review_skill.py --output /tmp/review-changes-dist
+python3 -X utf8 -S scripts/build_review_skill.py \
+  --output "/tmp/review-changes-0.3.0-rc.1" \
+  --versioned-artifacts
 ```
 
-The output directory contains `review-changes.zip`, an unpacked `review-changes/` package, a version manifest with per-file and archive SHA-256 hashes, and a checksum for that manifest. Install the package using the Skill import flow for your assistant. Do not copy the source repository's service dependencies into a target project. No published download is available yet.
+The output directory contains `review-changes-0.3.0-rc.1.zip`, matching versioned manifest and checksum files, and the unpacked `review-changes/` package. The manifest records the embedded version, source commit, source tree, per-file hashes, and archive hash. Install the package using your assistant's Skill import flow. Do not copy the source repository's service dependencies into a target project. The GitHub pre-release has not been published yet; see the [trial guide](docs/skill-trial.md) for its scope and feedback template.
 
 After installation, open any Git repository and ask your assistant to review the worktree, staged changes, or a local branch. The package requires Python 3.10+ and Git for snapshot scripts. Semgrep is optional: the host continues semantic review when it is missing or fails, and the final report keeps that tool state.
 

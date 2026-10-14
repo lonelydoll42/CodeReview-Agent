@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import stat
 import subprocess
 import sys
@@ -358,7 +359,7 @@ class AbBatchPlanTests(unittest.TestCase):
                 prepared = preseal_plan(
                     plan,
                     plan_bytes,
-                    root / "runs",
+                    root / "批次 runs with spaces",
                     runtime_config,
                     skill,
                     repository_git_cases={"case0006"},
@@ -462,6 +463,25 @@ class AbBatchPlanTests(unittest.TestCase):
                 (case2_a / "input/protocol/project_tool_runs.py").read_bytes(),
                 projector.read_bytes(),
             )
+            prepared_projector = case2_a / "input/protocol/project_tool_runs.py"
+            isolated_env = {
+                key: value
+                for key, value in os.environ.items()
+                if key not in {"PYTHONPATH", "PYTHONHOME"}
+            }
+            isolated_env.update({"GIT_OPTIONAL_LOCKS": "0", "TZ": "UTC0"})
+            projection = subprocess.run(
+                [sys.executable, "-X", "utf8", "-S", str(prepared_projector)],
+                cwd=prepared_projector.parent,
+                env=isolated_env,
+                input='{"schema_version":"1","input_fingerprint":null,"tool_runs":[]}\n',
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(projection.returncode, 0, projection.stderr)
+            self.assertEqual(projection.stdout, "[]\n")
+            self.assertEqual(projection.stderr, "")
             self.assertEqual(manifest["immutable_plan_sha256"], immutable_plan_sha256(plan))
             self.assertEqual(stat.S_IMODE(case3_b.stat().st_mode), 0o700)
             self.assertEqual(

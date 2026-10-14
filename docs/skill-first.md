@@ -2,7 +2,7 @@
 
 `review-changes` is the primary local review entry point. The host assistant performs semantic analysis with its current model; the package provides pinned Git inputs, review methods, optional static signals, strict result validation, and deterministic Markdown rendering. It does not require this repository, the API service, a model SDK, a database, or Redis in the target project.
 
-This package (version `0.2.1`) supports worktree, staged-index, and local branch reviews, plus rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy import and host behavior have not been validated; the [acceptance run sheet](workbuddy-acceptance.md) records the pending host checks separately from script/package tests.
+The `0.3.0-rc.1` trial package supports worktree, staged-index, and local branch reviews, plus session resume and rechecking a prior schema-version-2 report against a new local snapshot. It does not fetch remote pull requests. WorkBuddy import and host behavior have not been validated; the [acceptance run sheet](workbuddy-acceptance.md) records the pending host checks separately from script/package tests. For a focused user trial, see the [trial guide](skill-trial.md).
 
 ## Build
 
@@ -10,10 +10,12 @@ From a clean output directory, use Python 3.10 or newer:
 
 ```bash
 REVIEW_DIST="$(mktemp -d /tmp/review-changes-dist.XXXXXX)"
-python3 -X utf8 -S scripts/build_review_skill.py --output "$REVIEW_DIST"
+python3 -X utf8 -S scripts/build_review_skill.py \
+  --output "$REVIEW_DIST" \
+  --versioned-artifacts
 ```
 
-The output contains an unpacked `review-changes/` package, `review-changes.zip`, a version manifest with every package file hash and the archive hash, and a `.sha256` checksum for the manifest. The builder copies `review_core/` from its single repository source and extracts the optional Semgrep YAML from `tools/semgrep_runner.py`; neither is maintained as a second source copy. The output path must not already contain these artifact names.
+The versioned build contains an unpacked `review-changes/` package, `review-changes-0.3.0-rc.1.zip`, matching versioned manifest and checksum files. The manifest binds its version to the embedded `VERSION`, records the source commit and tree hash, and lists every package-file and archive hash. The builder copies `review_core/` from its single repository source and extracts the optional Semgrep YAML from `tools/semgrep_runner.py`; neither is maintained as a second source copy. The output path must not already contain these artifact names. Without the option, the builder keeps its legacy unversioned artifact names for existing fixtures and acceptance flows.
 
 The package scripts can be run from outside this checkout. For example, run `python3 -X utf8 -S "$REVIEW_DIST/review-changes/scripts/collect_changes.py" ...` while your current directory is a different Git repository. `-X utf8` enables UTF-8 filesystem and standard stream handling; `-S` disables Python site initialization, so it also verifies that the scripts do not rely on installed site packages.
 

@@ -6,9 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from _runtime import require_utf8_filesystem
-
-
 RUN_FIELDS = (
     "tool",
     "version",
@@ -27,6 +24,17 @@ FINDING_FIELDS = ("file", "line", "rule_id", "severity", "message", "metadata")
 
 class ProjectionError(ValueError):
     """Raised when a run_static result cannot be represented without data loss."""
+
+
+def require_utf8_filesystem() -> bool:
+    if sys.getfilesystemencoding().lower().replace("-", "") == "utf8":
+        return True
+    print(
+        "Python is using a non-UTF-8 filesystem encoding. Restart this command with "
+        "`python3 -X utf8 -S ...` (Windows: `py -3 -X utf8 -S ...`). No files were written.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def _object(
