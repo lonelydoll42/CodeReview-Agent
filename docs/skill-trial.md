@@ -1,8 +1,12 @@
 # review-changes 0.3.0-rc.1 Trial
 
-This pre-release packages a host-driven Skill for local code review, saved-session recovery, and evidence-based rechecks. It is being offered to learn whether these workflows are useful in everyday review. The strict A/B evaluation is paused; this trial does not establish recall, quality improvement, or Skill gain. No external-user trial results are claimed.
+This pre-release packages a host-driven Skill for local code review, saved-session recovery, and evidence-based rechecks. It is being offered to learn whether these workflows are useful in everyday review. The strict A/B evaluation is paused; this trial does not establish recall, quality improvement, or Skill gain. No external-user trial results have been collected.
 
 The host assistant performs semantic review. Scripts capture the selected Git snapshot, run optional local checks, validate evidence, and render reports. The package does not fetch remote pull requests. WorkBuddy import and runtime behavior have not been validated.
+
+## Download
+
+The [GitHub pre-release](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1) provides the [ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip), [manifest](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.manifest.json), and [manifest checksum](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.manifest.json.sha256). ZIP SHA-256: `cc17d9cc9270613fe84bd86a876f09a0c7a92918f928d08f8d0786edcaf97bed`. Manifest SHA-256: `4ea7eca2cc18e63a0906d95b331464b7cf8b9b4d76a42bc9d58d12779070d87f`.
 
 ## Try the Workflow
 
@@ -39,7 +43,7 @@ mkdir ./review-changes-import
 python3 -X utf8 -S -m zipfile -e ./review-changes-0.3.0-rc.1.zip ./review-changes-import
 ```
 
-The extracted instructions are at `./review-changes-import/review-changes/SKILL.md`. In Codex, register/import that Skill folder using the current instructions for your Codex setup. The official Skills directory could not be verified in this environment, so this guide does not assume a fixed `CODEX_HOME` layout. If your setup has no folder import flow, start a session with filesystem access and ask Codex to read and follow the absolute path to that `SKILL.md` and its supporting files for the review; this uses the package without installing it as a registered Skill. Neither path requires cloning this repository. WorkBuddy import and runtime behavior have not been validated.
+The extracted instructions are at `./review-changes-import/review-changes/SKILL.md`. In Codex, register/import that Skill folder using the current instructions for your Codex setup; the Skill directory can vary by configuration. If your setup has no folder import flow, start a session with filesystem access and ask Codex to read and follow the absolute path to that `SKILL.md` and its supporting files for the review; this uses the package without installing it as a registered Skill. Neither path requires cloning this repository. WorkBuddy import and runtime behavior have not been validated.
 
 ## Feedback Notes
 
@@ -57,17 +61,13 @@ Extra manual steps:
 Other notes:
 ```
 
-## Proposed GitHub Pre-release
+## Published GitHub Pre-release
 
-- Title: `review-changes 0.3.0-rc.1`
-- Tag: `review-changes-v0.3.0-rc.1`
-- Mark as a pre-release.
-- Assets: `review-changes-0.3.0-rc.1.zip`, `review-changes-0.3.0-rc.1.manifest.json`, and `review-changes-0.3.0-rc.1.manifest.json.sha256`.
+- Release: [review-changes 0.3.0-rc.1](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1)
+- Tag: `review-changes-v0.3.0-rc.1` at source commit `956439ea9c08afaffa4084473a19cc7c98cc521c`.
+- Source CI: [run 38506803679](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38506803679), Ubuntu/Windows × Python 3.10/3.11 all passed.
+- ZIP SHA-256: `cc17d9cc9270613fe84bd86a876f09a0c7a92918f928d08f8d0786edcaf97bed`; manifest SHA-256: `4ea7eca2cc18e63a0906d95b331464b7cf8b9b4d76a42bc9d58d12779070d87f`; 27 package resources.
+- An independent download of all three public assets matched the locally verified files. The standalone projector returned `[]` for the empty tool-run input; packaging tests were 5 passed and AB batch tests were 37 passed, 2 skipped.
+- The strict A/B remains paused at zero valid pairs; external trial feedback has not been collected. These checks are not a recall, review-quality, or Skill-gain result. WorkBuddy import and runtime remain unvalidated.
 
-Release description:
-
-> `review-changes` is a host-driven Skill for reviewing local worktree, staged-index, and branch changes, recovering a saved review session, and rechecking findings against a new snapshot.
->
-> This is an early trial build intended to evaluate practical value in everyday code review. The strict A/B evaluation is paused. This release makes no claim about measured recall, review-quality improvement, or Skill gain, and no external-user outcomes are claimed.
->
-> Download the versioned ZIP and verify it with the included manifest and checksum before importing it through your assistant's Skill flow. See the repository's `docs/skill-trial.md` for a short workflow and feedback notes template.
+The official `0.2.1` fixture remains unchanged: ZIP SHA-256 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa`, manifest SHA-256 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`. Historical agent disposition remains 9 supported, 0 unsupported, and 1 unresolved; see the [public adjudication record](https://github.com/lonelydoll42/CodeReview-Agent/blob/956439ea9c08afaffa4084473a19cc7c98cc521c/docs/validation/2026-10-14-agent-adjudication.md).

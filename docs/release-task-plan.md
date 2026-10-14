@@ -69,6 +69,8 @@ PR1 的历史验收与远端四矩阵通过；主仓源码 `4a0108e4409af9b8ba65
 
 ## 当前小范围试用准备
 
-截至 2026-10-14，当前阶段为小范围试用准备。复制后的 `project_tool_runs` 已移除对 `_runtime` 的导入依赖，UTF-8 guard 自包含于脚本；在含中文和空格的外部目录中，以 `-X utf8 -S` 执行真实 `preseal_plan`，并移除 `PYTHONPATH`/`PYTHONHOME` 后输出 `[]`。`eval/run_ab_batch.py` 未修改。3 项相关定向测试通过，打包测试 5 passed，`test_ab_batch.py` 37 passed、2 skipped；Ruff 和 `git diff --check` 通过。试用版本已确认为 `0.3.0-rc.1`，计划预发布 tag 为 `review-changes-v0.3.0-rc.1`，并使用版本化 ZIP、manifest 与 checksum；最终源码提交（及其 SHA）、按该提交构建和验包、CI 状态及 GitHub 预发布仍待完成。本记录不表示构建或发布已完成，也不重建或替换正式旧 `0.2.1` 发布 fixture。
+截至 2026-10-14，`0.3.0-rc.1` 小范围试用预发布已发布，tag `review-changes-v0.3.0-rc.1` 指向 source A `956439ea9c08afaffa4084473a19cc7c98cc521c`。独立包包含 27 项资源；ZIP SHA-256 为 `cc17d9cc9270613fe84bd86a876f09a0c7a92918f928d08f8d0786edcaf97bed`，manifest SHA-256 为 `4ea7eca2cc18e63a0906d95b331464b7cf8b9b4d76a42bc9d58d12779070d87f`，manifest 与 ZIP 的哈希及逐资源清单匹配。发布后从 GitHub 下载的 ZIP、manifest 和 checksum 与本地验收资产逐一同哈希；ZIP 在中文空格目录解包后，以 `python3 -X utf8 -S` 单独运行 `project_tool_runs.py`，向其输入空 `tool_runs` JSON 得到 `[]`。无 `-X utf8` 且禁用 `PYTHONUTF8` 的独立测试以退出码 2 输出 UTF-8 guard 提示，未写文件。该 smoke 只验证包文件与启动边界，不代表真实外部用户或语义质量。
 
-严格 A/B 仍暂停，0 个有效配对；真实外部使用反馈尚未收集。下一步是完成一次具体项目的首次审查与修改后复查并收集使用反馈，不扩展 trace 或评测范围。本节不构成预发布完成或外部验收完成的声明。
+source A 的打包测试为 5 passed，`test_ab_batch.py` 为 37 passed、2 skipped；相关补丁的 3 项定向测试、Ruff、diff check 通过。[Standalone Skill CI run 38506803679](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38506803679) 的 Ubuntu/Windows × Python 3.10/3.11 四矩阵均通过。试用下载和导入步骤见[试用指南](skill-trial.md)。正式旧 `0.2.1` fixture 未变，ZIP 与 manifest SHA-256 分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。
+
+严格 A/B 仍暂停，0 个有效配对；真实外部试用反馈尚未收集，WorkBuddy 导入和运行也尚未验收。历史 agent 替代判定仍为 9 supported、0 unsupported、1 unresolved（`p0007`），不代表准确率、召回率、独立缺陷数或 Skill 增益。下一步是收集具体项目首次审查和修改后复查的使用反馈，不扩展 trace 或评测范围。

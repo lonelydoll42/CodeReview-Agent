@@ -49,7 +49,11 @@ For rechecks, a resolved status requires valid repair evidence from the current 
 <a id="quickstart"></a>
 ## Quick start: independent Skill package
 
-Build the `0.3.0-rc.1` trial package from this repository with Python 3.10+ and Git. The build uses the standard library and writes only to the selected output directory; it does not install the Skill into the host's default skills directory.
+The `review-changes` `0.3.0-rc.1` trial package is available from the [GitHub pre-release](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1). Download the [ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip), [manifest](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.manifest.json), and [manifest checksum](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.manifest.json.sha256). The ZIP SHA-256 is `cc17d9cc9270613fe84bd86a876f09a0c7a92918f928d08f8d0786edcaf97bed`; the manifest SHA-256 is `4ea7eca2cc18e63a0906d95b331464b7cf8b9b4d76a42bc9d58d12779070d87f`. See the [trial guide](docs/skill-trial.md) for hash verification and import steps. Using the package does not require cloning this repository.
+
+After importing, open any Git repository and ask your assistant to review the worktree, staged changes, or a local branch. The package requires Python 3.10+ and Git for snapshot scripts; run them with UTF-8 mode, for example `python3 -X utf8 -S ...`. Semgrep is optional: the host continues semantic review when it is missing or fails, and the final report keeps that tool state.
+
+To reproduce the package from source, use Python 3.10+ and Git in a repository checkout. The standard-library builder writes only to the selected output directory and does not install the Skill into a host directory:
 
 ```bash
 python3 -X utf8 -S scripts/build_review_skill.py \
@@ -57,9 +61,7 @@ python3 -X utf8 -S scripts/build_review_skill.py \
   --versioned-artifacts
 ```
 
-The output directory contains `review-changes-0.3.0-rc.1.zip`, matching versioned manifest and checksum files, and the unpacked `review-changes/` package. The manifest records the embedded version, source commit, source tree, per-file hashes, and archive hash. Install the package using your assistant's Skill import flow. Do not copy the source repository's service dependencies into a target project. The GitHub pre-release has not been published yet; see the [trial guide](docs/skill-trial.md) for its scope and feedback template.
-
-After installation, open any Git repository and ask your assistant to review the worktree, staged changes, or a local branch. The package requires Python 3.10+ and Git for snapshot scripts. Semgrep is optional: the host continues semantic review when it is missing or fails, and the final report keeps that tool state.
+The output contains the versioned ZIP, matching manifest and checksum files, and the unpacked `review-changes/` package. The manifest records the embedded version, source commit, source tree, per-file hashes, and archive hash.
 
 For a repeatable isolation check, build the package and run the steps in [Skill-first implementation and acceptance](docs/skill-first.md). It uses a separate temporary repository whose staged and worktree contents intentionally differ.
 
