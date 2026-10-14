@@ -12,7 +12,7 @@ The host assistant performs semantic review. Scripts capture the selected Git sn
 4. Make an actual repair and run review/recheck again. A `resolved` result should cite current captured evidence and explain how the original trigger path changed.
 5. Export the review and recheck reports. Note any session-resume step or extra command needed along the way.
 
-## Import into Codex
+## Verify and Unpack
 
 From a POSIX shell in the directory containing the three versioned artifacts, verify the manifest checksum and the ZIP hash recorded in that manifest:
 
@@ -32,29 +32,14 @@ print("Verified " + manifest["version"] + ": " + archive_path.name)
 ' ./review-changes-0.3.0-rc.1.manifest.json ./review-changes-0.3.0-rc.1.manifest.json.sha256
 ```
 
-The `.sha256` file covers the exact manifest bytes; `archive_sha256` in the manifest covers the ZIP. Then extract the verified package into your Codex user skills directory. The command reads an existing `CODEX_HOME` without changing it, falls back to `~/.codex` when unset, and stops if a `review-changes` installation already exists:
+The `.sha256` file covers the exact manifest bytes; `archive_sha256` in the manifest covers the ZIP. Extract the verified archive into a new, empty directory. `mkdir` fails if that destination already exists, so this will not overwrite an existing copy:
 
 ```sh
-python3 -X utf8 -S -c '
-import os, pathlib, sys, zipfile
-codex_home = pathlib.Path(os.environ.get("CODEX_HOME") or pathlib.Path.home() / ".codex").expanduser()
-skills_dir = codex_home / "skills"
-destination = skills_dir / "review-changes"
-if destination.exists() or destination.is_symlink():
-    raise SystemExit("refusing to overwrite existing Skill: " + str(destination))
-with zipfile.ZipFile(sys.argv[1]) as archive:
-    bad_member = archive.testzip()
-    if bad_member is not None:
-        raise SystemExit("corrupt archive member: " + bad_member)
-    if any(not name.startswith("review-changes/") for name in archive.namelist()):
-        raise SystemExit("unexpected archive path")
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    archive.extractall(skills_dir)
-print("Installed to " + str(destination))
-' ./review-changes-0.3.0-rc.1.zip
+mkdir ./review-changes-import
+python3 -X utf8 -S -m zipfile -e ./review-changes-0.3.0-rc.1.zip ./review-changes-import
 ```
 
-Restart or refresh Codex's Skill list if needed, then select `review-changes` for a local review. WorkBuddy import and runtime behavior have not been validated.
+The extracted instructions are at `./review-changes-import/review-changes/SKILL.md`. In Codex, register/import that Skill folder using the current instructions for your Codex setup. The official Skills directory could not be verified in this environment, so this guide does not assume a fixed `CODEX_HOME` layout. If your setup has no folder import flow, start a session with filesystem access and ask Codex to read and follow the absolute path to that `SKILL.md` and its supporting files for the review; this uses the package without installing it as a registered Skill. Neither path requires cloning this repository. WorkBuddy import and runtime behavior have not been validated.
 
 ## Feedback Notes
 
