@@ -73,4 +73,6 @@ PR1 的历史验收与远端四矩阵通过；主仓源码 `4a0108e4409af9b8ba65
 
 source A 的打包测试为 5 passed，`test_ab_batch.py` 为 37 passed、2 skipped；相关补丁的 3 项定向测试、Ruff、diff check 通过。[Standalone Skill CI run 38506803679](https://github.com/lonelydoll42/CodeReview-Agent/actions/runs/38506803679) 的 Ubuntu/Windows × Python 3.10/3.11 四矩阵均通过。试用下载和导入步骤见[试用指南](skill-trial.md)。正式旧 `0.2.1` fixture 未变，ZIP 与 manifest SHA-256 分别为 `42948cb0de941299c5e6ed39628acaeadd22bda26e0fbcefa0804460d05b74aa` 和 `5d8f6febfedf6532bc985b7d638099cacc7f99fdd408902c696c045135471ecf`。
 
+2026-10-15 完成一次本地历史样本工作流试用：初审报告确认 1 条 P2，未跟踪文件负向对照 recheck 为 `persisting`，隔离副本修复后的 recheck 为 `resolved`。过程、来源、包哈希和实际命令摩擦见[本地试用摘要](validation/2026-10-15-local-trial.md)。默认首页入口经 [PR #12](https://github.com/lonelydoll42/CodeReview-Agent/pull/12) 合并，merge commit 为 `be199b5028acb27c295830a245f32859f169a88f`；Python 3.10/3.11 两项必需 CI 在 head `16e3a10` 均通过，试用指南固定于 [`b5b7161`](https://github.com/lonelydoll42/CodeReview-Agent/commit/b5b71610a531c755b252ceb2b2b9e1c29d7be483)。该样本来自已知历史提交，不是盲测、独立外部用户试用或质量增益结论，也不表示当前主分支存在该缺陷。
+
 严格 A/B 仍暂停，0 个有效配对；真实外部试用反馈尚未收集，WorkBuddy 导入和运行也尚未验收。历史 agent 替代判定仍为 9 supported、0 unsupported、1 unresolved（`p0007`），不代表准确率、召回率、独立缺陷数或 Skill 增益。下一步是收集具体项目首次审查和修改后复查的使用反馈，不扩展 trace 或评测范围。
