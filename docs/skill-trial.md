@@ -10,11 +10,15 @@ The [GitHub pre-release](https://github.com/lonelydoll42/CodeReview-Agent/releas
 
 ## Try the Workflow
 
-1. Verify the versioned archive and import the Skill using your assistant's supported flow. Codex users can use the standalone install steps below; no source checkout is needed.
-2. Choose a local branch or test repository and ask the host to review the selected worktree, staged index, or local branch comparison. Save the report and session output.
-3. Optionally make an unrelated documentation change, then ask the host to recheck the prior report. A finding should not become `resolved` solely because it disappeared; it may remain `persisting` or `unverified`.
-4. Make an actual repair and run review/recheck again. A `resolved` result should cite current captured evidence and explain how the original trigger path changed.
-5. Export the review and recheck reports. Note any session-resume step or extra command needed along the way.
+1. Verify the versioned archive and install/register the Skill using your assistant's supported flow. Codex CLI users can follow the local install steps below; no source checkout is needed.
+2. Choose a local branch or test repository with changes to review, then start a new Codex CLI session and explicitly invoke the installed Skill with this prompt:
+
+   ```text
+   $review-changes Review the current working tree, including relevant untracked files. Save the review report and session artifacts, then return their paths and any coverage limits.
+   ```
+
+3. If the report identifies an issue, fix it and ask the host to recheck using the saved session path. A finding should not become `resolved` just because it disappeared; the result should cite current evidence and explain how the original trigger path changed.
+4. Save or share the review and recheck reports as your host supports. Note any extra command or manual step needed.
 
 ## Verify and Unpack
 
@@ -43,7 +47,45 @@ mkdir ./review-changes-import &&
 python3 -X utf8 -S -m zipfile -e ./review-changes-0.3.0-rc.1.zip ./review-changes-import
 ```
 
-The extracted instructions are at `./review-changes-import/review-changes/SKILL.md`. In Codex, register/import that Skill folder using the current instructions for your Codex setup; the Skill directory can vary by configuration. If your setup has no folder import flow, start a session with filesystem access and ask Codex to read and follow the absolute path to that `SKILL.md` and its supporting files for the review; this uses the package without installing it as a registered Skill. Neither path requires cloning this repository. WorkBuddy import and runtime behavior have not been validated.
+The extracted package directory is `./review-changes-import/review-changes`, with its instructions at `./review-changes-import/review-changes/SKILL.md`.
+
+### Codex CLI: Install
+
+This copy-based installation was tested locally with Codex CLI `0.153.4`; other Codex configurations and host integrations have not been tested. It uses the existing `$CODEX_HOME` when set, otherwise `~/.codex`, and refuses to overwrite an existing destination, including a dangling symlink. It needs no pip installation, additional model-provider key, or review server; Codex CLI must already be configured and logged in.
+
+```sh
+python3 -X utf8 -S -c '
+import os, pathlib, shutil, sys
+
+source = pathlib.Path(sys.argv[1]).resolve()
+if not (source / "SKILL.md").is_file():
+    raise SystemExit("source folder does not contain SKILL.md")
+codex_home = pathlib.Path(os.environ["CODEX_HOME"]) if os.environ.get("CODEX_HOME") else pathlib.Path.home() / ".codex"
+destination = codex_home / "skills" / "review-changes"
+if destination.exists() or destination.is_symlink():
+    raise SystemExit("destination already exists: " + str(destination))
+destination.parent.mkdir(parents=True, exist_ok=True)
+shutil.copytree(source, destination)
+print("Installed Skill at " + str(destination))
+' ./review-changes-import/review-changes
+```
+
+Start a new Codex CLI session after installation before invoking the registered Skill.
+
+### Optional host-selection checks
+
+These checks are optional and are not required before using the explicit prompt above.
+
+- Catalog discovery: if your setup provides a normal Skills list or picker, check whether `Review changes` / `review-changes` appears after installation. This optional check establishes visibility only; it has not been measured in this trial.
+- Natural-language selection: in a separate fresh session, make a relevant local-review request without the Skill name, its path, or `$review-changes`. Count it only when ordinary host session evidence shows that `review-changes` was selected and loaded.
+
+Record these outcomes separately from explicit invocation and workflow completion. A visible catalog entry or a review response alone does not establish that the Skill was selected and loaded.
+
+One internal CLI run per invocation mode is recorded in the [first-use check](validation/2026-10-15-first-use.md); the normal Skills list or picker was not tested.
+
+### Manual absolute-path fallback
+
+If you cannot register the Skill, start a session with filesystem access and ask the host to read and follow the absolute path to the extracted `review-changes/SKILL.md`, along with its supporting files, for that review. This is manual file reading for one session: it does not register the Skill, make it discoverable in the normal catalog, or test `$review-changes` or natural-language selection. It uses the verified package without cloning this repository.
 
 ## Feedback Notes
 
@@ -53,7 +95,11 @@ Host and version:
 Operating system / Python:
 Project type / primary language:
 Package version / archive SHA-256:
-Import result and any installation error:
+Install method and any installation error:
+Catalog discovery result:
+Explicit `$review-changes` invocation result:
+Natural-language selection result:
+Manual absolute-path fallback used? What happened?
 Could you complete the workflow without author assistance? If not, where did you need help?
 Commands or prompts I had to correct:
 First report readability:
