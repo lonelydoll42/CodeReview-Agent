@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>让每一次 Pull Request，都多四个审查视角。</strong><br />
-  基于静态分析与大语言模型的 GitHub PR 审查工作台。
+  <strong>先用本地代码审查 Skill，再按需部署 GitHub PR 服务端。</strong><br />
+  独立 review-changes 包在本地 coding assistant 中运行；服务端自动化是可选入口。
 </p>
 
 <p align="center">
@@ -21,18 +21,27 @@
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> ·
+  <a href="#skill-trial">本地 Skill 试用</a> ·
+  <a href="https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-trial.md">试用指南</a> ·
+  <a href="#server-quickstart">可选服务端</a> ·
   <a href="docs/example-report.md">报告示例</a> ·
-  <a href="docs/guide.md">使用指南</a> ·
+  <a href="docs/guide.md">服务端指南</a> ·
   <a href="docs/recruiter_brief.md">项目亮点</a> ·
   <a href="CONTRIBUTING.md">参与开发</a>
 </p>
 
 ---
 
-## 从一条 PR 链接，到一份可执行的审查报告
+<a id="skill-trial"></a>
+## 本地 Skill 试用
 
-输入 GitHub Pull Request URL，系统获取代码变更与固定版本的源码，由 **Security、Logic、Performance、Style** 四个 Agent 分别审查，再将结果去重、仲裁并整理成 Markdown 报告。
+从 [review-changes 0.3.0-rc.1 ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip) 开始，或查看[发布页](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1)。请按[固定版本试用指南](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-trial.md)校验并导入；包支持本地工作区、暂存改动、本地分支审查，以及修改后的报告复查。实现与隔离验收记录见[开发文档](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-first.md)。
+
+运行脚本需要 Python 3.10+ 和 Git。语义分析使用宿主 assistant 当前模型及其可用额度，不要求克隆本仓库或部署服务端。`0.3.0-rc.1` 是预发布版本；WorkBuddy 导入和宿主行为尚未验收。
+
+## 可选服务端：从一条 PR 链接，到一份可执行的审查报告
+
+可选服务端接收 GitHub Pull Request URL，获取代码变更与固定版本的源码，由 **Security、Logic、Performance、Style** 四个 Agent 分别审查，再将结果去重、仲裁并整理成 Markdown 报告。
 
 每条问题包含文件、行号、严重级别、修改建议、置信度与来源 Agent。可以在 Web 工作台查看历史、筛选问题和下载报告，也可以按需将结果发布到 GitHub PR。
 
@@ -83,9 +92,10 @@ flowchart LR
 可识别并送入审查的语言包括 Python、JavaScript、TypeScript、Go、Java、Ruby、Rust、C、C++、C#、PHP、Swift、Kotlin、Scala、Bash、SQL。**语言识别范围不代表静态规则覆盖相同**：AST 分析主要面向 Python，Semgrep 检查取决于内置规则。
 
 <a id="快速开始"></a>
-## 快速开始
+<a id="server-quickstart"></a>
+## 服务端快速开始（可选）
 
-准备 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
+仅在部署服务端时，才需要 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
 
 ### 1. 获取项目并安装依赖
 
