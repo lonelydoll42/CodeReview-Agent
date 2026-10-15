@@ -37,7 +37,7 @@
 
 从 [review-changes 0.3.0-rc.1 ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip) 开始，或查看[发布页](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1)。请按[固定版本试用指南](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-trial.md)校验并导入；包支持本地工作区、暂存改动、本地分支审查，以及修改后的报告复查。实现与隔离验收记录见[开发文档](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-first.md)。
 
-运行脚本需要 Python 3.10+ 和 Git。语义分析使用宿主 assistant 当前模型及其可用额度，不要求克隆本仓库或部署服务端。`0.3.0-rc.1` 是预发布版本；WorkBuddy 导入和宿主行为尚未验收。
+运行脚本需要 Python 3.10+ 和 Git。语义分析使用宿主 assistant 当前模型及其可用额度，不要求单独配置模型 API Key、数据库或 Redis，也不要求克隆本仓库或部署服务端。`0.3.0-rc.1` 是预发布版本；WorkBuddy 导入和宿主行为尚未验收。
 
 ## 可选服务端：从一条 PR 链接，到一份可执行的审查报告
 
@@ -95,7 +95,7 @@ flowchart LR
 <a id="server-quickstart"></a>
 ## 服务端快速开始（可选）
 
-仅在部署服务端时，才需要 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
+部署可选服务端需要 Python **3.10 / 3.11**、Docker，以及可调用项目所配置 Claude 模型的 Anthropic API Key。GitHub Token 用于访问仓库与按需回写评论。
 
 ### 1. 获取项目并安装依赖
 
