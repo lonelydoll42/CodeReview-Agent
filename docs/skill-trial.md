@@ -39,7 +39,7 @@ print("Verified " + manifest["version"] + ": " + archive_path.name)
 The `.sha256` file covers the exact manifest bytes; `archive_sha256` in the manifest covers the ZIP. Extract the verified archive into a new, empty directory. `mkdir` fails if that destination already exists, so this will not overwrite an existing copy:
 
 ```sh
-mkdir ./review-changes-import
+mkdir ./review-changes-import &&
 python3 -X utf8 -S -m zipfile -e ./review-changes-0.3.0-rc.1.zip ./review-changes-import
 ```
 
@@ -51,12 +51,16 @@ The extracted instructions are at `./review-changes-import/review-changes/SKILL.
 Trial date:
 Host and version:
 Operating system / Python:
+Project type / primary language:
 Package version / archive SHA-256:
 Import result and any installation error:
+Could you complete the workflow without author assistance? If not, where did you need help?
 Commands or prompts I had to correct:
 First report readability:
+Were any findings worth fixing? Why or why not?
 Optional unrelated-change recheck: expected / observed status
 Repair recheck: expected / observed status and evidence quality
+Was the repair recheck conclusion trustworthy? Why or why not?
 Extra manual steps:
 Other notes:
 ```
