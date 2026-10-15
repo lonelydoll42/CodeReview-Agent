@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="#skill-trial">本地 Skill 试用</a> ·
-  <a href="https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-trial.md">试用指南</a> ·
+  <a href="https://github.com/lonelydoll42/CodeReview-Agent/blob/0e0f1921e0eae97c7e4bc5b5607a00b5b406d90d/docs/skill-trial.md">试用指南</a> ·
   <a href="#server-quickstart">可选服务端</a> ·
   <a href="docs/example-report.md">报告示例</a> ·
   <a href="docs/guide.md">服务端指南</a> ·
@@ -35,7 +35,7 @@
 <a id="skill-trial"></a>
 ## 本地 Skill 试用
 
-从 [review-changes 0.3.0-rc.1 ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip) 开始，或查看[发布页](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1)。请按[固定版本试用指南](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-trial.md)校验并导入；包支持本地工作区、暂存改动、本地分支审查，以及修改后的报告复查。实现与隔离验收记录见[开发文档](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-first.md)。
+从 [review-changes 0.3.0-rc.1 ZIP](https://github.com/lonelydoll42/CodeReview-Agent/releases/download/review-changes-v0.3.0-rc.1/review-changes-0.3.0-rc.1.zip) 开始，或查看[发布页](https://github.com/lonelydoll42/CodeReview-Agent/releases/tag/review-changes-v0.3.0-rc.1)。请按[固定版本试用指南](https://github.com/lonelydoll42/CodeReview-Agent/blob/0e0f1921e0eae97c7e4bc5b5607a00b5b406d90d/docs/skill-trial.md)校验并导入；包支持本地工作区、暂存改动、本地分支审查，以及修改后的报告复查。实现与隔离验收记录见[开发文档](https://github.com/lonelydoll42/CodeReview-Agent/blob/b5b71610a531c755b252ceb2b2b9e1c29d7be483/docs/skill-first.md)。
 
 运行脚本需要 Python 3.10+ 和 Git。语义分析使用宿主 assistant 当前模型及其可用额度，不要求单独配置模型 API Key、数据库或 Redis，也不要求克隆本仓库或部署服务端。`0.3.0-rc.1` 是预发布版本；WorkBuddy 导入和宿主行为尚未验收。
 
